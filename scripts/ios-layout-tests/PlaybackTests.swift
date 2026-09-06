@@ -23,13 +23,19 @@ final class PlaybackTests: XCTestCase {
             XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "当前签名不支持 Siri")).firstMatch.exists)
         }
         for index in 0..<3 {
+            let previousValue = toggle.value as? String
             // WKWebView 将开关的隐藏表单输入也算入 AX 边界，实际按钮位于边界右下角。
             toggle.coordinate(withNormalizedOffset: CGVector(dx: 1, dy: 1))
                 .withOffset(CGVector(dx: -20, dy: -11)).tap()
             // 触发 XCTest 的系统授权弹窗处理，不直接修改授权状态。
             app.tap()
             let settled = NSPredicate { _, _ in
-                toggle.exists && toggle.isEnabled
+                let authorizationError = app.staticTexts.matching(NSPredicate(
+                    format: "label CONTAINS %@ OR label CONTAINS %@",
+                    "当前签名缺少 Siri 能力", "请在系统设置中允许 SPlayer 使用 Siri"
+                )).firstMatch.exists
+                return toggle.exists && toggle.isEnabled &&
+                    ((toggle.value as? String) != previousValue || authorizationError)
             }
             expectation(for: settled, evaluatedWith: app)
             waitForExpectations(timeout: 25)

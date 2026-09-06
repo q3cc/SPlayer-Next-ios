@@ -1,0 +1,3 @@
+// 模拟器从 Mach-O 读取权限，不能把 iOS 受限权限写进 macOS 临时签名。
+OTHER_LDFLAGS[sdk=iphonesimulator*] = $(inherited) -Wl,-sectcreate,__TEXT,__entitlements,$(SRCROOT)/../../../scripts/ios-siri-tests/simulator.entitlements
+ENABLE_DEBUG_DYLIB = NO
