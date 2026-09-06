@@ -14,7 +14,10 @@ final class PlaybackTests: XCTestCase {
         XCUIDevice.shared.orientation = .landscapeLeft
         XCTAssertTrue(app.buttons["Open Siri settings test"].waitForExistence(timeout: 45))
         app.buttons["Open Siri settings test"].tap()
-        let toggle = app.descendants(matching: .any).matching(identifier: "Siri 语音控制").firstMatch
+        let toggle = app.descendants(matching: .any).matching(NSPredicate(
+            format: "identifier == %@ AND (elementType == %d OR elementType == %d)",
+            "Siri 语音控制", XCUIElement.ElementType.switch.rawValue, XCUIElement.ElementType.button.rawValue
+        )).firstMatch
         XCTAssertTrue(toggle.waitForExistence(timeout: 15))
         for index in 0..<3 {
             toggle.tap()
