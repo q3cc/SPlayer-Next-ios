@@ -18,7 +18,7 @@ export interface SiriSnapshot {
 }
 
 export interface SiriStatus {
-  authorization: "notDetermined" | "restricted" | "denied" | "authorized";
+  authorization: "notDetermined" | "restricted" | "denied" | "authorized" | "missingEntitlement";
   enabled: boolean;
   lastResult: string;
 }

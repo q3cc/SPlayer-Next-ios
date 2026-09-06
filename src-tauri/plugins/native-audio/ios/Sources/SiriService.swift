@@ -1,6 +1,7 @@
 import Foundation
 import Intents
 import Security
+import SiriAuthorization
 import UIKit
 
 @MainActor
@@ -75,10 +76,11 @@ final class SiriService {
 
   func status() -> [String: Any] {
     let authorization: String
-    switch INPreferences.siriAuthorizationStatus() {
-    case .authorized: authorization = "authorized"
-    case .denied: authorization = "denied"
-    case .restricted: authorization = "restricted"
+    switch splayerSiriAuthorizationStatus() {
+    case INSiriAuthorizationStatus.authorized.rawValue: authorization = "authorized"
+    case INSiriAuthorizationStatus.denied.rawValue: authorization = "denied"
+    case INSiriAuthorizationStatus.restricted.rawValue: authorization = "restricted"
+    case -1: authorization = "missingEntitlement"
     default: authorization = "notDetermined"
     }
     return ["authorization": authorization, "enabled": enabled, "lastResult": lastResult]
@@ -89,7 +91,7 @@ final class SiriService {
     case "status": return status()
     case "authorize":
       await withCheckedContinuation { continuation in
-        INPreferences.requestSiriAuthorization { _ in continuation.resume() }
+        splayerRequestSiriAuthorization { _ in continuation.resume() }
       }
       return status()
     case "openSettings":
@@ -127,7 +129,9 @@ final class SiriService {
 
   private func checkEnabled() throws {
     guard enabled else { throw SiriFailure("请先在 SPlayer 设置的 Siri 页面开启语音控制") }
-    guard INPreferences.siriAuthorizationStatus() == .authorized else { throw SiriFailure("请允许 SPlayer 使用 Siri") }
+    let authorization = status()["authorization"] as? String
+    guard authorization != "missingEntitlement" else { throw SiriFailure("当前签名缺少 Siri 能力，请使用支持 Siri 的证书和描述文件重新签名") }
+    guard authorization == "authorized" else { throw SiriFailure("请允许 SPlayer 使用 Siri") }
   }
 
   private func request(_ action: String, query: String = "", artist: String = "", track: [String: Any]? = nil) async throws -> [String: Any] {

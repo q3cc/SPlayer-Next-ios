@@ -9,9 +9,13 @@ const busy = ref(false);
 const error = ref("");
 const authorization = computed(
   () =>
-    ({ notDetermined: "尚未授权", restricted: "系统限制", denied: "已拒绝", authorized: "已授权" })[
-      status.value?.authorization ?? "notDetermined"
-    ],
+    ({
+      notDetermined: "尚未授权",
+      restricted: "系统限制",
+      denied: "已拒绝",
+      authorized: "已授权",
+      missingEntitlement: "当前签名不支持 Siri",
+    })[status.value?.authorization ?? "notDetermined"],
 );
 const refresh = async (): Promise<void> => {
   try {
@@ -29,6 +33,8 @@ const change = async <K extends keyof SiriSettings>(
   try {
     if (key === "enabled" && value === true) {
       const granted = await mobileSiri.authorize();
+      if (granted.authorization === "missingEntitlement")
+        throw new Error("当前签名缺少 Siri 能力，请使用支持 Siri 的证书和描述文件重新签名。");
       if (granted.authorization !== "authorized")
         throw new Error("请在系统设置中允许 SPlayer 使用 Siri。");
     }
