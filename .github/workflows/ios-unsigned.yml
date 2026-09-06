@@ -94,6 +94,12 @@ jobs:
           swiftc src-tauri/plugins/native-audio/ios/Sources/AudioEffects.swift scripts/ios-audio-tests/main.swift -o "$RUNNER_TEMP/splayer-audio-tests"
           "$RUNNER_TEMP/splayer-audio-tests"
 
+      - name: Test native lyric timeline
+        if: matrix.kind == 'ipa'
+        run: |
+          swiftc src-tauri/plugins/lyric-pip/ios/Sources/LyricTimeline.swift scripts/ios-lyric-tests/main.swift -o "$RUNNER_TEMP/splayer-lyric-tests"
+          "$RUNNER_TEMP/splayer-lyric-tests"
+
       - name: Install the SPlayer iOS icon set
         shell: bash
         run: |

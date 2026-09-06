@@ -5,20 +5,6 @@ import Tauri
 import UIKit
 import ImageIO
 
-private struct TimedWord: Decodable {
-  let text: String
-  let start: Double
-  let end: Double
-}
-
-private struct LyricRow: Decodable {
-  let start: Double
-  let end: Double
-  let rows: [String]
-  let primary: Int
-  let words: [TimedWord]
-}
-
 private struct LyricContent: Decodable {
   let title: String
   let artist: String
@@ -28,7 +14,7 @@ private struct LyricContent: Decodable {
   let style: LyricStyle
 }
 
-private struct LyricColor: Decodable, Equatable {
+struct LyricColor: Decodable, Equatable {
   let r: Double
   let g: Double
   let b: Double
@@ -36,7 +22,7 @@ private struct LyricColor: Decodable, Equatable {
   var uiColor: UIColor { UIColor(red: r / 255, green: g / 255, blue: b / 255, alpha: a) }
 }
 
-private struct LyricStyle: Decodable, Equatable {
+struct LyricStyle: Decodable, Equatable {
   let fontSize: Double
   let playedColor: LyricColor
   let unplayedColor: LyricColor
@@ -94,6 +80,8 @@ class LyricPipPlugin: Plugin, AVPictureInPictureControllerDelegate,
   private var coverImage: UIImage?
   private var discAngle = 0.0
   private var discAnchorTime = ProcessInfo.processInfo.systemUptime
+  private let lyricRenderer = PipLyricRenderer()
+  private let previewRenderer = PipLyricRenderer()
 
   private var displayReadiness: String {
     if #available(iOS 17.4, *) { return String(displayLayer.isReadyForDisplay) }
@@ -123,7 +111,7 @@ class LyricPipPlugin: Plugin, AVPictureInPictureControllerDelegate,
   }
 
   private func applyContent(_ next: LyricContent) {
-      if self.content?.style != next.style { self.lastText = nil }
+      self.lastText = nil
       self.content = next
       if self.coverURL != next.cover {
         self.coverTask?.cancel()
@@ -170,12 +158,12 @@ class LyricPipPlugin: Plugin, AVPictureInPictureControllerDelegate,
       }
       let angle = self.discAngle + (self.playing ? (now - self.discAnchorTime) * .pi / 10 : 0)
       let time = request.position + request.content.offset
-      let row = request.content.lines.last(where: { $0.start <= time })
+      let row = LyricTimeline.primary(request.content.lines, at: time)
       let active = row.flatMap { time < $0.end + 3000 ? $0 : nil }
       let title = request.content.title.isEmpty ? "SPlayer Next" : request.content.title
       guard let buffer = self.drawFrame(active?.rows ?? [title, request.content.artist],
         primary: active?.primary ?? 0, angle: CGFloat(angle),
-        words: active?.words ?? [], time: time) else {
+        words: active?.words ?? [], time: time, line: active, preview: true) else {
         invoke.reject("预览绘制失败")
         return
       }
@@ -329,13 +317,14 @@ class LyricPipPlugin: Plugin, AVPictureInPictureControllerDelegate,
       if let next = content.lines.first(where: { $0.start > time }) {
         delay = min(delay, max(0.02, (next.start - time) / (1000 * speed)))
       }
-      if let current = content.lines.last(where: { $0.start <= time }), current.end + 3000 > time {
+      if let current = LyricTimeline.primary(content.lines, at: time), current.end + 3000 > time {
         delay = min(delay, max(0.02, (current.end + 3000 - time) / (1000 * speed)))
-        if !current.words.isEmpty && time < current.end {
-          delay = min(delay, max(0.02, 0.1 - (now - lastFrameTime)))
+        if time < current.end || lyricRenderer.isAnimating {
+          delay = min(delay, max(0.005, 0.05 - (now - lastFrameTime)))
         }
       }
     }
+    if lyricRenderer.isAnimating { delay = min(delay, 0.05) }
     let nextTimer = Timer(timeInterval: delay, repeats: false) { [weak self] _ in
       self?.render()
       self?.updateTimer()
@@ -363,7 +352,7 @@ class LyricPipPlugin: Plugin, AVPictureInPictureControllerDelegate,
     }
     guard displayLayer.isReadyForMoreMediaData else { return }
     let time = currentPosition() + (content?.offset ?? 0)
-    let line = content?.lines.last(where: { $0.start <= time })
+    let line = LyricTimeline.primary(content?.lines ?? [], at: time)
     let active = line.flatMap { time < $0.end + 3000 ? $0 : nil }
     let title = content?.title.isEmpty == false ? content!.title : "SPlayer Next"
     let info = [title, content?.artist ?? ""].filter { !$0.isEmpty }.joined(separator: " - ")
@@ -371,11 +360,11 @@ class LyricPipPlugin: Plugin, AVPictureInPictureControllerDelegate,
     let primary = active?.primary ?? 0
     let words = active?.words ?? []
     let animateDisc = playing && coverImage != nil && now - lastFrameTime >= 0.045
-    let animateWords = !words.isEmpty && time != lastLyricTime &&
-      (!playing || force || now - lastFrameTime >= 0.095)
-    if text != lastText || primary != lastPrimary || cachedFrame == nil || animateDisc || animateWords {
+    let animateLyrics = (active != nil && time != lastLyricTime || lyricRenderer.isAnimating) &&
+      (!playing || force || now - lastFrameTime >= 0.045)
+    if text != lastText || primary != lastPrimary || cachedFrame == nil || animateDisc || animateLyrics {
       let angle = discAngle + (playing ? (now - discAnchorTime) * .pi / 10 : 0)
-      guard let buffer = drawFrame(text, primary: primary, angle: CGFloat(angle), words: words, time: time) else { return }
+      guard let buffer = drawFrame(text, primary: primary, angle: CGFloat(angle), words: words, time: time, line: active) else { return }
       cachedFrame = buffer
       lastText = text
       lastPrimary = primary
@@ -416,7 +405,8 @@ class LyricPipPlugin: Plugin, AVPictureInPictureControllerDelegate,
   }
 
   /// 使用可共享的 IOSurface，并在送往系统显示层之前结束 CPU 写入锁。
-  private func drawFrame(_ text: [String], primary: Int, angle: CGFloat, words: [TimedWord], time: Double) -> CVPixelBuffer? {
+  private func drawFrame(_ text: [String], primary: Int, angle: CGFloat, words: [TimedWord], time: Double,
+    line: LyricRow?, preview: Bool = false) -> CVPixelBuffer? {
     var pixelBuffer: CVPixelBuffer?
     let attributes: [CFString: Any] = [
       kCVPixelBufferCGImageCompatibilityKey: true,
@@ -471,40 +461,9 @@ class LyricPipPlugin: Plugin, AVPictureInPictureControllerDelegate,
       context.fill(coverRect)
     }
     context.restoreGState()
-    let paragraph = NSMutableParagraphStyle()
-    paragraph.alignment = .left
-    paragraph.lineBreakMode = .byTruncatingTail
-    for i in 0..<text.count {
-      let weight: UIFont.Weight = i == primary ? .semibold : .regular
-      let fontSize = CGFloat(content?.style.fontSize ?? 24)
-      let size = text.count <= 2 || i == primary ? fontSize : fontSize * 0.72
-      let lineHeight = max(34, fontSize * 1.2)
-      let rect = CGRect(x: 152, y: (160 - CGFloat(text.count) * lineHeight) / 2 + CGFloat(i) * lineHeight,
-        width: 464, height: lineHeight)
-      let highlight = content?.style.playedColor.uiColor ?? UIColor.white
-      var attributes: [NSAttributedString.Key: Any] = [
-        .font: UIFont.systemFont(ofSize: size, weight: weight),
-        .foregroundColor: i == primary && words.isEmpty ? highlight : (content?.style.unplayedColor.uiColor ?? UIColor.white),
-        .paragraphStyle: paragraph
-      ]
-      (text[i] as NSString).draw(in: rect, withAttributes: attributes)
-      if i == primary && !words.isEmpty {
-        var prefix = ""
-        var width: CGFloat = 0
-        for word in words {
-          if time < word.start { break }
-          let before = (String(prefix.drop(while: { $0.isWhitespace })) as NSString).size(withAttributes: attributes).width
-          prefix += word.text
-          let after = (String(prefix.drop(while: { $0.isWhitespace })) as NSString).size(withAttributes: attributes).width
-          let fraction = time >= word.end ? 1 : max(0, min(1, (time - word.start) / max(1, word.end - word.start)))
-          if time >= word.start { width = max(width, before + (after - before) * CGFloat(fraction)) }
-        }
-        context.saveGState()
-        context.clip(to: CGRect(x: rect.minX, y: rect.minY, width: min(rect.width, width), height: rect.height))
-        attributes[.foregroundColor] = highlight
-        (text[i] as NSString).draw(in: rect, withAttributes: attributes)
-        context.restoreGState()
-      }
+    if let style = content?.style {
+      (preview ? previewRenderer : lyricRenderer).draw(context: context, text: text,
+        line: line, style: style, time: time, animated: !preview)
     }
     UIGraphicsPopContext()
     context.flush()
@@ -536,6 +495,8 @@ class LyricPipPlugin: Plugin, AVPictureInPictureControllerDelegate,
     sourceView?.removeFromSuperview()
     sourceView = nil
     content = nil
+    lyricRenderer.reset()
+    previewRenderer.reset()
     lastText = nil
     lastPrimary = -1
     lastLyricTime = -.infinity

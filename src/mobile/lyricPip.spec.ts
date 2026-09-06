@@ -57,7 +57,16 @@ describe("歌词画中画", () => {
         playedColor: { r: 254, g: 121, b: 113, a: 1 },
         unplayedColor: { r: 255, g: 255, b: 255, a: 1 },
       },
-      lines: [{ start: 1000, end: 3000, primary: 0, words: [], rows: ["第一句", "翻译"] }],
+      lines: [
+        {
+          start: 1000,
+          end: 3000,
+          primary: 0,
+          nextPreview: false,
+          words: [],
+          rows: ["第一句", "翻译"],
+        },
+      ],
     });
   });
 
@@ -139,7 +148,7 @@ describe("歌词画中画", () => {
     expect(lines[1].rows).toEqual(["第二句"]);
   });
 
-  it("双行上下轮流高亮，未唱行预告下一句", async () => {
+  it("参考桌面端，当前句始终在上，下一句在下", async () => {
     const { pipContent } = await import("./lyricPip");
     const lyric = ["一", "二", "三", "四"].map((word, index) => ({
       ...value.lyric[0],
@@ -154,7 +163,7 @@ describe("歌词画中画", () => {
     ).lines;
     expect(lines.map(({ rows, primary }) => ({ rows, primary }))).toEqual([
       { rows: ["一", "二"], primary: 0 },
-      { rows: ["三", "二"], primary: 1 },
+      { rows: ["二", "三"], primary: 0 },
       { rows: ["三", "四"], primary: 0 },
       { rows: ["四"], primary: 0 },
     ]);

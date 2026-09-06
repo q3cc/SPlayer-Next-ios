@@ -51,18 +51,17 @@ export const pipContent = (
         ? [line.roman, line.translation].map((text) => text.trim()).filter(Boolean)
         : [];
       const next = lines[index + 1]?.text;
-      const alternating = options.doubleLine && !extras.length && !!next;
-      const primary = alternating ? index % 2 : 0;
       return {
         start: line.start,
         end: line.end,
-        primary,
+        primary: 0,
+        nextPreview: !!(options.doubleLine && !extras.length && next),
         words: line.words,
-        rows: alternating
-          ? primary === 0
+        rows: extras.length
+          ? [line.text, ...extras]
+          : options.doubleLine && next
             ? [line.text, next]
-            : [next, line.text]
-          : [line.text, ...extras],
+            : [line.text],
       };
     }),
 });
