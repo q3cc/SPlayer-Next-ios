@@ -19,7 +19,9 @@ final class PlaybackTests: XCTestCase {
             "Siri 语音控制", XCUIElement.ElementType.switch.rawValue, XCUIElement.ElementType.button.rawValue
         )).firstMatch
         XCTAssertTrue(toggle.waitForExistence(timeout: 15))
-        if ProcessInfo.processInfo.environment["SIRI_SIGNING"] == "present" {
+        let signing = ProcessInfo.processInfo.environment["SIRI_SIGNING"] ?? ""
+        XCTAssertTrue(["absent", "present"].contains(signing), "必须向测试进程传入签名组别")
+        if signing == "present" {
             XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "当前签名不支持 Siri")).firstMatch.exists)
         }
         for index in 0..<3 {
