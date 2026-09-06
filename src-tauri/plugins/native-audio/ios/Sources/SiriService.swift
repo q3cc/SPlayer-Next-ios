@@ -28,6 +28,12 @@ final class SiriService {
     }
     if let data = try? Data(contentsOf: directory.appendingPathComponent("playback.json")),
        let value = try? JSONSerialization.jsonObject(with: data) as? [String: Any] { queue.restore(value) }
+    if let data = try? Data(contentsOf: directory.appendingPathComponent("progress.json")),
+       let value = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+       value["revision"] as? Int == queue.revision,
+       value["currentId"] as? String == queue.currentKey {
+      queue.position = value["position"] as? Double ?? queue.position
+    }
     let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
       kSecAttrService as String: "top.imsyy.splayer.siri", kSecAttrAccount as String: "sessions",
       kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitOne]
@@ -216,7 +222,10 @@ final class SiriService {
     let value = NativeAudioPlugin.shared.snapshot()
     queue.position = value["position"] as? Double ?? queue.position
     queue.playing = value["state"] as? String == "playing"
-    try? persistPlayback()
+    // 高频存档只写进度；整份队列仅在切歌或队列变更时写入。
+    let progress: [String: Any] = ["revision": queue.revision,
+      "currentId": queue.currentKey as Any? ?? NSNull(), "position": queue.position]
+    try? JSONSerialization.data(withJSONObject: progress).write(to: directory.appendingPathComponent("progress.json"), options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
   }
 
   private func encode(_ value: [String: Any]) throws -> String {
