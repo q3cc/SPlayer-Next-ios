@@ -25,6 +25,19 @@ if (existsSync(join(apple, "project.yml"))) {
     join(apple, "Sources/SPlayerIntents.swift"),
   );
   if (process.platform === "darwin") {
+    if (process.env.SPLAYER_SIRI_SIMULATOR_ENTITLEMENTS === "1") {
+      // Tauri 不透传外部 xcconfig；测试权限直接交给 XcodeGen，且仅影响模拟器。
+      const project = join(apple, "project.yml");
+      const source = readFileSync(project, "utf8");
+      const marker = "# SPlayer Siri simulator smoke settings";
+      if (!source.includes(marker)) {
+        if (/^settings:/m.test(source)) throw new Error("模拟器测试不能覆盖已有项目级设置");
+        writeFileSync(
+          project,
+          `${source}\n${marker}\nsettings:\n  base:\n    ENABLE_DEBUG_DYLIB: NO\n    OTHER_LDFLAGS[sdk=iphonesimulator*]: $(inherited) -Wl,-sectcreate,__TEXT,__entitlements,$(SRCROOT)/../../../scripts/ios-siri-tests/simulator.entitlements\n`,
+        );
+      }
+    }
     const targets = readdirSync(apple, { withFileTypes: true }).filter(
       (entry) => entry.isDirectory() && entry.name.endsWith("_iOS"),
     );
