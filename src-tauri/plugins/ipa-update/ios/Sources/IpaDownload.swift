@@ -174,6 +174,16 @@ final class IpaDownload: NSObject, URLSessionDownloadDelegate {
     finished = true
     session.invalidateAndCancel()
     for part in parts.values { try? FileManager.default.removeItem(at: part) }
+    if case .success = result {
+      // 枚举 URL 的基址、尾斜杠可能不同，按同级 UUID 名称排除当前下载目录。
+      let root = directory.deletingLastPathComponent()
+      for old in (try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)) ?? [] {
+        if old.lastPathComponent != directory.lastPathComponent,
+           UUID(uuidString: old.lastPathComponent) != nil {
+          try? FileManager.default.removeItem(at: old)
+        }
+      }
+    }
     if case .failure = result { try? FileManager.default.removeItem(at: directory) }
     completion(result)
   }

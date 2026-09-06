@@ -6,6 +6,7 @@ import subprocess
 import tempfile
 import threading
 import time
+import uuid
 
 payload = b"PK\x03\x04" + bytes(range(256)) * 8192
 requests = []
@@ -64,12 +65,17 @@ with tempfile.TemporaryDirectory(prefix="splayer-ipa-test-") as directory:
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     digest = hashlib.sha256(payload).hexdigest()
+    previous = root / str(uuid.uuid4())
+    previous.mkdir()
+    (previous / "old.ipa").write_bytes(b"old")
+    unrelated = root / "keep.txt"
+    unrelated.write_text("keep")
     for endpoint, checksum, expected in [
         ("range", digest, 0), ("single", digest, 0),
         ("bad-range", digest, 1), ("truncated", digest, 1),
         ("checksum", "0" * 64, 1),
     ]:
-        folder = root / endpoint
+        folder = root / str(uuid.uuid4())
         result = subprocess.run([
             str(binary), f"http://127.0.0.1:{server.server_port}/{endpoint}",
             str(len(payload)), checksum, str(folder),
@@ -79,8 +85,12 @@ with tempfile.TemporaryDirectory(prefix="splayer-ipa-test-") as directory:
         if expected == 0:
             assert (folder / "SPlayer-Next-iOS-unsigned.ipa").read_bytes() == payload
             assert f"progress {len(payload)} {len(payload)}" in result.stdout
+            assert not previous.exists(), "成功下载后应清理旧的更新目录"
+            previous = folder
         else:
             assert not folder.exists(), "失败下载不应残留半成品"
+            assert previous.exists(), "失败下载不能清除之前完整的更新包"
+        assert unrelated.read_text() == "keep", "不得清理非下载任务文件"
     server.shutdown()
     assert maximum >= 4, f"没有实际并行下载：{maximum}"
     assert len([r for r in requests if r[0] == "/range"]) == 5

@@ -41,7 +41,7 @@ export const defaultSystemConfig: SystemConfig = {
     scanDirs: [],
   },
   desktopLyric: {
-    pipFrameRate: 20,
+    pipFrameRate: 60,
     fontSize: 24,
     fontWeight: 600,
     fontFamily: "",

@@ -123,9 +123,56 @@ describe("iOS 检查当前仓库更新", () => {
     await mobileUpdate.download();
     expect(listener).toHaveBeenCalledWith(expect.objectContaining({ type: "downloaded" }));
     expect(listener).toHaveBeenLastCalledWith(
-      expect.objectContaining({ type: "error", stage: "share", message: "Error: background" }),
+      expect.objectContaining({ type: "error", stage: "share", message: "background" }),
     );
     await mobileUpdate.install();
+    expect(mocks.invoke).toHaveBeenLastCalledWith("plugin:ipa-update|share");
+  });
+
+  it("文件丢失时恢复下载入口并显示原生错误，重新下载后可以分享", async () => {
+    const { mobileUpdate } = await import("./update");
+    const listener = vi.fn();
+    mobileUpdate.onEvent(listener);
+    mocks.fetch.mockResolvedValue(Response.json([release()]));
+    await mobileUpdate.check(true);
+    mocks.invoke.mockResolvedValueOnce(undefined).mockRejectedValueOnce({
+      code: "IPA_MISSING",
+      message: "下载文件已丢失，请重新下载",
+    });
+    await mobileUpdate.download();
+    expect(listener).toHaveBeenLastCalledWith({
+      type: "error",
+      manual: true,
+      message: "下载文件已丢失，请重新下载",
+    });
+    await mobileUpdate.download();
+    expect(listener).toHaveBeenLastCalledWith(expect.objectContaining({ type: "downloaded" }));
+    expect(mocks.invoke).toHaveBeenLastCalledWith("plugin:ipa-update|share");
+  });
+
+  it("进度达到 100% 后仍等待原生文件就绪才允许分享", async () => {
+    const { mobileUpdate } = await import("./update");
+    const listener = vi.fn();
+    mobileUpdate.onEvent(listener);
+    mocks.fetch.mockResolvedValue(Response.json([release()]));
+    await mobileUpdate.check(true);
+    let ready!: () => void;
+    mocks.invoke.mockReturnValueOnce(
+      new Promise<void>((resolve) => {
+        ready = resolve;
+      }),
+    );
+    mocks.addListener.mockImplementation(async (_plugin, _event, callback) => {
+      callback({ percent: 100, downloadedBytes: 1234, totalBytes: 1234 });
+      return { unregister: mocks.unregister };
+    });
+    const pending = mobileUpdate.download();
+    await vi.waitFor(() => expect(mocks.invoke).toHaveBeenCalledTimes(1));
+    expect(listener).not.toHaveBeenCalledWith(expect.objectContaining({ type: "downloaded" }));
+    expect(mocks.invoke).not.toHaveBeenCalledWith("plugin:ipa-update|share");
+    ready();
+    await pending;
+    expect(listener).toHaveBeenLastCalledWith(expect.objectContaining({ type: "downloaded" }));
     expect(mocks.invoke).toHaveBeenLastCalledWith("plugin:ipa-update|share");
   });
 

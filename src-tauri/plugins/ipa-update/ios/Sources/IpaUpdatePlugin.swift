@@ -30,18 +30,13 @@ final class IpaUpdatePlugin: Plugin {
             self.trigger("progress", data: event)
           }
         }, completion: { result in
-          if case .success = result {
-            // 缓存仅保留本次完整 IPA，不累积跨启动留下的更新包。
-            for old in (try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)) ?? [] {
-              if old != folder, UUID(uuidString: old.lastPathComponent) != nil {
-                try? FileManager.default.removeItem(at: old)
-              }
-            }
-          }
           DispatchQueue.main.async {
             self.downloadTask = nil
             switch result {
             case .success(let file):
+              guard FileManager.default.isReadableFile(atPath: file.path) else {
+                invoke.reject("下载文件已丢失，请重新下载"); return
+              }
               self.downloaded = file
               invoke.resolve()
             case .failure(let error): invoke.reject(error.localizedDescription)
@@ -56,7 +51,8 @@ final class IpaUpdatePlugin: Plugin {
   @objc func share(_ invoke: Invoke) {
     DispatchQueue.main.async {
       guard let file = self.downloaded, FileManager.default.fileExists(atPath: file.path) else {
-        invoke.reject("请先下载 IPA"); return
+        self.downloaded = nil
+        invoke.reject("下载文件已丢失，请重新下载", code: "IPA_MISSING"); return
       }
       guard UIApplication.shared.applicationState == .active else {
         invoke.reject("请返回 App 后选择其他 App 打开"); return

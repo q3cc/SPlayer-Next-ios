@@ -18,8 +18,8 @@ struct LyricRow: Decodable {
 /// 对齐 shared/utils/lyricSync 和桌面端滚动规则；后台不依赖网页计时器。
 enum LyricTimeline {
   static func frameInterval(_ rate: Double?) -> Double {
-    let value = rate ?? 20
-    return 1 / (value.isFinite ? max(5, min(60, value)) : 20)
+    let value = rate ?? 60
+    return 1 / (value.isFinite ? max(5, min(60, value)) : 60)
   }
 
   static func primary(_ lines: [LyricRow], at time: Double) -> LyricRow? {

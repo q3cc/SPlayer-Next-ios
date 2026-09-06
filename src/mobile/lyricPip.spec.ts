@@ -53,7 +53,7 @@ describe("歌词画中画", () => {
       cover: "",
       offset: 250,
       style: {
-        frameRate: 20,
+        frameRate: 60,
         fontSize: 24,
         playedColor: { r: 254, g: 121, b: 113, a: 1 },
         unplayedColor: { r: 255, g: 255, b: 255, a: 1 },
@@ -82,14 +82,14 @@ describe("歌词画中画", () => {
         unplayedColor: "rgb(12, 34, 56)",
       }).style,
     ).toEqual({
-      frameRate: 20,
+      frameRate: 60,
       fontSize: 36,
       playedColor: { r: 0, g: 255, b: 0, a: 1 },
       unplayedColor: { r: 12, g: 34, b: 56, a: 1 },
     });
   });
 
-  it("帧率配置下发到原生，旧配置默认 20，非法值回退", async () => {
+  it("帧率配置下发到原生，旧配置默认 60，非法值回退", async () => {
     const { pipContent } = await import("./lyricPip");
     for (const pipFrameRate of [5, 10, 15, 20, 30, 60]) {
       expect(
@@ -101,7 +101,7 @@ describe("歌词画中画", () => {
       expect(
         pipContent(value, { doubleLine: false, showTranslation: true, pipFrameRate }).style
           .frameRate,
-      ).toBe(20);
+      ).toBe(60);
     }
   });
 
@@ -222,10 +222,13 @@ describe("歌词画中画", () => {
     const { store } = await import("./shims/store");
     store.clear();
     expect(store.get("desktopLyric.doubleLine")).toBe(false);
+    expect(store.get("desktopLyric.pipFrameRate")).toBe(60);
     store.set("desktopLyric.doubleLine", true);
+    store.set("desktopLyric.pipFrameRate", 20);
     vi.resetModules();
     const { store: reloaded } = await import("./shims/store");
     expect(reloaded.get("desktopLyric.doubleLine")).toBe(true);
+    expect(reloaded.get("desktopLyric.pipFrameRate")).toBe(20);
     reloaded.clear();
   });
 

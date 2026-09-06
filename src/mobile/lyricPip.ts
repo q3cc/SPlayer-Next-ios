@@ -26,9 +26,9 @@ export const pipContent = (
   cover: value.track?.cover ?? "",
   offset: value.lyricOffsetMs,
   style: {
-    frameRate: [5, 10, 15, 20, 30, 60].includes(options.pipFrameRate ?? 20)
-      ? (options.pipFrameRate ?? 20)
-      : 20,
+    frameRate: [5, 10, 15, 20, 30, 60].includes(options.pipFrameRate ?? 60)
+      ? (options.pipFrameRate ?? 60)
+      : 60,
     fontSize: Math.max(16, Math.min(40, options.fontSize ?? 24)),
     playedColor: colord(options.playedColor ?? "rgb(254, 121, 113)").toRgb(),
     unplayedColor: colord(options.unplayedColor ?? "rgb(255, 255, 255)").toRgb(),

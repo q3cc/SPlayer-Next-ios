@@ -241,10 +241,17 @@ export const mobileUpdate: UpdateApi = {
       ]);
       console.info("[update] share-presented");
     } catch (error) {
-      // 保留 downloaded 状态，回到前台后仍可再次打开分享面板。
-      console.warn("[update] IPA 已下载，请点击其他 App 打开", error);
+      const detail = error as { code?: string; message?: string } | null;
+      const missing = detail?.code === "IPA_MISSING";
+      // 文件丢失时恢复下载入口；窗口切换等分享失败仍可直接重试。
+      console.warn("[update] share-failed", error);
       listeners.forEach((listener) =>
-        listener({ type: "error", stage: "share", manual: true, message: String(error) }),
+        listener({
+          type: "error",
+          ...(missing ? {} : { stage: "share" as const }),
+          manual: true,
+          message: detail?.message ?? String(error),
+        }),
       );
     } finally {
       clearTimeout(timeout);
