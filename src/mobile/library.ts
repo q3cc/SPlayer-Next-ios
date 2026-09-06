@@ -1,4 +1,4 @@
-import { convertFileSrc } from "@tauri-apps/api/core";
+import { convertFileSrc, invoke, isTauri } from "@tauri-apps/api/core";
 import { join } from "@tauri-apps/api/path";
 import { open } from "@tauri-apps/plugin-dialog";
 import { readDir, remove, stat } from "@tauri-apps/plugin-fs";
@@ -24,6 +24,7 @@ let scanDirs = readJson<string[]>(DIRECTORIES_STORAGE_KEY, []);
 const persist = (): void => {
   localStorage.setItem(TRACKS_STORAGE_KEY, JSON.stringify(tracks));
   localStorage.setItem(DIRECTORIES_STORAGE_KEY, JSON.stringify(scanDirs));
+  window.dispatchEvent(new Event("splayer:siri-data-changed"));
 };
 const success = <T>(data?: T) => ({ success: true as const, data });
 const announce = (progress: ScanProgress): void =>
@@ -65,14 +66,21 @@ const listAudioFiles = async (root: string): Promise<string[]> => {
 
 const trackFromFile = async (path: string): Promise<Track> => {
   const info = await stat(path);
+  const tags = isTauri()
+    ? await invoke<{ title?: string; artist?: string; album?: string; duration?: number }>(
+        "plugin:native-audio|readMetadata",
+        { source: path, autoPlay: false },
+      ).catch(() => ({}) as { title?: string; artist?: string; album?: string; duration?: number })
+    : {};
   const fallbackTime = Date.now();
   return {
     id: idFor(path),
     source: "local",
     path,
-    title: withoutExtension(pathName(path)),
-    artists: [{ name: "Unknown Artist" }],
-    duration: 0,
+    title: tags.title || withoutExtension(pathName(path)),
+    artists: [{ name: tags.artist || "Unknown Artist" }],
+    album: tags.album ? { name: tags.album } : undefined,
+    duration: tags.duration ?? 0,
     fileSize: info.size,
     mtime: info.mtime?.getTime() ?? fallbackTime,
     ctime: info.birthtime?.getTime() ?? fallbackTime,

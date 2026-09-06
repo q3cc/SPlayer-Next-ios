@@ -16,8 +16,10 @@ export const getSessionCookies = (platform: Platform): Record<string, string> =>
 
 export const saveSessionCookies = (platform: Platform, cookies: Record<string, string>): void => {
   localStorage.setItem(keyFor(platform), JSON.stringify(cookies));
+  window.dispatchEvent(new Event("splayer:siri-data-changed"));
 };
 
 export const clearSessionCookies = (platform: Platform): void => {
   localStorage.removeItem(keyFor(platform));
+  window.dispatchEvent(new Event("splayer:siri-data-changed"));
 };

@@ -716,6 +716,7 @@
     "subtitle": "调整您的专属配置",
     "search": "搜索设置项...",
     "group": {
+      "siri": "Siri",
       "general": "常规设置",
       "player": "播放设置",
       "lyric": "歌词设置",
@@ -733,6 +734,7 @@
       "about": "关于软件"
     },
     "section": {
+      "siri": "Siri",
       "platformLogin": "平台登录",
       "platformConfig": "平台配置",
       "network": "网络代理",

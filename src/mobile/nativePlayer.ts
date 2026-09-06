@@ -128,6 +128,9 @@ export const createNativePlayer = (fallback: PlayerApi): PlayerApi => {
       const current = ++generation;
       try {
         await initialize();
+        await invoke("plugin:native-audio|siri", {
+          request: JSON.stringify({ action: "interrupt" }),
+        });
         const value = await invoke<PlayerStatus>("plugin:native-audio|load", {
           source,
           autoPlay: options.autoPlay !== false,

@@ -1,3 +1,3 @@
 [default]
 description = "iOS 原生流式播放、音效和系统媒体控制"
-permissions = ["allow-load", "allow-control", "allow-configure", "allow-metadata", "allow-status", "allow-visibility", "allow-register-listener", "allow-remove-listener"]
+permissions = ["allow-load", "allow-control", "allow-configure", "allow-metadata", "allow-status", "allow-visibility", "allow-siri", "allow-read-metadata", "allow-register-listener", "allow-remove-listener"]

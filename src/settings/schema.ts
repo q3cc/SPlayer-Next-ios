@@ -16,6 +16,7 @@ import AboutSettings from "@/components/settings/custom/AboutSettings.vue";
 import { isIOS } from "@/utils/config";
 import IconLucideInfo from "~icons/lucide/info";
 import LyricPipPreview from "@/components/settings/custom/LyricPipPreview.vue";
+import siriCategory from "./categories/siri";
 
 const onlySections = (category: SettingCategory, ids: string[]): SettingCategory => ({
   ...category,
@@ -97,6 +98,7 @@ const mobileExternalLyric: SettingCategory = {
 
 export const settingsSchema: SettingCategory[] = [
   isIOS ? mobileGeneral : generalCategory,
+  ...(isIOS ? [siriCategory] : []),
   isIOS ? mobileAppearance : appearanceCategory,
   isIOS ? mobilePlayer : playerCategory,
   lyricCategory,

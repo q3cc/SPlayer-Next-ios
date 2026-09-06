@@ -26,3 +26,4 @@ package-lock.json
 # Code signing certificates
 *.pfx
 *.p12
+src-tauri/plugins/native-audio/ios/Sources/Resources/siri-background.js

@@ -64,6 +64,15 @@ const startApp = async (): Promise<void> => {
    */
   const bootstrapPlayback = async (): Promise<void> => {
     await initPlayer();
+    const siriPlaying =
+      import.meta.env.MODE === "mobile"
+        ? await import("./mobile/siri")
+            .then(({ mobileSiri }) => mobileSiri.initialize())
+            .catch((error) => {
+              console.warn("[siri] 初始化失败", error);
+              return false;
+            })
+        : false;
 
     const pendingAudioFiles = await window.api.system.consumePendingAudioFiles();
     const pendingOrpheusUrl = await window.api.system.consumePendingProtocolUrl();
@@ -72,7 +81,7 @@ const startApp = async (): Promise<void> => {
       await playFiles(pendingAudioFiles);
     } else if (pendingOrpheusUrl) {
       await handleOrpheus(pendingOrpheusUrl);
-    } else {
+    } else if (!siriPlaying) {
       await restoreLastTrack();
     }
   };

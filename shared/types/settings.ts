@@ -435,6 +435,8 @@ export type KugouLoginVersion = "standard" | "concept";
 
 /** 后端配置汇总 */
 export interface SystemConfig {
+  /** Siri 语音控制配置 */
+  siri: import("./siri").SiriSettings;
   /** 播放器配置 */
   player: PlayerSettings;
   /** 媒体集成配置 */

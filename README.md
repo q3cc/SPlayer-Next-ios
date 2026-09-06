@@ -34,10 +34,14 @@
 1. **获取安装包**：前往 [Releases](https://github.com/q3cc/SPlayer-Next-ios/releases/latest) 下载最新的未签名 `.ipa`（开发版请至 [Actions](https://github.com/q3cc/SPlayer-Next-ios/actions/workflows/ios-unsigned.yml) 下载构建产物）。
 2. **签名安装**：使用个人证书或签名工具（如 TrollStore、AltStore、SideStore、牛蛙助手等）自签名并安装。
 3. **启用歌词**：在应用内进入“设置 → 桌面歌词”开启悬浮小窗歌词。
+4. **配置 Siri**：在“设置 → Siri”开启语音控制，选择音乐来源、搜索范围和选歌确认方式。可尝试“用 SPlayer 播放晴天”，或在快捷指令中添加 SPlayer 的播放、暂停和切歌操作。此功能仍需实机验证。
 
 ---
 
 ## 常见问题
+
+**Q: 重签后 Siri 不可用？**  
+签名证书及描述文件需要支持并保留 `com.apple.developer.siri` 能力。未签名 IPA 的构建检查不能替代重签和真机验证；系统是否要求解锁也由 iOS 决定。本地歌曲按歌手搜索依赖文件中的音频标签，旧导入文件可重新扫描补充标签。
 
 **Q: 本地歌曲导入后，原文件会受影响吗？**  
 不会。音乐文件会被复制进应用的沙盒目录（`Documents/Imported Music`），与原文件完全隔离，删除应用或原文件互不影响。

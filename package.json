@@ -50,7 +50,7 @@
     "build:mac": "pnpm build && electron-builder --config electron-builder.config.ts --mac",
     "build:linux": "pnpm build && electron-builder --config electron-builder.config.ts --linux",
     "mobile:dev": "vite --mode mobile --host 0.0.0.0",
-    "mobile:build": "vite build --mode mobile && node scripts/verify-mobile-bundle.ts",
+    "mobile:build": "vite build --config vite.siri.config.ts --mode mobile && node scripts/configure-ios-siri.mjs && vite build --mode mobile && node scripts/verify-mobile-bundle.ts",
     "ios:init": "tauri ios init",
     "ios:dev": "tauri ios dev",
     "ios:build": "tauri ios build",

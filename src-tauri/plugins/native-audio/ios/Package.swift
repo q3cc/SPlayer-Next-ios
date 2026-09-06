@@ -12,5 +12,5 @@ let package = Package(
   ],
   targets: [.target(name: "tauri-plugin-native-audio", dependencies: [
     .byName(name: "Tauri"), .product(name: "AudioStreaming", package: "AudioStreaming")
-  ], path: "Sources")]
+  ], path: "Sources", exclude: ["Resources"]) ]
 )

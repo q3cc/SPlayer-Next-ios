@@ -728,6 +728,7 @@
     "subtitle": "Tailor your experience",
     "search": "Search settings...",
     "group": {
+      "siri": "Siri",
       "general": "General",
       "player": "Player",
       "lyric": "Lyrics",
@@ -745,6 +746,7 @@
       "about": "About"
     },
     "section": {
+      "siri": "Siri",
       "platformLogin": "Platform Login",
       "platformConfig": "Platform Config",
       "network": "Network & Proxy",

@@ -261,6 +261,7 @@ declare module 'vue' {
     SideBarLogo: typeof import('./src/components/layout/SideBarLogo.vue')['default']
     SImg: typeof import('./src/components/ui/SImg.vue')['default']
     SInput: typeof import('./src/components/ui/SInput.vue')['default']
+    SiriSettings: typeof import('./src/components/settings/custom/SiriSettings.vue')['default']
     SLoading: typeof import('./src/components/ui/SLoading.vue')['default']
     SLogo: typeof import('./src/components/ui/SLogo.vue')['default']
     SMarquee: typeof import('./src/components/ui/SMarquee.vue')['default']

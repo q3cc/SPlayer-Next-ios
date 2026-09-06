@@ -29,13 +29,21 @@ private struct ControlLyric: Decodable {
   let text: String
 }
 private struct VisibilityRequest: Decodable { let visible: Bool }
+private struct SiriRequest: Decodable { let request: String }
+
+private struct PlaybackCompletion {
+  let callback: (Result<JSObject, Error>) -> Void
+  func resolve(_ value: JSObject) { callback(.success(value)) }
+  func reject(_ message: String) { callback(.failure(NSError(domain: "SPlayer", code: 1, userInfo: [NSLocalizedDescriptionKey: message]))) }
+}
 
 final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
+  static let shared = NativeAudioPlugin()
   private var player: AudioPlayer?
   private var audioEffects = AudioEffects()
   private var effects = EffectRequest(volume: 1, speed: 1, pitch: 0, pitchSync: true,
     enabled: false, bands: Array(repeating: 0, count: 10), preamp: 0)
-  private var pendingLoad: Invoke?
+  private var pendingLoad: PlaybackCompletion?
   private var loadTimeout: DispatchWorkItem?
   private var autoPlay = true
   private var sourceURL: URL?
@@ -49,10 +57,59 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
   private var mediaEnabled = true
   private var metadataValue: MetadataRequest?
   private var lastLyricUpdate = Date.distantPast
+  private var lastSiriCheckpoint = Date.distantPast
 
   override func load(webview: WKWebView) {
     super.load(webview: webview)
     DispatchQueue.main.async { self.installControls() }
+    Task { @MainActor in
+      SiriService.shared.changed = { [weak self] json in self?.trigger("siriQueue", data: ["json": json]) }
+      SiriMediaHandler.install()
+    }
+  }
+
+  @objc func siri(_ invoke: Invoke) throws {
+    let request = try invoke.parseArgs(SiriRequest.self)
+    guard let value = try JSONSerialization.jsonObject(with: Data(request.request.utf8)) as? [String: Any] else {
+      invoke.reject("无效的 Siri 请求"); return
+    }
+    Task { @MainActor in
+      do {
+        let result = try await SiriService.shared.command(value)
+        let text = String(data: try JSONSerialization.data(withJSONObject: result), encoding: .utf8)!
+        invoke.resolve(["json": text])
+      } catch { invoke.reject(error.localizedDescription) }
+    }
+  }
+
+  @objc func readMetadata(_ invoke: Invoke) throws {
+    let request = try invoke.parseArgs(SourceRequest.self)
+    guard let url = request.source.hasPrefix("/") ? URL(fileURLWithPath: request.source) : URL(string: request.source), url.isFileURL else {
+      invoke.reject("只读取用户导入的本地音频标签"); return
+    }
+    Task {
+      let access = url.startAccessingSecurityScopedResource()
+      defer { if access { url.stopAccessingSecurityScopedResource() } }
+      do {
+        let asset = AVURLAsset(url: url)
+        let items = try await asset.load(.commonMetadata)
+        var value: JSObject = [:]
+        for item in items {
+          if let text = try? await item.load(.stringValue) {
+            switch item.commonKey {
+            case .commonKeyTitle: value["title"] = text
+            case .commonKeyArtist: value["artist"] = text
+            case .commonKeyAlbumName: value["album"] = text
+            default: break
+            }
+          }
+        }
+        if let duration = try? await asset.load(.duration), duration.seconds.isFinite {
+          value["duration"] = max(0, duration.seconds * 1000)
+        }
+        invoke.resolve(value)
+      } catch { invoke.reject("音频标签读取失败") }
+    }
   }
 
   deinit {
@@ -68,8 +125,19 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
   /** 创建单个流式播放器，切歌后释放旧解码器与网络连接。 */
   @objc func load(_ invoke: Invoke) throws {
     let request = try invoke.parseArgs(SourceRequest.self)
+    startSource(request.source, autoPlay: request.autoPlay) { result in
+      switch result {
+      case .success(let value): invoke.resolve(value)
+      case .failure(let error): invoke.reject(error.localizedDescription)
+      }
+    }
+  }
+
+  func startSource(_ source: String, autoPlay: Bool, completion: @escaping (Result<JSObject, Error>) -> Void) {
+    let invoke = PlaybackCompletion(callback: completion)
     DispatchQueue.main.async {
-      guard let url = request.source.hasPrefix("/") ? URL(fileURLWithPath: request.source) : URL(string: request.source),
+      self.installControls()
+      guard let url = source.hasPrefix("/") ? URL(fileURLWithPath: source) : URL(string: source),
             ["https", "http", "file"].contains(url.scheme ?? "") else {
         invoke.reject("原生播放器不支持该音源地址"); return
       }
@@ -88,10 +156,10 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
         player.attach(nodes: [self.audioEffects.equalizer, self.audioEffects.timePitch])
         self.player = player
         self.sourceURL = url
-        self.autoPlay = request.autoPlay
+        self.autoPlay = autoPlay
         self.applyEffects()
         // 预载不应短暂漏出声音，缓冲完成后再恢复目标音量。
-        if !request.autoPlay { player.volume = 0 }
+        if !autoPlay { player.volume = 0 }
         self.pendingLoad = invoke
         player.delegate = self
         player.play(url: url)
@@ -135,11 +203,17 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
   @objc func control(_ invoke: Invoke) throws {
     let request = try invoke.parseArgs(ControlRequest.self)
     DispatchQueue.main.async {
-      guard let player = self.player else { invoke.reject("请先加载歌曲"); return }
-      switch request.action {
+      do { invoke.resolve(try self.performControl(request.action, position: request.position)) }
+      catch { invoke.reject(error.localizedDescription) }
+    }
+  }
+
+  func performControl(_ action: String, position: Double? = nil) throws -> JSObject {
+      guard let player = self.player else { throw SiriFailure("请先选择一首歌曲") }
+      switch action {
       case "play":
         do { try AVAudioSession.sharedInstance().setActive(true) }
-        catch { invoke.reject(error.localizedDescription); return }
+        catch { throw error }
         self.autoPlay = true
         if player.state == .stopped, let url = self.sourceURL { player.play(url: url) }
         else { player.resume() }
@@ -152,18 +226,17 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
         self.loadTimeout?.cancel()
         player.stop()
       case "seek":
-        guard let ms = request.position, ms.isFinite, player.duration > 0 else {
-          invoke.reject("当前音源暂不支持跳转"); return
+        guard let ms = position, ms.isFinite, player.duration > 0 else {
+          throw SiriFailure("当前音源暂不支持跳转")
         }
         player.seek(to: max(0, min(ms / 1000, player.duration)))
-      default: invoke.reject("未知播放操作"); return
+      default: throw SiriFailure("未知播放操作")
       }
       self.updatePosition()
-      invoke.resolve(self.snapshot())
-    }
+      return self.snapshot()
   }
 
-  private func snapshot() -> JSObject {
+  func snapshot() -> JSObject {
     let state: String
     switch player?.state {
     case .playing, .running: state = "playing"
@@ -212,13 +285,27 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
   @objc func metadata(_ invoke: Invoke) throws {
     let value = try invoke.parseArgs(MetadataRequest.self)
     DispatchQueue.main.async {
+      self.setMetadata(value)
+      invoke.resolve()
+    }
+  }
+
+  func setSiriMetadata(_ track: [String: Any]) {
+    setMetadata(MetadataRequest(title: track["title"] as? String ?? "",
+      artist: (track["artists"] as? [[String: Any]] ?? []).compactMap { $0["name"] as? String }.joined(separator: " / "),
+      album: (track["album"] as? [String: Any])?["name"] as? String ?? "",
+      cover: track["coverOriginal"] as? String ?? track["cover"] as? String ?? "",
+      enabled: true, dynamic: false, offset: nil, lines: nil))
+  }
+
+  private func setMetadata(_ value: MetadataRequest) {
       self.mediaEnabled = value.enabled
       self.metadataValue = value
       guard value.enabled else {
         self.artworkTask?.cancel()
         self.artworkURL = ""
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
-        invoke.resolve(); return
+        return
       }
       var info = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
       info[MPMediaItemPropertyTitle] = value.title
@@ -243,11 +330,10 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
       }
       MPNowPlayingInfoCenter.default().nowPlayingInfo = info
       self.updatePosition()
-      invoke.resolve()
-    }
   }
 
   private func installControls() {
+    guard timer == nil else { return }
     let center = MPRemoteCommandCenter.shared()
     for (command, action) in [(center.playCommand, "play"), (center.pauseCommand, "pause"),
                              (center.togglePlayPauseCommand, "toggle"),
@@ -264,7 +350,14 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
             else { player.resume() }
           }
           else if action == "pause" || action == "toggle" { self.resumeAfterInterruption = false; player.pause() }
-          else { self.trigger("action", data: ["type": action]) }
+          else {
+            Task { @MainActor in
+              if SiriService.shared.enabled && !SiriService.shared.queue.tracks.isEmpty {
+                do { try await SiriService.shared.advance(action == "next" ? 1 : -1) }
+                catch { self.trigger("error", data: ["message": error.localizedDescription]) }
+              } else { self.trigger("action", data: ["type": action]) }
+            }
+          }
           self.updatePosition()
         }
         return .success
@@ -307,6 +400,10 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
         self.updatePosition()
       }
       if self.visible { self.trigger("position", data: self.snapshot()) }
+      if Date().timeIntervalSince(self.lastSiriCheckpoint) >= 5 {
+        self.lastSiriCheckpoint = Date()
+        Task { @MainActor in if SiriService.shared.enabled { SiriService.shared.checkpoint() } }
+      }
     }
   }
 
@@ -326,12 +423,22 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
       guard self.player === player else { return }
       self.updatePosition()
       self.trigger("state", data: self.snapshot())
+      if newState == .paused {
+        Task { @MainActor in if SiriService.shared.enabled { SiriService.shared.checkpoint() } }
+      }
     }
   }
   func audioPlayerDidFinishPlaying(player: AudioPlayer, entryId: AudioEntryId, stopReason: AudioPlayerStopReason, progress: Double, duration: Double) {
     guard stopReason == .eof else { return }
     DispatchQueue.main.async {
-      if self.player === player { self.trigger("ended", data: [:]) }
+      if self.player === player {
+        Task { @MainActor in
+          if SiriService.shared.enabled && !SiriService.shared.queue.tracks.isEmpty {
+            do { try await SiriService.shared.advance(1, ended: true) }
+            catch { self.trigger("error", data: ["message": error.localizedDescription]) }
+          } else { self.trigger("ended", data: [:]) }
+        }
+      }
     }
   }
   func audioPlayerUnexpectedError(player: AudioPlayer, error: AudioPlayerError) {
@@ -348,4 +455,7 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
 }
 
 @_cdecl("init_plugin_native_audio")
-func initNativeAudioPlugin() -> Plugin { NativeAudioPlugin() }
+func initNativeAudioPlugin() -> Plugin {
+  Task { @MainActor in SiriMediaHandler.install() }
+  return NativeAudioPlugin.shared
+}

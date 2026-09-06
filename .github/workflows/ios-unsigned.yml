@@ -12,6 +12,8 @@ on:
       - "electron/main/apis/**"
       - "scripts/ios-layout-tests/**"
       - "scripts/ios-update-tests/**"
+      - "scripts/ios-siri-tests/**"
+      - "scripts/configure-ios-siri.mjs"
       - "scripts/publish-action-update.cjs"
       - "src-tauri/**"
       - "shared/**"
@@ -22,6 +24,7 @@ on:
       - "pnpm-workspace.yaml"
       - "patches/**"
       - "vite.config.ts"
+      - "vite.siri.config.ts"
       - "uno.config.ts"
 
 permissions:
@@ -84,6 +87,14 @@ jobs:
       - name: Generate the Xcode project
         run: pnpm tauri ios init --ci --skip-targets-install
 
+      - name: Test Siri background APIs and native queue
+        if: matrix.kind == 'ipa'
+        run: |
+          pnpm vite build --config vite.siri.config.ts --mode mobile
+          node scripts/ios-siri-tests/background.test.mjs
+          swiftc src-tauri/plugins/native-audio/ios/Sources/SiriQueue.swift scripts/ios-siri-tests/main.swift -o "$RUNNER_TEMP/splayer-siri-tests"
+          "$RUNNER_TEMP/splayer-siri-tests"
+
       - name: Test native IPA range downloader
         if: matrix.kind == 'ipa'
         run: python3 scripts/ios-update-tests/test_download.py
@@ -130,6 +141,7 @@ jobs:
           info_path="$(find "$inspect_dir/Payload" -name Info.plist -print -quit)"
           test "$(/usr/libexec/PlistBuddy -c 'Print :UIFileSharingEnabled' "$info_path")" = true
           test "$(/usr/libexec/PlistBuddy -c 'Print :LSSupportsOpeningDocumentsInPlace' "$info_path")" = true
+          python3 scripts/ios-siri-tests/verify-ipa.py "$ipa_path"
 
       - name: Upload unsigned IPA
         if: matrix.kind == 'ipa'
