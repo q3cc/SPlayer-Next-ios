@@ -94,6 +94,8 @@ jobs:
           node scripts/ios-siri-tests/background.test.mjs
           swiftc src-tauri/plugins/native-audio/ios/Sources/SiriQueue.swift scripts/ios-siri-tests/main.swift -o "$RUNNER_TEMP/splayer-siri-tests"
           "$RUNNER_TEMP/splayer-siri-tests"
+          swiftc src-tauri/plugins/native-audio/ios/Sources/SiriQueue.swift src-tauri/plugins/native-audio/ios/Sources/SiriRuntime.swift scripts/ios-siri-tests/RuntimeTests.swift -o "$RUNNER_TEMP/splayer-siri-runtime-tests"
+          "$RUNNER_TEMP/splayer-siri-runtime-tests" src-tauri/plugins/native-audio/ios/Sources/Resources
 
       - name: Test native IPA range downloader
         if: matrix.kind == 'ipa'

@@ -10,6 +10,11 @@ final class SiriRuntime {
   private var timers: [Int: DispatchWorkItem] = [:]
   private var timerId = 0
   private var completion: ((Result<[String: Any], Error>) -> Void)?
+  private let resourceDirectory: URL
+
+  init(resourceDirectory: URL = Bundle.main.resourceURL!.appendingPathComponent("assets/siri")) {
+    self.resourceDirectory = resourceDirectory
+  }
 
   func cancel() { queue.async { self.finish(.failure(SiriFailure("已被新的播放操作取消"))) } }
 
@@ -24,7 +29,10 @@ final class SiriRuntime {
           context.setObject(storage, forKeyedSubscript: "__siriStorage" as NSString)
           let random: @convention(block) (Int) -> [UInt8] = { count in
             var bytes = [UInt8](repeating: 0, count: max(0, min(65536, count)))
-            if !bytes.isEmpty { _ = SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes) }
+            if !bytes.isEmpty, SecRandomCopyBytes(kSecRandomDefault, bytes.count, &bytes) != errSecSuccess {
+              JSContext.current()?.exception = JSValue(newErrorFromMessage: "无法生成安全随机数", in: JSContext.current())
+              return []
+            }
             return bytes
           }
           context.setObject(random, forKeyedSubscript: "__siriRandom" as NSString)
@@ -94,7 +102,8 @@ final class SiriRuntime {
           context.setObject(done, forKeyedSubscript: "__siriDone" as NSString)
           context.setObject(failed, forKeyedSubscript: "__siriFailed" as NSString)
           for name in ["siri-bootstrap", "siri-background"] {
-            guard let file = Bundle.main.url(forResource: name, withExtension: "js", subdirectory: "assets/siri") else {
+            let file = self.resourceDirectory.appendingPathComponent("\(name).js")
+            guard FileManager.default.fileExists(atPath: file.path) else {
               throw SiriFailure("安装包缺少 Siri 后台模块")
             }
             context.evaluateScript(try String(contentsOf: file, encoding: .utf8))
