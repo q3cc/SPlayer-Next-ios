@@ -33,6 +33,7 @@ const change = async <K extends keyof SiriSettings>(
         throw new Error("请在系统设置中允许 SPlayer 使用 Siri。");
     }
     await settings.setSystem(`siri.${key}`, value);
+    await mobileSiri.configure();
     await refresh();
   } catch (reason) {
     error.value = reason instanceof Error ? reason.message : String(reason);

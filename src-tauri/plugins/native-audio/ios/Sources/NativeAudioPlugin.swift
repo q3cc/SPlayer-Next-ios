@@ -41,13 +41,17 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
   static let shared = NativeAudioPlugin()
   private var player: AudioPlayer?
   private var audioEffects = AudioEffects()
-  private var effects = EffectRequest(volume: 1, speed: 1, pitch: 0, pitchSync: true,
-    enabled: false, bands: Array(repeating: 0, count: 10), preamp: 0)
+  private var effects: EffectRequest = {
+    if let data = UserDefaults.standard.data(forKey: "splayer.native.audio-effects"),
+       let value = try? JSONDecoder().decode(EffectRequest.self, from: data) { return value }
+    return EffectRequest(volume: 1, speed: 1, pitch: 0, pitchSync: true,
+      enabled: false, bands: Array(repeating: 0, count: 10), preamp: 0)
+  }()
   private var pendingLoad: PlaybackCompletion?
   private var loadTimeout: DispatchWorkItem?
   private var autoPlay = true
   private var sourceURL: URL?
-  private var visible = true
+  private var visible = false
   private var timer: Timer?
   private var remoteTargets: [(MPRemoteCommand, Any)] = []
   private var observers: [NSObjectProtocol] = []
@@ -61,7 +65,7 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
 
   override func load(webview: WKWebView) {
     super.load(webview: webview)
-    DispatchQueue.main.async { self.installControls() }
+    DispatchQueue.main.async { self.visible = true; self.installControls() }
     Task { @MainActor in
       SiriService.shared.changed = { [weak self] json in self?.trigger("siriQueue", data: ["json": json]) }
       SiriMediaHandler.install()
@@ -195,6 +199,9 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
     }
     DispatchQueue.main.async {
       self.effects = value
+      if let data = try? JSONEncoder().encode(value) {
+        UserDefaults.standard.set(data, forKey: "splayer.native.audio-effects")
+      }
       self.applyEffects()
       invoke.resolve()
     }
@@ -290,12 +297,12 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
     }
   }
 
-  func setSiriMetadata(_ track: [String: Any]) {
+  func setSiriMetadata(_ track: [String: Any], enabled: Bool) {
     setMetadata(MetadataRequest(title: track["title"] as? String ?? "",
       artist: (track["artists"] as? [[String: Any]] ?? []).compactMap { $0["name"] as? String }.joined(separator: " / "),
       album: (track["album"] as? [String: Any])?["name"] as? String ?? "",
       cover: track["coverOriginal"] as? String ?? track["cover"] as? String ?? "",
-      enabled: true, dynamic: false, offset: nil, lines: nil))
+      enabled: enabled, dynamic: false, offset: nil, lines: nil))
   }
 
   private func setMetadata(_ value: MetadataRequest) {
@@ -352,7 +359,7 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
           else if action == "pause" || action == "toggle" { self.resumeAfterInterruption = false; player.pause() }
           else {
             Task { @MainActor in
-              if SiriService.shared.enabled && !SiriService.shared.queue.tracks.isEmpty {
+              if !self.visible && SiriService.shared.enabled && !SiriService.shared.queue.tracks.isEmpty {
                 do { try await SiriService.shared.advance(action == "next" ? 1 : -1) }
                 catch { self.trigger("error", data: ["message": error.localizedDescription]) }
               } else { self.trigger("action", data: ["type": action]) }
@@ -433,7 +440,7 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
     DispatchQueue.main.async {
       if self.player === player {
         Task { @MainActor in
-          if SiriService.shared.enabled && !SiriService.shared.queue.tracks.isEmpty {
+          if !self.visible && SiriService.shared.enabled && !SiriService.shared.queue.tracks.isEmpty {
             do { try await SiriService.shared.advance(1, ended: true) }
             catch { self.trigger("error", data: ["message": error.localizedDescription]) }
           } else { self.trigger("ended", data: [:]) }

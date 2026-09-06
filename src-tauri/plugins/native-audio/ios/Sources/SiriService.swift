@@ -10,6 +10,7 @@ final class SiriService {
   private var preferences: [String: Any] = [:]
   private var library: [[String: Any]] = []
   private var storage: [String: String] = [:]
+  private var frontendStorage: [String: String] = [:]
   private var generation = 0
   private var runtime: SiriRuntime?
   private var lastResult = ""
@@ -32,7 +33,10 @@ final class SiriService {
       kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitOne]
     var item: CFTypeRef?
     if SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess, let data = item as? Data {
-      storage = (try? JSONSerialization.jsonObject(with: data)) as? [String: String] ?? [:]
+      if let saved = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] {
+        storage = saved["storage"] as? [String: String] ?? saved as? [String: String] ?? [:]
+        frontendStorage = saved["frontend"] as? [String: String] ?? storage
+      }
     }
   }
 
@@ -51,8 +55,8 @@ final class SiriService {
   private func saveCredentials() throws {
     let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword,
       kSecAttrService as String: "top.imsyy.splayer.siri", kSecAttrAccount as String: "sessions"]
-    if !enabled { SecItemDelete(query as CFDictionary); storage = [:]; return }
-    let data = try JSONSerialization.data(withJSONObject: storage)
+    if !enabled { SecItemDelete(query as CFDictionary); storage = [:]; frontendStorage = [:]; return }
+    let data = try JSONSerialization.data(withJSONObject: ["storage": storage, "frontend": frontendStorage])
     let attributes: [String: Any] = [kSecValueData as String: data,
       kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly]
     let result = SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
@@ -87,11 +91,14 @@ final class SiriService {
     case "configure":
       let nextPreferences = request["preferences"] as? [String: Any] ?? [:]
       let nextStorage = request["storage"] as? [String: String] ?? [:]
-      if !NSDictionary(dictionary: preferences).isEqual(to: nextPreferences) || storage != nextStorage {
+      if !NSDictionary(dictionary: preferences).isEqual(to: nextPreferences) || frontendStorage != nextStorage {
         generation += 1; runtime?.cancel()
       }
       preferences = nextPreferences
-      storage = nextStorage
+      // 网页没有重新登录或退出时，保留后台接口更新过的凭据。
+      for (key, value) in nextStorage where frontendStorage[key] != value { storage[key] = value }
+      for key in frontendStorage.keys where nextStorage[key] == nil { storage.removeValue(forKey: key) }
+      frontendStorage = nextStorage
       library = request["library"] as? [[String: Any]] ?? []
       try saveCredentials(); try persist()
       return status()
@@ -150,7 +157,7 @@ final class SiriService {
       player.startSource(url, autoPlay: true) { result in continuation.resume(with: result) }
     }
     guard token == generation else { throw SiriFailure("已被新的播放操作取消") }
-    player.setSiriMetadata(track)
+    player.setSiriMetadata(track, enabled: preferences["mediaEnabled"] as? Bool ?? true)
     queue.select(track, replacing: replacing)
     queue.playing = true
     try persistPlayback()

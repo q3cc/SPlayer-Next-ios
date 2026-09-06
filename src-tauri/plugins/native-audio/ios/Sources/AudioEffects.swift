@@ -1,6 +1,6 @@
 import AVFoundation
 
-struct EffectRequest: Decodable {
+struct EffectRequest: Codable {
   let volume: Float
   let speed: Float
   let pitch: Float
