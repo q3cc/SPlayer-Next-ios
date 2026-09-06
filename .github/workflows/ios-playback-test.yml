@@ -94,6 +94,8 @@ jobs:
         run: |
           mkdir -p ios-playback
           if [[ -d ios-playback/playback.xcresult ]]; then
+            xcrun xcresulttool export diagnostics --path ios-playback/playback.xcresult \
+              --output-path ios-playback/diagnostics || true
             xcrun xcresulttool export attachments --path ios-playback/playback.xcresult \
               --output-path ios-playback/screenshots || true
           fi

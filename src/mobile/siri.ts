@@ -51,7 +51,7 @@ const adopt = async (snapshot: SiriSnapshot): Promise<void> => {
 
 /** 合并队列变更，不在每次播放进度更新时发送整份队列。 */
 const syncQueue = async (): Promise<void> => {
-  if (applying || !installed) return;
+  if (applying || !installed || !useSettingsStore().system.siri.enabled) return;
   pendingSync = true;
   if (syncing) return;
   syncing = true;
@@ -104,8 +104,11 @@ export const mobileSiri = {
         mediaEnabled: store.get("media.systemMediaControls"),
       },
       storage,
-      library: JSON.parse(localStorage.getItem("splayer.mobile.library") ?? "[]"),
+      library: settings.system.siri.enabled
+        ? JSON.parse(localStorage.getItem("splayer.mobile.library") ?? "[]")
+        : [],
     });
+    if (installed && settings.system.siri.enabled) await syncQueue();
   },
   async initialize(): Promise<boolean> {
     if (!isTauri() || installed) return false;
