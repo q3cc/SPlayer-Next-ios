@@ -30,7 +30,7 @@ final class PlaybackTests: XCTestCase {
             toggle.coordinate(withNormalizedOffset: CGVector(dx: 1, dy: 1))
                 .withOffset(CGVector(dx: -20, dy: -11)).tap()
             // 触发 XCTest 的系统授权弹窗处理，不直接修改授权状态。
-            app.tap()
+            app.staticTexts["Siri 语音控制"].tap()
             let settled = NSPredicate { _, _ in
                 let authorizationError = app.staticTexts.matching(NSPredicate(
                     format: "label CONTAINS %@ OR label CONTAINS %@",
