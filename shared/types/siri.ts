@@ -14,6 +14,7 @@ export interface SiriSnapshot {
   currentId: string | null;
   position: number;
   playing: boolean;
+  pending?: boolean;
 }
 
 export interface SiriStatus {

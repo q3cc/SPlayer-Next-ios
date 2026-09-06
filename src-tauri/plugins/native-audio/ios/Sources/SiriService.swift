@@ -13,6 +13,7 @@ final class SiriService {
   private var frontendStorage: [String: String] = [:]
   private var generation = 0
   private var runtime: SiriRuntime?
+  private var awaitingPlayback: Int?
   private var lastResult = ""
   var changed: ((String) -> Void)?
   private let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Siri", isDirectory: true)
@@ -110,7 +111,7 @@ final class SiriService {
       return status()
     case "snapshot":
       if ["playing", "paused"].contains(NativeAudioPlugin.shared.snapshot()["state"] as? String ?? "") { checkpoint() }
-      return queue.json
+      return queue.json.merging(["pending": runtime != nil || awaitingPlayback != nil]) { _, next in next }
     case "interrupt":
       generation += 1; runtime?.cancel()
       return queue.json
@@ -156,6 +157,8 @@ final class SiriService {
   func play(_ track: [String: Any], replacing: [[String: Any]]? = nil) async throws {
     generation += 1
     let token = generation
+    awaitingPlayback = token
+    defer { if awaitingPlayback == token { awaitingPlayback = nil } }
     let source = try await request("resolve", track: track)
     guard token == generation, let url = source["url"] as? String else { throw SiriFailure("歌曲地址不可用") }
     let player = NativeAudioPlugin.shared

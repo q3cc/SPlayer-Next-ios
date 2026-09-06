@@ -156,7 +156,14 @@ export const mobileSiri = {
       if (!document.hidden && useSettingsStore().system.siri.enabled)
         void call<SiriSnapshot>({ action: "snapshot" }).then(adopt).catch(console.warn);
     });
-    if (!active) await syncQueue();
-    return !!active;
+    if (!active && !restored.pending) await syncQueue();
+    const latest = await window.api.player.getStatus();
+    return !!(
+      active ||
+      restored.pending ||
+      latest.data?.state === "playing" ||
+      latest.data?.state === "paused" ||
+      latest.data?.state === "loading"
+    );
   },
 };
