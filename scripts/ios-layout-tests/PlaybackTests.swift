@@ -19,6 +19,9 @@ final class PlaybackTests: XCTestCase {
             "Siri 语音控制", XCUIElement.ElementType.switch.rawValue, XCUIElement.ElementType.button.rawValue
         )).firstMatch
         XCTAssertTrue(toggle.waitForExistence(timeout: 15))
+        if ProcessInfo.processInfo.environment["SIRI_SIGNING"] == "present" {
+            XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "当前签名不支持 Siri")).firstMatch.exists)
+        }
         for index in 0..<3 {
             toggle.tap()
             // 触发 XCTest 的系统授权弹窗处理，不直接修改授权状态。

@@ -96,6 +96,7 @@ jobs:
         shell: bash
         env:
           TEST_SCOPE: ${{ inputs.scope }}
+          SIRI_SIGNING: ${{ matrix.siri_signing }}
         run: |
           set -euo pipefail
           test_case="testSenbonzakuraPlaybackAndPiP"
