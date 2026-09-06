@@ -71,6 +71,17 @@ jobs:
           timed 300 xcrun simctl bootstatus "$device_id" -b | tee ios-playback/boot.log
           timed 120 xcrun simctl install "$device_id" "$app_path"
           xcrun simctl status_bar "$device_id" override --time '9:41' --batteryState charged --batteryLevel 100
+      - name: Test missing Siri signing capability
+        timeout-minutes: 2
+        run: |
+          xcrun --sdk iphonesimulator clang -target "$(uname -m)-apple-ios16.0-simulator" \
+            -isysroot "$(xcrun --sdk iphonesimulator --show-sdk-path)" \
+            -fobjc-arc -fblocks -framework Foundation -framework Intents \
+            -I src-tauri/plugins/native-audio/ios/AuthorizationBridge/include \
+            src-tauri/plugins/native-audio/ios/AuthorizationBridge/SiriAuthorization.m \
+            scripts/ios-siri-tests/authorization.m -o "$RUNNER_TEMP/splayer-siri-auth-tests"
+          codesign --force --sign - "$RUNNER_TEMP/splayer-siri-auth-tests"
+          xcrun simctl spawn "$IOS_PLAYBACK_DEVICE" "$RUNNER_TEMP/splayer-siri-auth-tests"
       - name: Play 千本樱 and verify selected feature
         timeout-minutes: 12
         shell: bash

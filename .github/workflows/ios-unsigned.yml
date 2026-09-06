@@ -96,11 +96,6 @@ jobs:
           "$RUNNER_TEMP/splayer-siri-tests"
           swiftc src-tauri/plugins/native-audio/ios/Sources/SiriQueue.swift src-tauri/plugins/native-audio/ios/Sources/SiriRuntime.swift scripts/ios-siri-tests/RuntimeTests.swift -o "$RUNNER_TEMP/splayer-siri-runtime-tests"
           "$RUNNER_TEMP/splayer-siri-runtime-tests" src-tauri/plugins/native-audio/ios/Sources/Resources
-          clang -fobjc-arc -fblocks -framework Foundation -framework Intents \
-            -I src-tauri/plugins/native-audio/ios/AuthorizationBridge/include \
-            src-tauri/plugins/native-audio/ios/AuthorizationBridge/SiriAuthorization.m \
-            scripts/ios-siri-tests/authorization.m -o "$RUNNER_TEMP/splayer-siri-auth-tests"
-          "$RUNNER_TEMP/splayer-siri-auth-tests"
 
       - name: Test native IPA range downloader
         if: matrix.kind == 'ipa'
