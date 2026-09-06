@@ -7,7 +7,7 @@ fn main() {
         "status",
         "visibility",
         "siri",
-        "readMetadata",
+        "read_metadata",
         "register_listener",
         "remove_listener",
     ])

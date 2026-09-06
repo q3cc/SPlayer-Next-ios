@@ -19,11 +19,34 @@ export default defineConfig(
     "**/.git/",
     "**/.vitepress/",
     "native/*/index.d.ts",
+    "src-tauri/plugins/native-audio/ios/Sources/Resources/siri-background.js",
     ".github/scripts/",
   ]),
   tseslint.configs.recommended,
   { languageOptions: { globals: autoImports.globals } },
   eslintPluginVue.configs["flat/recommended"],
+  {
+    files: [
+      "scripts/ios-siri-tests/*.mjs",
+      "src-tauri/plugins/native-audio/ios/Sources/Resources/siri-bootstrap.js",
+    ],
+    rules: { "@typescript-eslint/explicit-function-return-type": "off" },
+  },
+  {
+    files: ["src-tauri/plugins/native-audio/ios/Sources/Resources/siri-bootstrap.js"],
+    languageOptions: {
+      globals: {
+        __siriStorage: "readonly",
+        __siriRandom: "readonly",
+        __siriTimer: "readonly",
+        __siriClearTimer: "readonly",
+        __siriURL: "readonly",
+        __siriHttp: "readonly",
+        __siriUTF8: "readonly",
+        __siriBytes: "readonly",
+      },
+    },
+  },
   {
     files: ["**/*.vue"],
     languageOptions: {

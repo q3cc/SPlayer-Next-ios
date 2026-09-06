@@ -82,7 +82,7 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
     }
   }
 
-  @objc func readMetadata(_ invoke: Invoke) throws {
+  @objc func read_metadata(_ invoke: Invoke) throws {
     let request = try invoke.parseArgs(SourceRequest.self)
     guard let url = request.source.hasPrefix("/") ? URL(fileURLWithPath: request.source) : URL(string: request.source), url.isFileURL else {
       invoke.reject("只读取用户导入的本地音频标签"); return

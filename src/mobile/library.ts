@@ -68,7 +68,7 @@ const trackFromFile = async (path: string): Promise<Track> => {
   const info = await stat(path);
   const tags = isTauri()
     ? await invoke<{ title?: string; artist?: string; album?: string; duration?: number }>(
-        "plugin:native-audio|readMetadata",
+        "plugin:native-audio|read_metadata",
         { source: path, autoPlay: false },
       ).catch(() => ({}) as { title?: string; artist?: string; album?: string; duration?: number })
     : {};
