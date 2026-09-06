@@ -23,6 +23,7 @@ struct LyricColor: Decodable, Equatable {
 }
 
 struct LyricStyle: Decodable, Equatable {
+  let frameRate: Double?
   let fontSize: Double
   let playedColor: LyricColor
   let unplayedColor: LyricColor
@@ -82,6 +83,8 @@ class LyricPipPlugin: Plugin, AVPictureInPictureControllerDelegate,
   private var discAnchorTime = ProcessInfo.processInfo.systemUptime
   private let lyricRenderer = PipLyricRenderer()
   private let previewRenderer = PipLyricRenderer()
+  private var appearanceView: SystemAppearanceView?
+  private var frameInterval: Double { LyricTimeline.frameInterval(content?.style.frameRate) }
 
   private var displayReadiness: String {
     if #available(iOS 17.4, *) { return String(displayLayer.isReadyForDisplay) }
@@ -90,6 +93,25 @@ class LyricPipPlugin: Plugin, AVPictureInPictureControllerDelegate,
 
   @objc public func status(_ invoke: Invoke) {
     invoke.resolve(["active": controller?.isPictureInPictureActive ?? false])
+  }
+
+  @objc public func appearance(_ invoke: Invoke) {
+    DispatchQueue.main.async {
+      guard let parent = self.manager.viewController?.view else {
+        invoke.reject("应用窗口尚未准备好")
+        return
+      }
+      if self.appearanceView == nil {
+        let observer = SystemAppearanceView(frame: .zero)
+        observer.isUserInteractionEnabled = false
+        observer.changed = { [weak self] dark in
+          self?.trigger("appearance", data: ["dark": dark])
+        }
+        parent.insertSubview(observer, at: 0)
+        self.appearanceView = observer
+      }
+      invoke.resolve(["dark": parent.traitCollection.userInterfaceStyle == .dark])
+    }
   }
 
   @objc public func keepawake(_ invoke: Invoke) throws {
@@ -300,7 +322,7 @@ class LyricPipPlugin: Plugin, AVPictureInPictureControllerDelegate,
     }
   }
 
-  /// 封面旋转使用二十帧；暂停、隐藏或无封面时保留低频调度。
+  /// 动画按用户帧率调度；暂停或隐藏时停止高频绘制。
   private func updateTimer() {
     timer?.invalidate()
     timer = nil
@@ -310,7 +332,7 @@ class LyricPipPlugin: Plugin, AVPictureInPictureControllerDelegate,
     let now = ProcessInfo.processInfo.systemUptime
     var delay = max(0.2, 1 - (now - lastFrameTime))
     if playing && coverImage != nil {
-      delay = max(0.005, 0.05 - (now - lastFrameTime))
+      delay = max(0.001, frameInterval - (now - lastFrameTime))
     }
     if playing && speed > 0, let content = content {
       let time = currentPosition() + content.offset
@@ -320,11 +342,11 @@ class LyricPipPlugin: Plugin, AVPictureInPictureControllerDelegate,
       if let current = LyricTimeline.primary(content.lines, at: time), current.end + 3000 > time {
         delay = min(delay, max(0.02, (current.end + 3000 - time) / (1000 * speed)))
         if time < current.end || lyricRenderer.isAnimating {
-          delay = min(delay, max(0.005, 0.05 - (now - lastFrameTime)))
+          delay = min(delay, max(0.001, frameInterval - (now - lastFrameTime)))
         }
       }
     }
-    if lyricRenderer.isAnimating { delay = min(delay, 0.05) }
+    if lyricRenderer.isAnimating { delay = min(delay, max(0.001, frameInterval - (now - lastFrameTime))) }
     let nextTimer = Timer(timeInterval: delay, repeats: false) { [weak self] _ in
       self?.render()
       self?.updateTimer()
@@ -359,9 +381,9 @@ class LyricPipPlugin: Plugin, AVPictureInPictureControllerDelegate,
     let text = active?.rows ?? [title, info]
     let primary = active?.primary ?? 0
     let words = active?.words ?? []
-    let animateDisc = playing && coverImage != nil && now - lastFrameTime >= 0.045
+    let animateDisc = playing && coverImage != nil && now - lastFrameTime >= frameInterval - 0.001
     let animateLyrics = (active != nil && time != lastLyricTime || lyricRenderer.isAnimating) &&
-      (!playing || force || now - lastFrameTime >= 0.045)
+      (force || now - lastFrameTime >= frameInterval - 0.001)
     if text != lastText || primary != lastPrimary || cachedFrame == nil || animateDisc || animateLyrics {
       let angle = discAngle + (playing ? (now - discAnchorTime) * .pi / 10 : 0)
       guard let buffer = drawFrame(text, primary: primary, angle: CGFloat(angle), words: words, time: time, line: active) else { return }

@@ -1,3 +1,3 @@
 [default]
 description = "允许主窗口控制歌词画中画并接收播放事件"
-permissions = ["allow-start", "allow-stop", "allow-update", "allow-sync", "allow-status", "allow-preview", "allow-discard", "allow-keepawake", "allow-register-listener", "allow-remove-listener"]
+permissions = ["allow-start", "allow-stop", "allow-update", "allow-sync", "allow-status", "allow-preview", "allow-discard", "allow-keepawake", "allow-appearance", "allow-register-listener", "allow-remove-listener"]

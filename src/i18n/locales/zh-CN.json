@@ -1234,7 +1234,11 @@
       "label": "开启桌面歌词",
       "description": "先播放歌曲。小窗可拖动、缩放，关闭不影响播放。"
     },
-    "lyricPipFontSize": { "label": "字号", "description": "长句超出宽度时省略。" },
+    "lyricPipFontSize": { "label": "字号", "description": "长句随歌词时间横向滚动。" },
+    "lyricPipFrameRate": {
+      "label": "歌词帧率",
+      "description": "控制小窗歌词和唱片动画的帧率。越高越流畅，也更耗电；默认 20 FPS。"
+    },
     "lyricPipPlayedColor": { "label": "高亮颜色", "description": "当前句或已唱部分。" },
     "lyricPipUnplayedColor": { "label": "普通颜色", "description": "未唱部分和附加歌词。" },
     "lyricPipPreview": {

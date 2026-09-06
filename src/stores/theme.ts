@@ -43,13 +43,21 @@ export const useThemeStore = defineStore(
 
     /** 系统暗色偏好 */
     const systemDark = usePreferredDark();
+    const nativeSystemDark = ref<boolean | null>(null);
+    let appearanceStarted = false;
+    let disposed = false;
+    let stopAppearance: (() => void) | undefined;
+    onScopeDispose(() => {
+      disposed = true;
+      stopAppearance?.();
+    });
 
     /** 当前是否为暗色 */
     const isDark = computed(() => {
       if (effectiveStyle.value === "image") return true;
       if (mode.value === "dark") return true;
       if (mode.value === "light") return false;
-      return systemDark.value;
+      return nativeSystemDark.value ?? systemDark.value;
     });
 
     /** 当前使用的主色 HEX */
@@ -111,6 +119,20 @@ export const useThemeStore = defineStore(
 
     /** 初始化 */
     const init = (): void => {
+      if (import.meta.env.MODE === "mobile" && !appearanceStarted) {
+        appearanceStarted = true;
+        void import("@/mobile/systemAppearance")
+          .then(({ observeSystemAppearance }) =>
+            observeSystemAppearance((dark) => {
+              nativeSystemDark.value = dark;
+            }),
+          )
+          .then((stop) => {
+            if (disposed) stop();
+            else stopAppearance = stop;
+          })
+          .catch((error) => console.warn("[theme] 原生外观监听失败", error));
+      }
       if (typeof customColor.value !== "string" || !customColor.value.startsWith("#")) {
         customColor.value = DEFAULT_PRIMARY;
       }

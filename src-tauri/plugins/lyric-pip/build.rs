@@ -8,6 +8,7 @@ fn main() {
         "preview",
         "discard",
         "keepawake",
+        "appearance",
         "register_listener",
         "remove_listener",
     ])

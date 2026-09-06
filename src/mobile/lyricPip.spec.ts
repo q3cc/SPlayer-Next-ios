@@ -53,6 +53,7 @@ describe("歌词画中画", () => {
       cover: "",
       offset: 250,
       style: {
+        frameRate: 20,
         fontSize: 24,
         playedColor: { r: 254, g: 121, b: 113, a: 1 },
         unplayedColor: { r: 255, g: 255, b: 255, a: 1 },
@@ -81,10 +82,27 @@ describe("歌词画中画", () => {
         unplayedColor: "rgb(12, 34, 56)",
       }).style,
     ).toEqual({
+      frameRate: 20,
       fontSize: 36,
       playedColor: { r: 0, g: 255, b: 0, a: 1 },
       unplayedColor: { r: 12, g: 34, b: 56, a: 1 },
     });
+  });
+
+  it("帧率配置下发到原生，旧配置默认 20，非法值回退", async () => {
+    const { pipContent } = await import("./lyricPip");
+    for (const pipFrameRate of [5, 10, 15, 20, 30, 60]) {
+      expect(
+        pipContent(value, { doubleLine: false, showTranslation: true, pipFrameRate }).style
+          .frameRate,
+      ).toBe(pipFrameRate);
+    }
+    for (const pipFrameRate of [0, -1, 120, Number.NaN]) {
+      expect(
+        pipContent(value, { doubleLine: false, showTranslation: true, pipFrameRate }).style
+          .frameRate,
+      ).toBe(20);
+    }
   });
 
   it("设置预览不打开画中画，释放预览不停止播放", async () => {

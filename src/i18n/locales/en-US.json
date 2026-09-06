@@ -1246,7 +1246,14 @@
       "label": "Enable Desktop Lyric",
       "description": "Play a song first. Move or resize the window; closing it keeps music playing."
     },
-    "lyricPipFontSize": { "label": "Font size", "description": "Long lines are truncated to fit." },
+    "lyricPipFontSize": {
+      "label": "Font size",
+      "description": "Long lines scroll along the lyric timeline."
+    },
+    "lyricPipFrameRate": {
+      "label": "Lyric frame rate",
+      "description": "Controls lyric and disc animation in the floating window. Higher rates are smoother but use more battery. Default: 20 FPS."
+    },
     "lyricPipPlayedColor": {
       "label": "Highlight color",
       "description": "The current line or sung words."

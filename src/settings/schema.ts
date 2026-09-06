@@ -60,6 +60,13 @@ const mobileExternalLyric: SettingCategory = {
           component: LyricPipPreview,
           fullWidth: true,
         },
+        {
+          key: "lyricPipFrameRate",
+          type: "select" as const,
+          binding: { store: "settings" as const, path: "system.desktopLyric.pipFrameRate" },
+          defaultValue: 20,
+          options: [5, 10, 15, 20, 30, 60].map((value) => ({ value, label: `${value} FPS` })),
+        },
         ...section.items
           .filter((item) =>
             [

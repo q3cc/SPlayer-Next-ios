@@ -98,6 +98,8 @@ export type DesktopLyricAlign = "left" | "center" | "right" | "justify";
 
 /** 桌面歌词配置 */
 export interface DesktopLyricSettings {
+  /** iOS 小窗绘制帧率 */
+  pipFrameRate?: number;
   /** 字号 */
   fontSize: number;
   /** 字重 */
