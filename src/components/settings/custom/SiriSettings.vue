@@ -60,6 +60,7 @@ onMounted(refresh);
         </p>
       </div>
       <SSwitch
+        aria-label="Siri 语音控制"
         :model-value="settings.system.siri.enabled"
         :disabled="busy"
         @update:model-value="change('enabled', $event)"
@@ -109,6 +110,8 @@ onMounted(refresh);
       <SButton @click="refresh">刷新状态</SButton>
     </div>
     <p v-if="status?.lastResult" class="text-sm">{{ status.lastResult }}</p>
-    <p v-if="error" role="alert" class="text-sm text-red-500">{{ error }}</p>
+    <p v-if="error" role="alert" aria-label="Siri 授权错误" class="text-sm text-red-500">
+      {{ error }}
+    </p>
   </div>
 </template>

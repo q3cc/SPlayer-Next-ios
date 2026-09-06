@@ -1,6 +1,42 @@
 import XCTest
 
 final class PlaybackTests: XCTestCase {
+    func testSiriSettingsEnable() {
+        continueAfterFailure = false
+        let app = XCUIApplication(bundleIdentifier: "top.imsyy.splayer-next.ios")
+        addUIInterruptionMonitor(withDescription: "Siri permission") { alert in
+            for title in ["Allow", "允许", "OK", "好"] {
+                if alert.buttons[title].exists { alert.buttons[title].tap(); return true }
+            }
+            return false
+        }
+        app.launch()
+        XCUIDevice.shared.orientation = .landscapeLeft
+        XCTAssertTrue(app.buttons["Open Siri settings test"].waitForExistence(timeout: 45))
+        app.buttons["Open Siri settings test"].tap()
+        let toggle = app.descendants(matching: .any).matching(identifier: "Siri 语音控制").firstMatch
+        XCTAssertTrue(toggle.waitForExistence(timeout: 15))
+        for index in 0..<3 {
+            toggle.tap()
+            // 触发 XCTest 的系统授权弹窗处理，不直接修改授权状态。
+            app.tap()
+            let settled = NSPredicate { _, _ in
+                toggle.exists && toggle.isEnabled
+            }
+            expectation(for: settled, evaluatedWith: app)
+            waitForExpectations(timeout: 25)
+            XCTAssertEqual(app.state, .runningForeground)
+            capture("siri-toggle-\(index)")
+        }
+        app.terminate()
+        app.launch()
+        XCTAssertTrue(app.buttons["Open Siri settings test"].waitForExistence(timeout: 45))
+        app.buttons["Open Siri settings test"].tap()
+        XCTAssertTrue(toggle.waitForExistence(timeout: 15))
+        XCTAssertEqual(app.state, .runningForeground)
+        capture("siri-relaunch")
+    }
+
     func testNativeEqualizerPlayback() {
         continueAfterFailure = false
         let app = XCUIApplication(bundleIdentifier: "top.imsyy.splayer-next.ios")

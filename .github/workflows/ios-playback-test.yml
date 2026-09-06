@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       scope:
-        description: "测试范围：原生均衡器或歌词小窗"
+        description: "测试范围：Siri 开关、原生均衡器或歌词小窗"
         type: choice
-        options: [equalizer, pip]
+        options: [siri, equalizer, pip]
         default: pip
       evidence_run_id:
         description: "仅复核已有测试截图时填写运行 ID；留空则实际播放"
@@ -26,6 +26,10 @@ jobs:
     if: inputs.evidence_run_id == ''
     runs-on: macos-15
     timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        siri_signing: ${{ fromJSON(inputs.scope == 'siri' && '["absent", "present"]' || '["absent"]') }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -66,6 +70,11 @@ jobs:
           echo "IOS_PLAYBACK_DEVICE=$device_id" >> "$GITHUB_ENV"
           app_path="$(find src-tauri/gen/apple/build -type d -name '*.app' ! -path '*.xcarchive/*' -print -quit)"
           test -d "$app_path"
+          if [[ "${{ matrix.siri_signing }}" == present ]]; then
+            entitlement_file="$(find src-tauri/gen/apple -name '*_iOS.entitlements' -print -quit)"
+            codesign --force --sign - --entitlements "$entitlement_file" "$app_path"
+          fi
+          codesign -d --entitlements - "$app_path" > ios-playback/signing-entitlements.plist 2> ios-playback/signing.log || true
           timed 30 xcrun simctl shutdown "$device_id" || true
           timed 30 xcrun simctl boot "$device_id"
           timed 300 xcrun simctl bootstatus "$device_id" -b | tee ios-playback/boot.log
@@ -92,6 +101,8 @@ jobs:
           test_case="testSenbonzakuraPlaybackAndPiP"
           if [[ "$TEST_SCOPE" == "equalizer" ]]; then
             test_case="testNativeEqualizerPlayback"
+          elif [[ "$TEST_SCOPE" == "siri" ]]; then
+            test_case="testSiriSettingsEnable"
           fi
           xcodegen generate --spec scripts/ios-layout-tests/project.yml
           xcodebuild test -project scripts/ios-layout-tests/SPlayerLayoutTests.xcodeproj \
@@ -120,14 +131,14 @@ jobs:
           fi
           tail -100 ios-playback/test.log 2>/dev/null || true
       - name: Verify PiP screenshots contain visible content
-        if: always() && env.IOS_PLAYBACK_DEVICE != '' && inputs.scope != 'equalizer'
+        if: always() && env.IOS_PLAYBACK_DEVICE != '' && inputs.scope == 'pip'
         run: |
           python3 -m pip install --target "$RUNNER_TEMP/pip-image-check" 'Pillow>=12,<13'
           PYTHONPATH="$RUNNER_TEMP/pip-image-check" python3 scripts/ios-layout-tests/check-pip-screenshots.py ios-playback/screenshots
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: iPad-Senbonzakura-PiP-${{ github.sha }}
+          name: iPad-Senbonzakura-PiP-${{ github.sha }}-${{ matrix.siri_signing }}
           path: ios-playback
           if-no-files-found: warn
           retention-days: 7

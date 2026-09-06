@@ -6,6 +6,7 @@ import { useStatusStore } from "@/stores/status";
 import { useSettingsStore } from "@/stores/settings";
 import { CURRENT_AGREEMENT_VERSION } from "@shared/constants/agreement";
 import { mobileLyricPip } from "./lyricPip";
+import { useSettingsDialog } from "@/settings/useSettingsDialog";
 import type { PlayerStatus } from "@shared/types/player";
 
 const delay = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
@@ -43,6 +44,11 @@ export const installPlaybackTest = async (): Promise<void> => {
     panel.append(element);
     return element;
   };
+  button("Open Siri settings test", async () => {
+    useSettingsDialog().show("siri");
+    panel.style.top = "auto";
+    panel.style.bottom = "10px";
+  });
   button("Play Senbonzakura test", async () => {
     await settings.setSystem("player.equalizer.bands", [0, 0, 0, 0, 0, 6, 0, 0, 0, 0]);
     await settings.setSystem("player.equalizer.preamp", -6);
