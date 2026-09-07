@@ -97,7 +97,7 @@ const searchMobile = (keywords: string, page: number, limit: number, searchType:
       selectors: {},
       vec_selectors: [],
     },
-    { session: false },
+    { session: false, auth: false },
   );
 
 const searchSongs = async (keywords: string, page: number, limit: number) => {

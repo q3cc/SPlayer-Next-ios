@@ -4,12 +4,7 @@
  * 通过 music.UserInfo.userInfoServer / GetLoginUserInfo 获取用户信息
  */
 
-import {
-  getQQMusicCookies,
-  getQQMusicUin,
-  qmRequest,
-  refreshQQMusicCredential,
-} from "../core/request";
+import { getQQMusicCookies, getQQMusicUin, qmRequest, refreshQMCredential } from "../core/request";
 import { normalizeQQMusicVip, type QQMusicVipData } from "../core/vip";
 import { coreLog } from "@main/utils/logger";
 import type { QMModule } from "../core/types";
@@ -79,7 +74,7 @@ const userDetail: QMModule = async (_params) => {
     if (
       error instanceof Error &&
       error.message.startsWith("QM API 错误:") &&
-      (await refreshQQMusicCredential())
+      (await refreshQMCredential())
     ) {
       return fetchCgiProfile();
     }
