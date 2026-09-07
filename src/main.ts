@@ -74,11 +74,12 @@ const startApp = async (): Promise<void> => {
   // 挂载应用
   app.mount("#app");
   reportBootStage("vue-mounted");
-  void dismissSplash().then(() => {
+  await dismissSplash();
+  {
     if (import.meta.env.VITE_MOBILE_SMOKE === "1") {
       void import("./mobile/smoke").then(({ runMobileSmokeTest }) => runMobileSmokeTest());
     }
-  });
+  }
   // 初始化播放器与冷启动分发
   bootstrapPlayback()
     .then(async () => {

@@ -1,26 +1,12 @@
-/** 等待 Next 笔画完成，不等待无限循环的 Logo 动画。 */
+/** 沿用原版最短展示时间，保留 WebView 淡出超时和启动失败入口。 */
 export const dismissSplash = async (): Promise<void> => {
   const root = document.getElementById("app-loading");
   if (!root) return;
   const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-  const letters = [...root.querySelectorAll<SVGElement>(".splash-next .letter")];
-  const animations = letters.flatMap((letter) => letter.getAnimations?.() ?? []);
   if (!reducedMotion) {
-    const fallback = animations.length
-      ? 2500
-      : Math.max(0, 2050 - (performance.now() - (window.__splashStart ?? 0)));
-    let timeout: ReturnType<typeof setTimeout> | undefined;
-    const deadline = new Promise<void>((resolve) => {
-      timeout = setTimeout(resolve, fallback);
-    });
-    // WebView 在后台可能暂停动画，必须有退出上限。
-    await (animations.length
-      ? Promise.race([
-          Promise.all(animations.map((animation) => animation.finished.catch(() => undefined))),
-          deadline,
-        ])
-      : deadline);
-    clearTimeout(timeout);
+    await new Promise<void>((resolve) =>
+      setTimeout(resolve, Math.max(0, 1100 - performance.now())),
+    );
   }
   if (root.classList.contains("boot-failed")) return;
   root.classList.add("hidden");
