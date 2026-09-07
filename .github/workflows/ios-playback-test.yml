@@ -60,7 +60,7 @@ jobs:
           if [[ "${{ matrix.siri_signing }}" == present ]]; then
             export SPLAYER_SIRI_SIMULATOR_ENTITLEMENTS=1
           fi
-          VITE_MOBILE_PLAYBACK_TEST=1 pnpm tauri ios build --debug --ci --no-sign --target "$target" \
+          VITE_MOBILE_PLAYBACK_TEST=1 pnpm tauri ios build --ci --no-sign --target "$target" \
             2>&1 | tee ios-playback/build.log
       - name: Boot and install on iPad
         timeout-minutes: 10

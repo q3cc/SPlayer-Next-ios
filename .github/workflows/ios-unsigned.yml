@@ -48,11 +48,10 @@ jobs:
             name: Unsigned iPhone and iPad IPA
             rust_targets: aarch64-apple-ios
             rust_cache_key: ""
-          # 按实机测试流程临时停用模拟器任务，保留下面的测试步骤以便恢复。
-          # - kind: smoke
-          #   name: iPad startup smoke test
-          #   rust_targets: aarch64-apple-ios-sim
-          #   rust_cache_key: debug
+          - kind: smoke
+            name: iPad Release startup smoke test
+            rust_targets: aarch64-apple-ios-sim
+            rust_cache_key: release-smoke
 
     steps:
       - name: Checkout
@@ -172,7 +171,7 @@ jobs:
           fi
           echo "IOS_SIMULATOR_TARGET=$simulator_target" >> "$GITHUB_ENV"
           echo "IOS_SIMULATOR_DEVICE=$device_id" >> "$GITHUB_ENV"
-          VITE_MOBILE_SMOKE=1 pnpm tauri ios build --debug --ci --no-sign --target "$simulator_target"
+          VITE_MOBILE_SMOKE=1 pnpm tauri ios build --ci --no-sign --target "$simulator_target"
 
       - name: Smoke test first and second launch on iPad
         if: matrix.kind == 'smoke'
@@ -325,6 +324,7 @@ jobs:
           test_status=0
           xcodebuild test -project scripts/ios-layout-tests/SPlayerLayoutTests.xcodeproj \
             -scheme LayoutTests -destination "platform=iOS Simulator,id=$IOS_SIMULATOR_DEVICE" \
+            -only-testing:LayoutTests/LayoutTests \
             -parallel-testing-enabled NO -resultBundlePath ios-smoke/layout.xcresult \
             CODE_SIGNING_ALLOWED=NO > ios-smoke/layout-tests.log 2>&1 || test_status=$?
           xcrun xcresulttool export attachments --path ios-smoke/layout.xcresult \

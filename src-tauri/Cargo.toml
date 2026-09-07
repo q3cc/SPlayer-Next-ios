@@ -38,4 +38,6 @@ default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]
 
 [patch.crates-io]
+# 上游 #1245：场景配置必须延迟释放，否则 Release 包在 UIKit 接管窗口前访问悬空指针。
+tao = { git = "https://github.com/tauri-apps/tao", rev = "f2163508104413ef0609178dcebdd5803b496211" }
 tauri-plugin-dialog = { path = "vendor/tauri-plugin-dialog-2.7.3" }
