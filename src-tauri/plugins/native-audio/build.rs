@@ -5,6 +5,7 @@ fn main() {
         "configure",
         "metadata",
         "status",
+        "system_volume",
         "visibility",
         "siri",
         "read_metadata",

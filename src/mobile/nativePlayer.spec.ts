@@ -1,4 +1,5 @@
 import { beforeEach, expect, it, vi } from "vitest";
+import { readFileSync } from "node:fs";
 import type { PlayerApi, PlayerStatus } from "@shared/types/player";
 import { createNativePlayer } from "./nativePlayer";
 
@@ -28,6 +29,16 @@ const status: PlayerStatus = {
 beforeEach(() => {
   mocks.invoke.mockReset().mockResolvedValue(status);
   mocks.listener.mockReset().mockResolvedValue({ unregister: vi.fn() });
+});
+
+it("系统音量命令已注册且默认向移动端开放", () => {
+  const build = readFileSync("src-tauri/plugins/native-audio/build.rs", "utf8");
+  const permissions = readFileSync(
+    "src-tauri/plugins/native-audio/permissions/default.toml",
+    "utf8",
+  );
+  expect(build).toContain('"system_volume"');
+  expect(permissions).toContain('"allow-system-volume"');
 });
 
 it("音量读取与用户调节走系统音量接口，不修改音效增益", async () => {
