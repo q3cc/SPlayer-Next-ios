@@ -67,7 +67,7 @@ onMounted(refresh);
       />
     </div>
     <label class="flex items-center justify-between gap-4">
-      默认音乐来源
+      同等条件下优先来源
       <SSelect
         :model-value="settings.system.siri.source"
         :options="[
@@ -79,6 +79,10 @@ onMounted(refresh);
         @update:model-value="change('source', $event as SiriSettings['source'])"
       />
     </label>
+    <p class="text-xs text-muted-foreground">
+      在线搜索会同时查询三个平台，准确匹配歌曲后优先使用已登录 VIP
+      的平台；无法获取完整版时尝试换源。
+    </p>
     <label class="flex items-center justify-between gap-4">
       搜索范围
       <SSelect

@@ -145,6 +145,7 @@ final class SiriService {
     var value: [String: Any] = ["action": action, "query": query, "artist": artist,
       "source": configured == "current" ? preferences["source"] as? String ?? "netease" : configured,
       "scope": settings["searchScope"] as? String ?? "localFirst", "library": library,
+      "vipSources": preferences["vipSources"] as? [String] ?? [],
       "quality": preferences["quality"] as? String ?? "hq", "allowTrial": preferences["allowTrial"] as? Bool ?? false]
     if let track = track { value["track"] = track }
     let token = generation
@@ -175,14 +176,16 @@ final class SiriService {
     awaitingPlayback = token
     defer { if awaitingPlayback == token { awaitingPlayback = nil } }
     let source = try await request("resolve", track: track)
+    let resolvedTrack = source["track"] as? [String: Any] ?? track
     guard token == generation, let url = source["url"] as? String else { throw SiriFailure("歌曲地址不可用") }
     let player = NativeAudioPlugin.shared
     _ = try await withCheckedThrowingContinuation { continuation in
       player.startSource(url, autoPlay: true) { result in continuation.resume(with: result) }
     }
     guard token == generation else { throw SiriFailure("已被新的播放操作取消") }
-    player.setSiriMetadata(track, enabled: preferences["mediaEnabled"] as? Bool ?? true)
-    queue.select(track, replacing: replacing)
+    player.setSiriMetadata(resolvedTrack, enabled: preferences["mediaEnabled"] as? Bool ?? true)
+    let resolvedQueue = (replacing ?? queue.tracks).map { SiriQueue.key($0) == SiriQueue.key(track) ? resolvedTrack : $0 }
+    queue.select(resolvedTrack, replacing: resolvedQueue)
     queue.playing = true
     try persistPlayback()
     changed?(try encode(queue.json))

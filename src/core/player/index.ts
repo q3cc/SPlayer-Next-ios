@@ -499,6 +499,21 @@ export const hasReachedSeekTarget = (position: number): boolean => {
 /** 当前是否正在 seek */
 export const isSeeking = (): boolean => seekTarget !== null;
 
+/** 原生 Siri 已开始播放时，只取消网页旧任务，不触碰正在播放的音源。 */
+export const adoptNativePlayback = (): void => {
+  loadToken++;
+  trackToken++;
+  seekTarget = null;
+  consecutiveFailures = 0;
+  playback.setSeeking(false);
+  abLoop.reset();
+  cacheScheduler.cancel();
+  const status = useStatusStore();
+  status.trackLoading = false;
+  status.currentSource = null;
+  status.fmMode = false;
+};
+
 /**
  * 跳转到指定播放位置
  * @param posMs - 目标位置（毫秒）

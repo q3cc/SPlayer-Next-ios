@@ -5,6 +5,11 @@ import { getSessionCookies } from "./shims/sessions";
 import { useSettingsStore } from "@/stores/settings";
 import { useStatusStore } from "@/stores/status";
 import { useMediaStore } from "@/stores/media";
+import { useDataStore } from "@/stores/data";
+import { useUserStore } from "@/stores/user";
+import * as playback from "@/services/playback";
+import * as lyrics from "@/services/lyric/loader";
+import { adoptNativePlayback } from "@/core/player";
 import * as playbackQueue from "@/stores/queue";
 import type { SiriSnapshot, SiriStatus } from "@shared/types/siri";
 import type { Track } from "@shared/types/player";
@@ -17,35 +22,56 @@ const call = async <T>(value: Record<string, unknown>): Promise<T> => {
 };
 const key = (track: Track): string => `${track.source}:${track.id}`;
 let revision = 0;
-let applying = false;
+let applying = 0;
 let installed = false;
 let pendingSync = false;
 let syncing = false;
+let adoption = 0;
+let lyricTrack: string | null = null;
 
 const adopt = async (snapshot: SiriSnapshot): Promise<void> => {
   if (snapshot.revision < revision) return;
   revision = snapshot.revision;
+  const token = ++adoption;
   const current = snapshot.queue.findIndex((track) => key(track) === snapshot.currentId);
   if (current < 0) return;
-  applying = true;
+  applying++;
   try {
+    const native = (await window.api.player.getStatus()).data;
+    if (token !== adoption || snapshot.revision < revision) return;
     const status = useStatusStore();
     const track = snapshot.queue[current];
-    const changed = !status.currentTrack || key(status.currentTrack) !== key(track);
+    const media = useMediaStore();
+    const changed = !media.track || key(media.track) !== key(track);
+    if (changed || status.trackLoading || lyricTrack === null) adoptNativePlayback();
     playbackQueue.setQueue(snapshot.queue);
     status.playIndex = current;
-    status.position = snapshot.position;
-    status.state = snapshot.playing ? "playing" : "paused";
+    status.trackLoading = false;
+    status.position = native?.position ?? snapshot.position;
+    status.duration = native?.duration || track.duration || 0;
+    status.state =
+      native && native.state !== "idle" ? native.state : snapshot.playing ? "playing" : "paused";
+    playback.setSeeking(false);
+    playback.setDuration(status.duration);
+    playback.setSpeed(native?.speed ?? status.speed ?? 1);
+    playback.setPlaying(status.state === "playing");
+    playback.setCurrentTime(status.position, { force: true });
     if (changed) {
-      const media = useMediaStore();
+      media.detail = null;
       media.setTrack(track);
       media.setPlaybackContext(undefined);
-      const lyrics = await import("@/services/lyric/loader");
-      void lyrics.loadForTrack(null);
+    }
+    // 冷启动时队列可能已恢复，但歌词没有持久化，仍须加载；不能重新 load 音源。
+    if (changed || lyricTrack !== key(track)) {
+      lyricTrack = key(track);
+      void lyrics.loadForTrack(media.detail).then(() => {
+        if (token === adoption)
+          media.updateLyricIndex(playback.getCurrentTime() + (status.lyricOffsetMs ?? 0));
+      });
     }
     await nextTick();
   } finally {
-    applying = false;
+    applying--;
   }
 };
 
@@ -102,6 +128,12 @@ export const mobileSiri = {
         repeatMode: useStatusStore().repeatMode,
         shuffleMode: useStatusStore().shuffleMode,
         mediaEnabled: store.get("media.systemMediaControls"),
+        vipSources: [
+          ...(useUserStore().profile?.vipType ? ["netease"] : []),
+          ...(["qqmusic", "kugou"] as const).filter(
+            (source) => useDataStore().getPlatformProfile(source)?.isVip,
+          ),
+        ],
       },
       storage,
       library: settings.system.siri.enabled
@@ -144,6 +176,8 @@ export const mobileSiri = {
         useStatusStore().repeatMode,
         useStatusStore().shuffleMode,
         useSettingsStore().system.media.systemMediaControls,
+        useUserStore().profile,
+        useDataStore().platformProfiles,
       ],
       () => void mobileSiri.configure().catch(console.warn),
       { deep: true },

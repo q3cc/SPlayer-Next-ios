@@ -90,6 +90,7 @@ jobs:
         if: matrix.kind == 'ipa'
         run: |
           python3 scripts/ios-siri-tests/test_manifest.py
+          pnpm vitest run src/mobile/siri.spec.ts src/mobile/siri/searchMatching.spec.ts src/mobile/siri/background.spec.ts src/mobile/nativePlayer.spec.ts
           pnpm vite build --config vite.siri.config.ts --mode mobile
           node scripts/ios-siri-tests/background.test.mjs
           swiftc src-tauri/plugins/native-audio/ios/Sources/SiriQueue.swift src-tauri/plugins/native-audio/ios/Sources/SiriSelection.swift scripts/ios-siri-tests/main.swift -o "$RUNNER_TEMP/splayer-siri-tests"

@@ -152,6 +152,7 @@ for (const compressed of [false, true]) {
     assert.deepEqual(await run({ action: "resolve", track }, fixture(item, compressed)), {
       url: item.url,
       isTrial: false,
+      track,
     });
   });
 }
