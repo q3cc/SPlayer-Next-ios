@@ -36,6 +36,7 @@ objc2-avf-audio = { version = "0.3.2", default-features = false, features = ["AV
 [features]
 default = ["custom-protocol"]
 custom-protocol = ["tauri/custom-protocol"]
+startup-smoke = []
 
 [patch.crates-io]
 # 上游 #1245：场景配置必须延迟释放，否则 Release 包在 UIKit 接管窗口前访问悬空指针。

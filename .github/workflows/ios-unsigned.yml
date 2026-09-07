@@ -171,7 +171,7 @@ jobs:
           fi
           echo "IOS_SIMULATOR_TARGET=$simulator_target" >> "$GITHUB_ENV"
           echo "IOS_SIMULATOR_DEVICE=$device_id" >> "$GITHUB_ENV"
-          VITE_MOBILE_SMOKE=1 pnpm tauri ios build --ci --no-sign --target "$simulator_target"
+          VITE_MOBILE_SMOKE=1 pnpm tauri ios build --ci --no-sign --features startup-smoke --target "$simulator_target"
 
       - name: Smoke test first and second launch on iPad
         if: matrix.kind == 'smoke'
