@@ -2,9 +2,14 @@ import { mount } from "@vue/test-utils";
 import { createI18n } from "vue-i18n";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import SettingsSearch from "./SettingsSearch.vue";
+import zhCN from "@/i18n/locales/zh-CN.json";
+import enUS from "@/i18n/locales/en-US.json";
 
 vi.mock("@/settings/schema", () => ({
-  settingsSchema: [{ id: "test", sections: [{ items: [{ key: "volume" }] }] }],
+  settingsSchema: [
+    { id: "test", sections: [{ items: [{ key: "volume" }] }] },
+    { id: "siri", sections: [{ items: [{ key: "siriSettings" }] }] },
+  ],
 }));
 
 /** 创建只包含搜索交互的设置组件。 */
@@ -19,7 +24,8 @@ const createWrapper = () =>
             "zh-CN": {
               settings: {
                 search: "搜索设置",
-                group: { test: "播放" },
+                group: { test: "播放", siri: zhCN.settings.group.siri },
+                siriSettings: zhCN.settings.siriSettings,
                 volume: { label: "音量", description: "调整音量" },
               },
               common: { noData: "无结果" },
@@ -42,6 +48,16 @@ const createWrapper = () =>
 afterEach(() => vi.useRealTimers());
 
 describe("设置搜索结果显示", () => {
+  it("Siri 搜索使用本地化文案并导航到对应设置项", async () => {
+    const wrapper = createWrapper();
+    await wrapper.get("input").setValue("Siri");
+    expect(wrapper.text()).toContain("Siri 语音控制");
+    expect(wrapper.text()).not.toContain("settings.siriSettings");
+    expect(enUS.settings.siriSettings.label).toBe("Siri voice control");
+    await wrapper.get(".cursor-pointer").trigger("mousedown");
+    expect(wrapper.emitted("select")).toEqual([["siri", "siriSettings"]]);
+    wrapper.unmount();
+  });
   it("收起键盘或失焦后保留结果，清空内容才隐藏", async () => {
     vi.useFakeTimers();
     const wrapper = createWrapper();

@@ -1,11 +1,11 @@
 import Foundation
 import Intents
+import MediaPlayer
 import ObjectiveC
 import UIKit
 
 /// 使用系统公开的应用内媒体意图回调，不替换 Tauri 已有的生命周期方法。
 final class SiriMediaHandler: NSObject, INPlayMediaIntentHandling {
-  private var matches: [[String: Any]] = []
 
   @MainActor static func install() {
     guard let type = NSClassFromString("AppDelegate") else { return }
@@ -20,6 +20,15 @@ final class SiriMediaHandler: NSObject, INPlayMediaIntentHandling {
   func resolveMediaItems(for intent: INPlayMediaIntent, with completion: @escaping ([INPlayMediaMediaItemResolutionResult]) -> Void) {
     Task { @MainActor in
       do {
+        let service = SiriService.shared
+        if let identifier = intent.mediaItems?.first?.identifier ?? intent.mediaSearch?.mediaIdentifier, !identifier.isEmpty {
+          guard let track = service.selection.track(identifier, queue: service.queue.tracks) else {
+            completion([.unsupported()]); return
+          }
+          completion([.success(with: INMediaItem(identifier: identifier,
+            title: track["title"] as? String, type: .song, artwork: nil))]); return
+        }
+        var matches: [[String: Any]]
         let query = intent.mediaSearch?.mediaName ?? ""
         let artist = intent.mediaSearch?.artistName ?? ""
         if query.isEmpty && artist.isEmpty {
@@ -41,25 +50,51 @@ final class SiriMediaHandler: NSObject, INPlayMediaIntentHandling {
   func handle(intent: INPlayMediaIntent, completion: @escaping (INPlayMediaIntentResponse) -> Void) {
     Task { @MainActor in
       do {
-        if let identifier = intent.mediaItems?.first?.identifier,
-          let track = (matches + SiriService.shared.queue.tracks).first(where: { SiriQueue.key($0) == identifier }) {
-          _ = try await SiriService.shared.execute(["action": "playTrack", "track": track])
-        } else {
-          let query = intent.mediaSearch?.mediaName ?? ""
-          let artist = intent.mediaSearch?.artistName ?? ""
-          if query.isEmpty && artist.isEmpty { _ = try await SiriService.shared.execute(["action": "resume"]) }
-          else {
-            let result = try await SiriService.shared.execute(["action": "playQuery", "query": query, "artist": artist])
-            if result["choices"] != nil { throw SiriFailure("请重新选择要播放的歌曲") }
-          }
-        }
-        matches = []
-        completion(INPlayMediaIntentResponse(code: .success, userActivity: nil))
+        let service = SiriService.shared
+        let request = try service.selection.command(identifier: intent.mediaItems?.first?.identifier ?? intent.mediaSearch?.mediaIdentifier,
+          hasMediaItems: !(intent.mediaItems ?? []).isEmpty,
+          query: intent.mediaSearch?.mediaName ?? "", artist: intent.mediaSearch?.artistName ?? "",
+          queue: service.queue.tracks)
+        let result = try await service.execute(request)
+        if result["choices"] != nil { throw SiriFailure("请重新选择要播放的歌曲") }
+        let response = INPlayMediaIntentResponse(code: .success, userActivity: nil)
+        if let track = service.queue.current { response.nowPlayingInfo = Self.nowPlaying(track, playing: service.queue.playing) }
+        completion(response)
       } catch {
-        matches = []
         completion(INPlayMediaIntentResponse(code: .failure, userActivity: nil))
       }
     }
+  }
+
+  func confirm(intent: INPlayMediaIntent, completion: @escaping (INPlayMediaIntentResponse) -> Void) {
+    Task { @MainActor in
+      let service = SiriService.shared
+      do {
+        let request = try service.selection.command(identifier: intent.mediaItems?.first?.identifier ?? intent.mediaSearch?.mediaIdentifier,
+          hasMediaItems: !(intent.mediaItems ?? []).isEmpty,
+          query: intent.mediaSearch?.mediaName ?? "", artist: intent.mediaSearch?.artistName ?? "",
+          queue: service.queue.tracks)
+        let response = INPlayMediaIntentResponse(code: .ready, userActivity: nil)
+        if let track = request["track"] as? [String: Any] {
+          response.nowPlayingInfo = Self.nowPlaying(track, playing: false)
+        } else if request["action"] as? String == "resume", let track = service.queue.current {
+          response.nowPlayingInfo = Self.nowPlaying(track, playing: service.queue.playing)
+        }
+        completion(response)
+      } catch { completion(INPlayMediaIntentResponse(code: .failure, userActivity: nil)) }
+    }
+  }
+
+  private static func nowPlaying(_ track: [String: Any], playing: Bool) -> [String: Any] {
+    var info: [String: Any] = [MPMediaItemPropertyTitle: track["title"] as? String ?? "",
+      MPMediaItemPropertyArtist: (track["artists"] as? [[String: Any]] ?? []).compactMap { $0["name"] as? String }.joined(separator: " / "),
+      MPMediaItemPropertyMediaType: MPMediaType.music.rawValue,
+      MPNowPlayingInfoPropertyPlaybackRate: playing ? 1.0 : 0.0]
+    if let duration = track["duration"] as? Double { info[MPMediaItemPropertyPlaybackDuration] = duration / 1000 }
+    if let cover = track["cover"] as? String, let url = URL(string: cover), ["https", "http"].contains(url.scheme ?? "") {
+      info[MPMediaItemPropertyArtwork] = INImage(url: url)
+    }
+    return info
   }
 }
 

@@ -8,6 +8,7 @@ import UIKit
 final class SiriService {
   static let shared = SiriService()
   let queue = SiriQueue()
+  let selection = SiriSelection()
   private var preferences: [String: Any] = [:]
   private var library: [[String: Any]] = []
   private var storage: [String: String] = [:]
@@ -22,6 +23,10 @@ final class SiriService {
   var askBeforePlaying: Bool { (preferences["settings"] as? [String: Any])?["askBeforePlaying"] as? Bool ?? true }
 
   private init() {
+    if let data = try? Data(contentsOf: directory.appendingPathComponent("selection.json")),
+       let tracks = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
+      selection.replace(tracks)
+    }
     if let data = try? Data(contentsOf: directory.appendingPathComponent("state.json")),
        let saved = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
       preferences = saved["preferences"] as? [String: Any] ?? [:]
@@ -155,7 +160,13 @@ final class SiriService {
 
   func search(query: String, artist: String = "") async throws -> [[String: Any]] {
     try checkEnabled()
-    return try await request("search", query: query, artist: artist)["tracks"] as? [[String: Any]] ?? []
+    let tracks = try await request("search", query: query, artist: artist)["tracks"] as? [[String: Any]] ?? []
+    selection.replace(tracks)
+    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+    try JSONSerialization.data(withJSONObject: selection.tracks).write(
+      to: directory.appendingPathComponent("selection.json"),
+      options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+    return tracks
   }
 
   func play(_ track: [String: Any], replacing: [[String: Any]]? = nil) async throws {

@@ -24,3 +24,32 @@ let restoredPrevious = try restored.neighbor(-1)
 precondition(SiriQueue.key(restoredNext) == "local:one")
 precondition(SiriQueue.key(restoredPrevious) == "local:one")
 print("PASS: 原生队列版本冲突、切歌和冷启动恢复")
+
+let selection = SiriSelection()
+let selectedSong: [String: Any] = ["id": "xiaoban", "source": "netease", "title": "小半"]
+selection.replace([selectedSong])
+let stored = try JSONSerialization.data(withJSONObject: selection.tracks)
+let newHandlerSelection = SiriSelection()
+newHandlerSelection.replace(try JSONSerialization.jsonObject(with: stored) as! [[String: Any]])
+let selectedCommand = try newHandlerSelection.command(identifier: "netease:xiaoban",
+  hasMediaItems: true, query: "", artist: "", queue: [first])
+precondition(selectedCommand["action"] as? String == "playTrack")
+precondition(SiriQueue.key(selectedCommand["track"] as! [String: Any]) == "netease:xiaoban",
+  "重建处理器后必须播放 Siri 所选小半，不能恢复旧队列")
+let invalidIdentifiers: [String?] = ["netease:expired", nil, ""]
+for identifier in invalidIdentifiers {
+  do {
+    _ = try newHandlerSelection.command(identifier: identifier, hasMediaItems: true,
+      query: "", artist: "", queue: [first])
+    preconditionFailure("选歌失效不能退回继续播放")
+  } catch is SiriFailure {}
+}
+let resume = try newHandlerSelection.command(identifier: nil, hasMediaItems: false,
+  query: "", artist: "", queue: [first])
+precondition(resume["action"] as? String == "resume")
+let queryCommand = try newHandlerSelection.command(identifier: nil, hasMediaItems: false,
+  query: "小半", artist: "", queue: [first])
+precondition(queryCommand["action"] as? String == "playQuery")
+selection.replace(Array(repeating: selectedSong, count: 100))
+precondition(selection.tracks.count == 50)
+print("PASS: Siri 选歌跨回调与冷启动、过期选歌拒绝、搜索和继续播放分流、候选缓存上限")
