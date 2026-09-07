@@ -104,7 +104,7 @@ const postRaw = async (
     method: "POST",
     headers: {
       ...QM_HEADERS,
-      ...(cookieStr ? { Cookie: cookieStr } : {}),
+      ...(cookieStr ? { Cookie: cookieStr } : { Cookie: "tmeLoginType=-1;" }),
       ...extraHeaders,
     },
     body: JSON.stringify(body),
@@ -182,7 +182,7 @@ export const qmRequest = async <T = unknown>(
   const useSession = options.session !== false;
   if (useSession) await ensureSession();
 
-  let useAuth = options.auth !== false;
+  const useAuth = options.auth !== false;
   let triedRefresh = false;
 
   const buildComm = () => {
@@ -217,7 +217,11 @@ export const qmRequest = async <T = unknown>(
       const innerCode = data.request?.code ?? 0;
 
       // 遇到鉴权失败或系统拦截错误（1000: 未登录/token失效, 2001: 会话异常）
-      const isAuthError = outerCode === 0 && (innerCode === 1000 || innerCode === 2001);
+      const isAuthError =
+        useAuth &&
+        getQQMusicUin() !== "0" &&
+        outerCode === 0 &&
+        (innerCode === 1000 || innerCode === 2001);
       if (isAuthError && options.autoRefresh !== false && !triedRefresh) {
         triedRefresh = true;
         coreLog.warn(

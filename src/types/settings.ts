@@ -18,6 +18,13 @@ export type CoverLayout = "default" | "fullscreen";
 export type TimeFormat = "current-total" | "remaining-total" | "current-remaining";
 
 /**
+ * 搜索页播放行为
+ * - current: 仅播放当前
+ * - all: 播放全部
+ */
+export type SearchPlayBehavior = "current" | "all";
+
+/**
  * 歌词来源偏好
  * - auto：智能选择（按打分结果）
  * - Platform（netease / qqmusic / kugou…）：优先该平台
@@ -250,6 +257,8 @@ export interface PlayerSettings {
   showLyricInBar: boolean;
   /** 播放时提前获取下一首的播放数据 */
   preloadNextTrack: boolean;
+  /** 搜索页播放行为 */
+  searchPlayBehavior: SearchPlayBehavior;
 }
 
 /** 外观设置 */

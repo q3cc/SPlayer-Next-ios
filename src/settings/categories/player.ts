@@ -22,6 +22,16 @@ const playerCategory: SettingCategory = {
           defaultValue: false,
         },
         {
+          key: "searchPlayBehavior",
+          type: "select",
+          binding: { store: "settings", path: "player.searchPlayBehavior" },
+          options: [
+            { value: "current", labelKey: "settings.searchPlayBehavior.current" },
+            { value: "all", labelKey: "settings.searchPlayBehavior.all" },
+          ],
+          defaultValue: "current",
+        },
+        {
           key: "fadeEnabled",
           type: "switch",
           binding: { store: "settings", path: "system.player.fadeEnabled" },

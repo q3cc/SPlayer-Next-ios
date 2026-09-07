@@ -839,6 +839,12 @@
       "label": "记忆播放进度",
       "description": "启动时恢复上次歌曲的播放进度"
     },
+    "searchPlayBehavior": {
+      "label": "搜索页播放行为",
+      "description": "设置在搜索页面双击歌曲时的播放与添加策略",
+      "current": "仅播放当前",
+      "all": "播放全部"
+    },
     "showLyricInBar": {
       "label": "播放时显示歌词",
       "description": "底部播放栏播放时将歌手名替换为当前歌词"
