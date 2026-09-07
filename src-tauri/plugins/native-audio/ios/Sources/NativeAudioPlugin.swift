@@ -30,6 +30,12 @@ private struct ControlLyric: Decodable {
 }
 private struct VisibilityRequest: Decodable { let visible: Bool }
 private struct SiriRequest: Decodable { let request: String }
+private struct SystemVolumeRequest: Decodable {
+  let show: Bool?
+  let x: Double?
+  let y: Double?
+  let value: Float?
+}
 
 private struct PlaybackCompletion {
   let callback: (Result<JSObject, Error>) -> Void
@@ -62,13 +68,78 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
   private var metadataValue: MetadataRequest?
   private var lastLyricUpdate = Date.distantPast
   private var lastSiriCheckpoint = Date.distantPast
+  private lazy var volumeView = MPVolumeView(frame: CGRect(x: 16, y: 10, width: 208, height: 32))
+  private lazy var volumeLabel = UILabel(frame: CGRect(x: 16, y: 44, width: 208, height: 22))
+  private lazy var volumeOverlay = UIControl()
+  private lazy var volumePanel = UIVisualEffectView(effect: UIBlurEffect(style: .systemMaterial))
+  private var volumeObservation: NSKeyValueObservation?
+  private var volumeDismiss: DispatchWorkItem?
+  private weak var volumeWebView: WKWebView?
 
   override func load(webview: WKWebView) {
     super.load(webview: webview)
-    DispatchQueue.main.async { self.visible = true; self.installControls() }
+    volumeWebView = webview
+    DispatchQueue.main.async {
+      self.visible = true; self.installControls()
+      self.volumeView.showsRouteButton = false
+      self.volumePanel.layer.cornerRadius = 18
+      self.volumePanel.clipsToBounds = true
+      self.volumeLabel.textAlignment = .center
+      self.volumeLabel.font = .monospacedDigitSystemFont(ofSize: 13, weight: .medium)
+      self.volumePanel.contentView.addSubview(self.volumeView)
+      self.volumePanel.contentView.addSubview(self.volumeLabel)
+      self.volumeOverlay.addSubview(self.volumePanel)
+      self.volumeOverlay.addTarget(self, action: #selector(self.dismissSystemVolume), for: .touchUpInside)
+      self.volumeObservation = AVAudioSession.sharedInstance().observe(\.outputVolume, options: [.new]) { [weak self] session, _ in
+        DispatchQueue.main.async {
+          guard let self = self else { return }
+          self.volumeLabel.text = "\(Int((session.outputVolume * 100).rounded()))%"
+          if self.visible { self.trigger("systemVolume", data: ["volume": Double(session.outputVolume)]) }
+        }
+      }
+    }
     Task { @MainActor in
       SiriService.shared.changed = { [weak self] json in self?.trigger("siriQueue", data: ["json": json]) }
       SiriMediaHandler.install()
+    }
+  }
+
+  @objc private func dismissSystemVolume() {
+    volumeDismiss?.cancel()
+    volumeOverlay.removeFromSuperview()
+  }
+
+  /// 使用系统原生音量控件，不修改系统音量浮层的私有接口。
+  @objc func system_volume(_ invoke: Invoke) throws {
+    let request = try invoke.parseArgs(SystemVolumeRequest.self)
+    DispatchQueue.main.async {
+      if request.show == false { self.dismissSystemVolume() }
+      if request.show == true || request.value != nil {
+        guard self.visible, let webview = self.volumeWebView else { invoke.reject("播放器尚未显示"); return }
+        self.volumeOverlay.frame = webview.bounds
+        self.volumeOverlay.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        let inset = webview.safeAreaInsets
+        let width = min(240, webview.bounds.width - inset.left - inset.right - 24)
+        let x = min(max(CGFloat(request.x ?? Double(webview.bounds.midX)) - width / 2, inset.left + 12), webview.bounds.width - inset.right - width - 12)
+        let y = min(max(CGFloat(request.y ?? Double(webview.bounds.midY)) - 88, inset.top + 12), webview.bounds.height - inset.bottom - 88)
+        self.volumePanel.frame = CGRect(x: x, y: y, width: width, height: 76)
+        self.volumeView.frame.size.width = width - 32
+        self.volumeLabel.frame.size.width = width - 32
+        webview.addSubview(self.volumeOverlay)
+        self.volumePanel.layoutIfNeeded()
+        if let value = request.value {
+          guard value.isFinite, (0...1).contains(value),
+                let slider = self.volumeView.subviews.compactMap({ $0 as? UISlider }).first else { invoke.reject("系统音量控件不可用"); return }
+          slider.setValue(value, animated: false)
+          slider.sendActions(for: .valueChanged)
+        }
+        self.volumeLabel.text = "\(Int((AVAudioSession.sharedInstance().outputVolume * 100).rounded()))%"
+        self.volumeDismiss?.cancel()
+        let dismiss = DispatchWorkItem { [weak self] in self?.dismissSystemVolume() }
+        self.volumeDismiss = dismiss
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3, execute: dismiss)
+      }
+      invoke.resolve(["volume": Double(AVAudioSession.sharedInstance().outputVolume)])
     }
   }
 
@@ -182,7 +253,7 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
   private func applyEffects() {
     guard let player = player else { return }
     audioEffects.apply(effects)
-    player.volume = pendingLoad != nil && !autoPlay ? 0 : effects.volume
+    player.volume = pendingLoad != nil && !autoPlay ? 0 : 1
     player.rate = effects.speed
     updatePosition()
   }
@@ -253,7 +324,7 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
     default: state = "idle"
     }
     return ["state": state, "position": (player?.progress ?? 0) * 1000,
-      "duration": (player?.duration ?? 0) * 1000, "volume": Double(effects.volume),
+      "duration": (player?.duration ?? 0) * 1000, "volume": Double(AVAudioSession.sharedInstance().outputVolume),
       "speed": Double(effects.speed), "isFinished": player?.stopReason == .eof]
   }
 
@@ -270,7 +341,11 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
   }
   @objc func visibility(_ invoke: Invoke) throws {
     let request = try invoke.parseArgs(VisibilityRequest.self)
-    DispatchQueue.main.async { self.visible = request.visible; invoke.resolve() }
+    DispatchQueue.main.async {
+      self.visible = request.visible
+      if !request.visible { self.dismissSystemVolume() }
+      invoke.resolve()
+    }
   }
 
   private func updatePosition() {
@@ -359,7 +434,7 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
           else if action == "pause" || action == "toggle" { self.resumeAfterInterruption = false; player.pause() }
           else {
             Task { @MainActor in
-              if !self.visible && SiriService.shared.enabled && !SiriService.shared.queue.tracks.isEmpty {
+              if (!self.visible || SiriService.shared.managesCollection) && SiriService.shared.enabled && !SiriService.shared.queue.tracks.isEmpty {
                 do { try await SiriService.shared.advance(action == "next" ? 1 : -1) }
                 catch { self.trigger("error", data: ["message": error.localizedDescription]) }
               } else { self.trigger("action", data: ["type": action]) }
@@ -419,7 +494,7 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
       guard self.player === player else { return }
       self.loadTimeout?.cancel()
       if let pending = self.pendingLoad {
-        if !self.autoPlay { player.pause(); player.volume = self.effects.volume }
+        if !self.autoPlay { player.pause(); player.volume = 1 }
         self.pendingLoad = nil
         pending.resolve(self.snapshot())
       }
@@ -440,7 +515,7 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
     DispatchQueue.main.async {
       if self.player === player {
         Task { @MainActor in
-          if !self.visible && SiriService.shared.enabled && !SiriService.shared.queue.tracks.isEmpty {
+          if (!self.visible || SiriService.shared.managesCollection) && SiriService.shared.enabled && !SiriService.shared.queue.tracks.isEmpty {
             do { try await SiriService.shared.advance(1, ended: true) }
             catch { self.trigger("error", data: ["message": error.localizedDescription]) }
           } else { self.trigger("ended", data: [:]) }

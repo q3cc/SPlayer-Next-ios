@@ -96,7 +96,7 @@ onMounted(refresh);
       />
     </label>
     <div class="flex items-center justify-between gap-4">
-      有多个匹配结果时询问
+      难以确定歌曲时询问
       <SSwitch
         :model-value="settings.system.siri.askBeforePlaying"
         @update:model-value="change('askBeforePlaying', $event)"

@@ -18,6 +18,7 @@ interface NeteaseArtist {
   picUrl?: string;
   img1v1Url?: string;
   albumSize?: number;
+  musicSize?: number;
 }
 interface NeteasePlaylist {
   id: number;
@@ -70,6 +71,8 @@ const artistToCover = (artist: NeteaseArtist): CoverItem => ({
   cover: withPicSize(artist.img1v1Url ?? artist.picUrl),
   subtitle: "",
   trackCount: artist.albumSize ?? 0,
+  artistSongCount: artist.musicSize,
+  artistAlbumCount: artist.albumSize,
 });
 
 const playlistToCover = (playlist: NeteasePlaylist): CoverItem => ({

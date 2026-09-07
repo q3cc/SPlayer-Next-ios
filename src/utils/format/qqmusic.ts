@@ -150,6 +150,8 @@ export const qqArtistToCoverItem = (artist: QMArtistItem): CoverItem => ({
   cover: artist.cover,
   subtitle: "",
   trackCount: artist.albumCount ?? 0,
+  artistSongCount: artist.songCount,
+  artistAlbumCount: artist.albumCount,
 });
 
 export const qqPlaylistToCoverItem = (playlist: QMPlaylistItem): CoverItem => ({

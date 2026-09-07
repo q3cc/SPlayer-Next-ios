@@ -25,6 +25,18 @@ precondition(SiriQueue.key(restoredNext) == "local:one")
 precondition(SiriQueue.key(restoredPrevious) == "local:one")
 print("PASS: 原生队列版本冲突、切歌和冷启动恢复")
 
+queue.collection = ["artist": "周杰伦", "cursors": [["source": "netease", "offset": 50, "done": false]], "seen": ["晴天"]]
+queue.repeatMode = "list"; queue.shuffleMode = "off"
+let oldPosition = queue.position
+queue.append([first, second, ["source": "qqmusic", "id": "three", "title": "第三首"]])
+precondition(queue.tracks.count == 3, "追加分页不能重复加入已有歌曲")
+precondition(queue.currentKey == "netease:two" && queue.position == oldPosition, "补页不能重播当前歌曲")
+let collectionRestored = SiriQueue()
+collectionRestored.restore(queue.json)
+precondition(collectionRestored.collection?["artist"] as? String == "周杰伦")
+precondition(collectionRestored.repeatMode == "list" && collectionRestored.shuffleMode == "off")
+print("PASS: 歌手曲库分页追加、去重、播放位置和冷启动游标恢复")
+
 let selection = SiriSelection()
 let selectedSong: [String: Any] = ["id": "xiaoban", "source": "netease", "title": "小半"]
 selection.replace([selectedSong])

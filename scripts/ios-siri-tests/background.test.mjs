@@ -85,15 +85,13 @@ async function run(
 }
 
 test("无网页环境可以按歌名和歌手搜索本地标签", async () => {
-  assert.deepEqual(await run({ action: "search", query: "晴天", artist: "周杰伦" }), {
-    tracks: [local],
-  });
-  assert.deepEqual(await run({ action: "search", query: "", artist: "周杰伦" }), {
-    tracks: [local],
-  });
+  assert.deepEqual((await run({ action: "search", query: "晴天", artist: "周杰伦" })).tracks, [
+    local,
+  ]);
+  assert.deepEqual((await run({ action: "search", query: "", artist: "周杰伦" })).tracks, [local]);
   assert.deepEqual(
-    await run({ action: "search", query: "晴天", artist: "另一位", scope: "local" }),
-    { tracks: [] },
+    (await run({ action: "search", query: "晴天", artist: "另一位", scope: "local" })).tracks,
+    [],
   );
 });
 test("本地解析不请求网络，空白搜索明确失败", async () => {

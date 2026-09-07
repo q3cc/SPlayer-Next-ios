@@ -13,6 +13,9 @@ final class SiriQueue {
   private(set) var currentKey: String?
   var position = 0.0
   var playing = false
+  var collection: [String: Any]?
+  var repeatMode: String?
+  var shuffleMode: String?
 
   static func key(_ track: [String: Any]) -> String {
     "\(track["source"] as? String ?? "local"):\(track["id"] as? String ?? "")"
@@ -20,7 +23,9 @@ final class SiriQueue {
   var current: [String: Any]? { tracks.first { Self.key($0) == currentKey } }
   var json: [String: Any] {
     ["revision": revision, "queue": tracks, "currentId": currentKey as Any? ?? NSNull(),
-     "position": position, "playing": playing]
+     "position": position, "playing": playing,
+     "collection": collection as Any? ?? NSNull(),
+     "repeatMode": repeatMode as Any? ?? NSNull(), "shuffleMode": shuffleMode as Any? ?? NSNull()]
   }
   func restore(_ value: [String: Any]) {
     revision = value["revision"] as? Int ?? 0
@@ -29,6 +34,9 @@ final class SiriQueue {
     position = value["position"] as? Double ?? 0
     // 冷启动只恢复位置，不能未经用户操作自行播放。
     playing = false
+    collection = value["collection"] as? [String: Any]
+    repeatMode = value["repeatMode"] as? String
+    shuffleMode = value["shuffleMode"] as? String
   }
   @discardableResult
   func replace(_ value: [String: Any]) -> Bool {
@@ -51,5 +59,11 @@ final class SiriQueue {
     guard !tracks.isEmpty else { throw SiriFailure("播放队列为空，请先选择歌曲") }
     let index = tracks.firstIndex { Self.key($0) == currentKey } ?? 0
     return tracks[(index + direction + tracks.count) % tracks.count]
+  }
+
+  func append(_ additions: [[String: Any]]) {
+    var keys = Set(tracks.map(Self.key))
+    tracks.append(contentsOf: additions.filter { keys.insert(Self.key($0)).inserted })
+    revision += 1
   }
 }

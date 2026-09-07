@@ -60,6 +60,15 @@ export const createNativePlayer = (fallback: PlayerApi): PlayerApi => {
           await addPluginListener<PlayerStatus>("native-audio", "state", (value) => update(value)),
         );
         subscriptions.push(
+          await addPluginListener<{ volume: number }>(
+            "native-audio",
+            "systemVolume",
+            ({ volume }) => {
+              window.dispatchEvent(new CustomEvent("splayer:system-volume", { detail: volume }));
+            },
+          ),
+        );
+        subscriptions.push(
           await addPluginListener("native-audio", "ended", () => emit({ type: "ended" })),
         );
         subscriptions.push(
@@ -182,9 +191,23 @@ export const createNativePlayer = (fallback: PlayerApi): PlayerApi => {
         return { success: false, error: String(error) };
       }
     },
-    getVolume: async () => ({ success: true, data: effects.volume }),
+    getVolume: async () => {
+      try {
+        const result = await invoke<{ volume: number }>("plugin:native-audio|system_volume", {});
+        return { success: true, data: result.volume };
+      } catch (error) {
+        return { success: false, error: String(error) };
+      }
+    },
     getCoverRaw: async () => ({ success: true, data: cover }),
-    setVolume: (volume) => configure({ volume }),
+    setVolume: async (volume) => {
+      try {
+        await invoke("plugin:native-audio|system_volume", { value: volume });
+        return { success: true };
+      } catch (error) {
+        return { success: false, error: String(error) };
+      }
+    },
     setSpeed: (speed) => configure({ speed }),
     setPitch: (pitch) => configure({ pitch }),
     setPitchSync: (pitchSync) => configure({ pitchSync }),

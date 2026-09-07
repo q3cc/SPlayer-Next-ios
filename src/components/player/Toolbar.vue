@@ -3,6 +3,7 @@ import type { DropdownMenuItem } from "@/components/ui/SDropdownMenu.vue";
 import { useStatusStore } from "@/stores/status";
 import { useSettingsStore } from "@/stores/settings";
 import * as player from "@/core/player";
+import { isIOS } from "@/utils/config";
 import IconLucideSliders from "~icons/lucide/sliders-horizontal";
 import IconLucideGauge from "~icons/lucide/gauge";
 import IconLucideMoreVertical from "~icons/lucide/more-vertical";
@@ -32,22 +33,47 @@ const lyricButtonType = computed(() =>
 
 const volumePercent = computed(() => Math.round(status.volume * 100));
 
-/** 静音前的音量，用于解除静音时恢复 */
-const lastVolume = ref(status.volume || 0.7);
+const volumeAnchor = ref<HTMLElement | null>(null);
+const showSystemVolume = async (): Promise<void> => {
+  if (!isIOS || document.hidden) return;
+  const rect = volumeAnchor.value?.getBoundingClientRect();
+  if (!rect?.width || !rect.height) return;
+  const { invoke } = await import("@tauri-apps/api/core");
+  await invoke("plugin:native-audio|system_volume", {
+    show: true,
+    x: rect.x + rect.width / 2,
+    y: rect.y,
+  });
+};
+const systemVolumeChanged = (event: Event): void => {
+  const volume = (event as CustomEvent<number>).detail;
+  if (!Number.isFinite(volume)) return;
+  status.volume = volume;
+  // 全屏和底部工具栏可能同时挂载，只让当前可见播放器展开原生滑条。
+  if (props.cover === status.isPlayerExpanded) void showSystemVolume().catch(console.warn);
+};
+const hideSystemVolume = (): void => {
+  if (isIOS)
+    void import("@tauri-apps/api/core")
+      .then(({ invoke }) => invoke("plugin:native-audio|system_volume", { show: false }))
+      .catch(console.warn);
+};
+onMounted(() => {
+  if (isIOS) {
+    window.addEventListener("splayer:system-volume", systemVolumeChanged);
+    window.addEventListener("resize", hideSystemVolume);
+  }
+});
+onUnmounted(() => {
+  window.removeEventListener("splayer:system-volume", systemVolumeChanged);
+  window.removeEventListener("resize", hideSystemVolume);
+  hideSystemVolume();
+});
 
 const onVolumeWheel = (e: WheelEvent): void => {
   const delta = e.deltaY < 0 ? 0.05 : -0.05;
   const next = Math.max(0, Math.min(1, status.volume + delta));
   player.setVolume(next);
-};
-
-const toggleMute = (): void => {
-  if (status.volume > 0) {
-    lastVolume.value = status.volume;
-    player.setVolume(0);
-  } else {
-    player.setVolume(lastVolume.value || 0.7);
-  }
 };
 
 const toggleDesktopLyric = (): void => {
@@ -79,23 +105,30 @@ const onMoreMenuSelect = (key: string): void => {
   <div class="flex items-center gap-1">
     <!-- 在线音质 -->
     <QualityControl v-if="settings.appearance.showQualitySwitch" :cover="cover" />
-    <SPopover trigger="hover" side="top" :cover="cover" content-class="px-3 pb-2 pt-3">
+    <SPopover
+      :trigger="isIOS ? 'manual' : 'click'"
+      side="top"
+      :cover="cover"
+      content-class="px-3 pb-2 pt-3"
+    >
       <template #trigger>
-        <SButton
-          :type="buttonType"
-          variant="ghost"
-          circle
-          size="large"
-          :class="mutedClass"
-          @click="toggleMute"
-          @wheel.prevent="onVolumeWheel"
-        >
-          <template #icon>
-            <IconLucideVolumeX v-if="volumePercent === 0" />
-            <IconLucideVolume1 v-else-if="volumePercent < 50" />
-            <IconLucideVolume2 v-else />
-          </template>
-        </SButton>
+        <span ref="volumeAnchor">
+          <SButton
+            :type="buttonType"
+            variant="ghost"
+            circle
+            size="large"
+            :class="mutedClass"
+            @click="isIOS && showSystemVolume().catch(console.warn)"
+            @wheel.prevent="onVolumeWheel"
+          >
+            <template #icon>
+              <IconLucideVolumeX v-if="volumePercent === 0" />
+              <IconLucideVolume1 v-else-if="volumePercent < 50" />
+              <IconLucideVolume2 v-else />
+            </template>
+          </SButton>
+        </span>
       </template>
       <div class="flex flex-col items-center w-7" @wheel.prevent="onVolumeWheel">
         <div class="h-30">

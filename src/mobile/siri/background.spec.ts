@@ -42,8 +42,9 @@ it("并行搜索三个平台，网易云没有结果或失败不影响 QQ 和酷
     if (source === "netease") throw new Error("不可用");
     return { items: [song(source)] };
   });
-  expect(await run({ ...options, vipSources: ["kugou"] })).toEqual({
-    tracks: [song("kugou"), song("qqmusic")],
+  expect(await run({ ...options, vipSources: ["kugou"] })).toMatchObject({
+    tracks: [song("kugou")],
+    needsConfirmation: false,
   });
   expect(new Set(mocks.search.mock.calls.map(([source]) => source))).toEqual(
     new Set(["netease", "qqmusic", "kugou"]),
@@ -88,7 +89,7 @@ it("换源搜索失败时仍可按用户授权播放已获取的试听", async (
 });
 
 it("仅本地搜索不联网，所有在线平台失败时明确报错", async () => {
-  expect(await run({ ...options, scope: "local" })).toEqual({ tracks: [] });
+  expect(await run({ ...options, scope: "local" })).toMatchObject({ tracks: [] });
   expect(mocks.search).not.toHaveBeenCalled();
   mocks.search.mockRejectedValue(new Error("断网"));
   await expect(run(options)).rejects.toThrow("三个音乐平台搜索均失败");
@@ -105,6 +106,6 @@ it("明确歌手时保留歌名中的‘的’，口语查询未命中再拆连�
   const result = (await run({ ...options, query: "方大同的特别的人", artist: "" })) as {
     tracks: Track[];
   };
-  expect(result.tracks).toHaveLength(3);
+  expect(result.tracks).toHaveLength(1);
   expect(mocks.search).toHaveBeenCalledTimes(6);
 });

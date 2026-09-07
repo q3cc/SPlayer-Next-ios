@@ -17,6 +17,13 @@ final class SiriService {
   private var runtime: SiriRuntime?
   private var awaitingPlayback: Int?
   private var lastResult = ""
+  private var pendingSearch: [String: Any] = [:]
+  private var catalogGeneration = 0
+  private var catalogTask: Task<Void, Never>?
+  private var catalogRuntime: SiriRuntime?
+  private var advancing = false
+  var managesCollection: Bool { queue.collection != nil }
+  var needsConfirmation: Bool { pendingSearch["needsConfirmation"] as? Bool ?? true }
   var changed: ((String) -> Void)?
   private let directory = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Siri", isDirectory: true)
   var enabled: Bool { (preferences["settings"] as? [String: Any])?["enabled"] as? Bool == true }
@@ -26,6 +33,11 @@ final class SiriService {
     if let data = try? Data(contentsOf: directory.appendingPathComponent("selection.json")),
        let tracks = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
       selection.replace(tracks)
+    }
+    if let data = try? Data(contentsOf: directory.appendingPathComponent("selection.json")),
+       let result = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+      pendingSearch = result
+      selection.replace(result["tracks"] as? [[String: Any]] ?? [])
     }
     if let data = try? Data(contentsOf: directory.appendingPathComponent("state.json")),
        let saved = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
@@ -109,6 +121,11 @@ final class SiriService {
         generation += 1; runtime?.cancel()
       }
       preferences = nextPreferences
+      if !enabled { cancelCatalog(); queue.collection = nil }
+      if queue.collection != nil {
+        queue.repeatMode = preferences["repeatMode"] as? String
+        queue.shuffleMode = preferences["shuffleMode"] as? String
+      }
       // 网页没有重新登录或退出时，保留后台接口更新过的凭据。
       for (key, value) in nextStorage where frontendStorage[key] != value { storage[key] = value }
       for key in frontendStorage.keys where nextStorage[key] == nil { storage.removeValue(forKey: key) }
@@ -117,14 +134,18 @@ final class SiriService {
       try saveCredentials(); try persist()
       return status()
     case "snapshot":
-      if ["playing", "paused"].contains(NativeAudioPlugin.shared.snapshot()["state"] as? String ?? "") { checkpoint() }
+      if ["playing", "paused"].contains(NativeAudioPlugin.shared.snapshot()["state"] as? String ?? "") { checkpoint(); scheduleCatalog() }
       return queue.json.merging(["pending": runtime != nil || awaitingPlayback != nil]) { _, next in next }
     case "interrupt":
       generation += 1; runtime?.cancel()
+      cancelCatalog(); queue.collection = nil
+      try persistPlayback()
       return queue.json
     case "syncQueue":
+      let previousKeys = queue.tracks.map(SiriQueue.key)
       let accepted = queue.replace(request["snapshot"] as? [String: Any] ?? [:])
       if accepted {
+        if queue.tracks.map(SiriQueue.key) != previousKeys { cancelCatalog(); queue.collection = nil }
         generation += 1; runtime?.cancel(); try persistPlayback()
       }
       return ["accepted": accepted, "snapshot": queue.json]
@@ -139,7 +160,7 @@ final class SiriService {
     guard authorization == "authorized" else { throw SiriFailure("请允许 SPlayer 使用 Siri") }
   }
 
-  private func request(_ action: String, query: String = "", artist: String = "", track: [String: Any]? = nil) async throws -> [String: Any] {
+  private func requestValue(_ action: String, query: String = "", artist: String = "", track: [String: Any]? = nil) -> [String: Any] {
     let settings = preferences["settings"] as? [String: Any] ?? [:]
     let configured = settings["source"] as? String ?? "current"
     var value: [String: Any] = ["action": action, "query": query, "artist": artist,
@@ -148,10 +169,17 @@ final class SiriService {
       "vipSources": preferences["vipSources"] as? [String] ?? [],
       "quality": preferences["quality"] as? String ?? "hq", "allowTrial": preferences["allowTrial"] as? Bool ?? false]
     if let track = track { value["track"] = track }
+    return value
+  }
+
+  private func request(_ action: String, query: String = "", artist: String = "", track: [String: Any]? = nil, collection: [String: Any]? = nil) async throws -> [String: Any] {
+    var value = requestValue(action, query: query, artist: artist, track: track)
+    if let collection = collection { value["collection"] = collection }
     let token = generation
     runtime?.cancel()
     let worker = SiriRuntime()
     runtime = worker
+    defer { if runtime === worker { runtime = nil } }
     let response = try await worker.run(value, storage: storage)
     guard token == generation else { throw SiriFailure("已被新的播放操作取消") }
     if let updated = response["storage"] as? [String: String] { storage = updated; try saveCredentials() }
@@ -161,13 +189,98 @@ final class SiriService {
 
   func search(query: String, artist: String = "") async throws -> [[String: Any]] {
     try checkEnabled()
-    let tracks = try await request("search", query: query, artist: artist)["tracks"] as? [[String: Any]] ?? []
+    generation += 1; runtime?.cancel()
+    cancelCatalog(); queue.collection = nil
+    var result = try await request("search", query: query, artist: artist)
+    while (result["tracks"] as? [[String: Any]] ?? []).isEmpty,
+          result["pageFailed"] as? Bool != true,
+          let collection = result["collection"] as? [String: Any],
+          let cursors = collection["cursors"] as? [[String: Any]],
+          cursors.contains(where: { $0["done"] as? Bool != true }) {
+      result = try await request("artistPage", collection: collection)
+    }
+    let tracks = result["tracks"] as? [[String: Any]] ?? []
+    pendingSearch = result
     selection.replace(tracks)
     try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-    try JSONSerialization.data(withJSONObject: selection.tracks).write(
+    try JSONSerialization.data(withJSONObject: result).write(
       to: directory.appendingPathComponent("selection.json"),
       options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
     return tracks
+  }
+
+  private func cancelCatalog() {
+    catalogGeneration += 1
+    queue.repeatMode = nil; queue.shuffleMode = nil
+    catalogTask?.cancel(); catalogTask = nil
+    catalogRuntime?.cancel(); catalogRuntime = nil
+  }
+
+  private func playSearch(_ first: [String: Any]) async throws {
+    let result = pendingSearch
+    cancelCatalog()
+    queue.collection = result["collection"] as? [String: Any]
+    let matches = result["tracks"] as? [[String: Any]] ?? [first]
+    if managesCollection {
+      queue.repeatMode = "list"; queue.shuffleMode = "off"
+      preferences["repeatMode"] = "list"; preferences["shuffleMode"] = "off"
+      try await playAvailable(matches, replacing: matches)
+    } else { try await play(first, replacing: matches) }
+    pendingSearch = [:]
+    try JSONSerialization.data(withJSONObject: pendingSearch).write(to: directory.appendingPathComponent("selection.json"), options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+    scheduleCatalog()
+  }
+
+  private func playAvailable(_ tracks: [[String: Any]], replacing: [[String: Any]]? = nil) async throws {
+    for track in tracks.prefix(5) {
+      let token = generation
+      do { try await play(track, replacing: replacing); return }
+      catch { if generation != token + 1 { throw error } }
+    }
+    _ = try? NativeAudioPlugin.shared.performControl("stop")
+    queue.playing = false
+    try persistPlayback()
+    throw SiriFailure("连续歌曲无法播放，请检查网络、会员权限或试听设置")
+  }
+
+  /// 分页使用独立运行时，不能取消正在进行的歌曲地址解析。
+  private func scheduleCatalog() {
+    guard enabled, catalogTask == nil, queue.collection != nil else { return }
+    let token = catalogGeneration
+    catalogTask = Task { @MainActor in
+      var more = false
+      defer {
+        if token == self.catalogGeneration {
+          self.catalogTask = nil; self.catalogRuntime = nil
+          if more { self.scheduleCatalog() }
+        }
+      }
+      if !Task.isCancelled, token == self.catalogGeneration,
+            let collection = self.queue.collection,
+            let cursors = collection["cursors"] as? [[String: Any]],
+            cursors.contains(where: { $0["done"] as? Bool != true }) {
+        var value = self.requestValue("artistPage")
+        value["collection"] = collection
+        let worker = SiriRuntime()
+        self.catalogRuntime = worker
+        let originalStorage = self.storage
+        do {
+          let response = try await worker.run(value, storage: originalStorage)
+          guard token == self.catalogGeneration, !Task.isCancelled,
+                let result = response["value"] as? [String: Any] else { return }
+          if let updated = response["storage"] as? [String: String] {
+            for (key, value) in updated where value != originalStorage[key] && self.storage[key] == originalStorage[key] { self.storage[key] = value }
+            try self.saveCredentials()
+          }
+          self.queue.collection = result["collection"] as? [String: Any]
+          self.queue.append(result["tracks"] as? [[String: Any]] ?? [])
+          try self.persistPlayback()
+          self.changed?(try self.encode(self.queue.json))
+          if result["pageFailed"] as? Bool == true { return }
+          more = true
+        } catch { self.lastResult = "曲库补充暂时失败，已加载歌曲仍可播放"; return }
+      }
+    }
   }
 
   func play(_ track: [String: Any], replacing: [[String: Any]]? = nil) async throws {
@@ -193,6 +306,31 @@ final class SiriService {
   }
 
   func advance(_ direction: Int, ended: Bool = false) async throws {
+    if advancing { return }
+    advancing = true
+    defer { advancing = false }
+    if managesCollection {
+      let catalogToken = catalogGeneration
+      if ended, (queue.repeatMode ?? "list") == "one", let current = queue.current {
+        try await play(current); return
+      }
+      let index = queue.tracks.firstIndex { SiriQueue.key($0) == queue.currentKey } ?? 0
+      var candidates = direction > 0 ? Array(queue.tracks.dropFirst(index + 1)) : Array(queue.tracks.prefix(index).reversed())
+      if candidates.isEmpty && direction > 0 {
+        scheduleCatalog()
+        while let page = catalogTask {
+          await page.value
+          guard catalogToken == catalogGeneration else { throw SiriFailure("已切换播放队列") }
+          candidates = Array(queue.tracks.dropFirst(index + 1))
+          if !candidates.isEmpty { break }
+        }
+      }
+      if candidates.isEmpty { candidates = direction > 0 ? queue.tracks : Array(queue.tracks.reversed()) }
+      if queue.shuffleMode == "on" { candidates.shuffle() }
+      try await playAvailable(candidates)
+      scheduleCatalog()
+      return
+    }
     if ended, preferences["repeatMode"] as? String == "one", let current = queue.current {
       try await play(current)
     } else if direction > 0, preferences["shuffleMode"] as? String == "on",
@@ -209,11 +347,16 @@ final class SiriService {
       case "playQuery":
         let matches = try await search(query: request["query"] as? String ?? "", artist: request["artist"] as? String ?? "")
         guard let first = matches.first else { throw SiriFailure("没有找到匹配的歌曲") }
-        if matches.count > 1 && askBeforePlaying && request["confirmed"] as? Bool != true { return ["choices": matches] }
-        try await play(first, replacing: matches)
+        if needsConfirmation && askBeforePlaying && request["confirmed"] as? Bool != true { return ["choices": Array(matches.prefix(3))] }
+        try await playSearch(first)
       case "playTrack":
         guard let track = request["track"] as? [String: Any] else { throw SiriFailure("请选择歌曲") }
-        try await play(track)
+        if pendingSearch["collection"] != nil && selection.tracks.contains(where: { SiriQueue.key($0) == SiriQueue.key(track) }) {
+          try await playSearch(track)
+        } else {
+          cancelCatalog(); queue.collection = nil
+          try await play(track)
+        }
       case "next": try await advance(1)
       case "previous": try await advance(-1)
       case "pause":
@@ -230,6 +373,7 @@ final class SiriService {
           if position > 0 { _ = try? NativeAudioPlugin.shared.performControl("seek", position: position) }
         } else { throw SiriFailure("没有可恢复的歌曲，请先选择音乐") }
         lastResult = "已继续播放"
+        scheduleCatalog()
       default: throw SiriFailure("不支持的 Siri 操作")
       }
       return ["message": lastResult]

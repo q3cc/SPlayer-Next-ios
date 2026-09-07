@@ -36,12 +36,12 @@ final class SiriMediaHandler: NSObject, INPlayMediaIntentHandling {
           else { completion([.needsValue()]); return }
         } else { matches = try await SiriService.shared.search(query: query, artist: artist) }
         guard !matches.isEmpty else { completion([.unsupported()]); return }
-        matches = Array(matches.prefix(5))
+        matches = Array(matches.prefix(3))
         let items = matches.map { track in
           INMediaItem(identifier: SiriQueue.key(track), title: track["title"] as? String, type: .song,
             artwork: nil, artist: (track["artists"] as? [[String: Any]] ?? []).compactMap { $0["name"] as? String }.joined(separator: " / "))
         }
-        if items.count > 1 && SiriService.shared.askBeforePlaying { completion([.disambiguation(with: items)]) }
+        if items.count > 1 && service.needsConfirmation && service.askBeforePlaying { completion([.disambiguation(with: items)]) }
         else { completion([.success(with: items[0])]) }
       } catch { completion([.unsupported()]) }
     }

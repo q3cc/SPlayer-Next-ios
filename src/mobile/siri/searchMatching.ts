@@ -1,13 +1,28 @@
 import type { Track } from "@shared/types/player";
 
-const normalize = (value: string): string =>
+export const normalizeSiriText = (value: string): string =>
   value
     .normalize("NFKC")
     .toLowerCase()
     .replace(/[\s·・—_-]/g, "");
+const normalize = normalizeSiriText;
+
+/** 只把明确的歌手曲库指令解析为集合；歌名里的“的”留给元数据验证。 */
+export const siriCollectionArtist = (query: string, artist: string): string | null => {
+  const phrase = query.trim().match(/^(.+?)的(?:所有|全部)?(?:歌|歌曲|音乐)$/u);
+  if (phrase && (!artist.trim() || normalize(artist) === normalize(phrase[1])))
+    return artist.trim() || phrase[1].trim();
+  if (artist.trim() && /^(?:(?:所有|全部)?(?:歌|歌曲|音乐))?$/.test(query.trim()))
+    return artist.trim();
+  return null;
+};
 
 /** 仅用歌手元数据确认口语中的歌手，避免把《我的天空》等歌名中的“的”强行拆开。 */
-export const rankSiriTracks = (tracks: Track[], query: string, artist: string): Track[] => {
+export const scoreSiriTracks = (
+  tracks: Track[],
+  query: string,
+  artist: string,
+): { track: Track; index: number; score: number }[] => {
   let title = query.trim();
   let performer = artist.trim();
   const phrase = title.match(/^(.+?)(?:的|[_—]|\s+-\s+)(.+)$/u);
@@ -39,6 +54,8 @@ export const rankSiriTracks = (tracks: Track[], query: string, artist: string): 
       return { track, index, score };
     })
     .filter(({ score }) => score >= 0)
-    .sort((left, right) => right.score - left.score || left.index - right.index)
-    .map(({ track }) => track);
+    .sort((left, right) => right.score - left.score || left.index - right.index);
 };
+
+export const rankSiriTracks = (tracks: Track[], query: string, artist: string): Track[] =>
+  scoreSiriTracks(tracks, query, artist).map(({ track }) => track);

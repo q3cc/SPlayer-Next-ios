@@ -1082,7 +1082,12 @@ export const initPlayer = async (): Promise<void> => {
   // 兼容移除“不循环”前持久化的旧状态
   if ((status.repeatMode as string) === "off") status.repeatMode = "list";
   // 恢复上次的音量和播放模式到主进程
-  await window.api.player.setVolume(status.volume);
+  if (window.api.system.platform === "ios") {
+    const volume = await window.api.player.getVolume();
+    if (volume.success && volume.data != null) status.volume = volume.data;
+  } else {
+    await window.api.player.setVolume(status.volume);
+  }
   syncPlayMode();
   // 应用渐入渐出配置
   const { fadeEnabled, fadeDuration, loudnessNormalization, equalizer } = settings.system.player;

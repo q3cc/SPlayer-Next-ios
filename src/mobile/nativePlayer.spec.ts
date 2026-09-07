@@ -30,6 +30,36 @@ beforeEach(() => {
   mocks.listener.mockReset().mockResolvedValue({ unregister: vi.fn() });
 });
 
+it("音量读取与用户调节走系统音量接口，不修改音效增益", async () => {
+  const player = createNativePlayer({} as PlayerApi);
+  mocks.invoke.mockResolvedValue({ volume: 0.42 });
+  expect(await player.getVolume()).toEqual({ success: true, data: 0.42 });
+  expect(mocks.invoke).toHaveBeenLastCalledWith("plugin:native-audio|system_volume", {});
+  expect((await player.setVolume(0.6)).success).toBe(true);
+  expect(mocks.invoke).toHaveBeenLastCalledWith("plugin:native-audio|system_volume", {
+    value: 0.6,
+  });
+  expect(
+    mocks.invoke.mock.calls.some(([command]) => command === "plugin:native-audio|configure"),
+  ).toBe(false);
+});
+
+it("实体音量键的变化单独通知 UI，不覆盖 Siri 的播放状态", async () => {
+  const player = createNativePlayer({} as PlayerApi);
+  const listener = vi.fn();
+  window.addEventListener("splayer:system-volume", listener);
+  const events = vi.fn();
+  player.onEvent(events);
+  await vi.waitFor(() =>
+    expect(mocks.listener.mock.calls.some(([, event]) => event === "systemVolume")).toBe(true),
+  );
+  const callback = mocks.listener.mock.calls.find(([, event]) => event === "systemVolume")![2];
+  callback({ volume: 0.35 });
+  expect(listener).toHaveBeenCalledWith(expect.objectContaining({ detail: 0.35 }));
+  expect(events).not.toHaveBeenCalled();
+  window.removeEventListener("splayer:system-volume", listener);
+});
+
 it("均衡器、前级与升降调调用原生节点，不调用 WebView 占位实现", async () => {
   const fallback = { setEqualizerBands: vi.fn() } as unknown as PlayerApi;
   const player = createNativePlayer(fallback);
@@ -64,7 +94,7 @@ it("加载前安装原生事件，返回真实进度并同步歌词小窗", asyn
   expect((await player.load("https://example.com/song.mp3", { autoPlay: false })).success).toBe(
     true,
   );
-  expect(mocks.listener).toHaveBeenCalledTimes(5);
+  expect(mocks.listener).toHaveBeenCalledTimes(6);
   expect(mocks.invoke).toHaveBeenCalledWith("plugin:native-audio|load", {
     source: "https://example.com/song.mp3",
     autoPlay: false,

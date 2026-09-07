@@ -7,10 +7,13 @@ import type { Track } from "@shared/types/player";
 import type { Platform } from "@shared/types/platform";
 import { ALL_PLATFORMS } from "@shared/types/platform";
 import type { QualityLevel } from "@/utils/quality";
-import { rankSiriTracks } from "./searchMatching";
+import { siriCollectionArtist } from "./searchMatching";
+import { mergeSiriResults } from "./ranking";
+import { loadSiriArtistPage } from "./artistCollection";
+import type { SiriArtistCollection, SiriSearchResult } from "@shared/types/siri";
 
 interface Request {
-  action: "search" | "resolve";
+  action: "search" | "resolve" | "artistPage";
   query?: string;
   artist?: string;
   source: Platform;
@@ -20,24 +23,31 @@ interface Request {
   allowTrial: boolean;
   quality: QualityLevel;
   vipSources?: Platform[];
+  collection?: SiriArtistCollection;
 }
 
 /** 同一套平台搜索、加密、登录态和试听解析，在 JavaScriptCore 中执行。 */
 export const run = async (request: Request): Promise<unknown> => {
   window.api = { apis: mobileProviders } as Window["api"];
+  if (request.action === "artistPage") {
+    if (!request.collection) throw new Error("缺少歌手曲库游标");
+    return loadSiriArtistPage(request.collection.artist, request);
+  }
   if (request.action === "search") {
     const query = (request.query ?? "").trim();
     const artist = (request.artist ?? "").trim();
     if (!query && !artist) throw new Error("请说出歌名或歌手");
-    const local =
-      request.scope === "online" ? [] : rankSiriTracks(request.library, query, artist).slice(0, 10);
-    if (local.length || request.scope === "local") return { tracks: local };
-    const sources = [...ALL_PLATFORMS].sort(
-      (a, b) =>
-        Number(request.vipSources?.includes(b) ?? false) -
-          Number(request.vipSources?.includes(a) ?? false) ||
-        Number(b === request.source) - Number(a === request.source),
+    const collectionArtist = siriCollectionArtist(query, artist);
+    if (collectionArtist) return loadSiriArtistPage(collectionArtist, request);
+    const local = mergeSiriResults(
+      [request.scope === "online" ? [] : request.library],
+      query,
+      artist,
+      request.source,
+      request.vipSources,
     );
+    if (local.tracks.length || request.scope === "local") return local;
+    const sources = ALL_PLATFORMS;
     // 先保留完整歌名，不能把《特别的人》《我的天空》里的“的”删掉。
     const keyword = [query, artist].filter(Boolean).join(" ");
     const results = await Promise.allSettled(
@@ -45,22 +55,27 @@ export const run = async (request: Request): Promise<unknown> => {
     );
     if (results.every((result) => result.status === "rejected"))
       throw new Error("三个音乐平台搜索均失败，请检查网络或登录状态");
-    const candidates = results.flatMap((result) =>
-      result.status === "fulfilled" ? result.value.items : [],
+    let ranked = mergeSiriResults(
+      results.map((result) => (result.status === "fulfilled" ? result.value.items : [])),
+      query,
+      artist,
+      request.source,
+      request.vipSources,
     );
-    let ranked = rankSiriTracks(candidates, query, artist);
     const spoken = query.replace(/^(.+?)的(.+)$/u, "$1 $2");
-    if (!ranked.length && spoken !== query && (!artist || query.startsWith(`${artist}的`))) {
+    if (!ranked.tracks.length && spoken !== query && (!artist || query.startsWith(`${artist}的`))) {
       const retry = await Promise.allSettled(
         sources.map((source) => searchSongs(source, spoken, 0, 20)),
       );
-      ranked = rankSiriTracks(
-        retry.flatMap((result) => (result.status === "fulfilled" ? result.value.items : [])),
+      ranked = mergeSiriResults(
+        retry.map((result) => (result.status === "fulfilled" ? result.value.items : [])),
         query,
         artist,
+        request.source,
+        request.vipSources,
       );
     }
-    return { tracks: ranked.slice(0, 10) };
+    return { ...ranked, tracks: ranked.tracks.slice(0, 10), groups: ranked.groups.slice(0, 10) };
   }
   const track = request.track;
   if (!track) throw new Error("没有可播放的歌曲");
@@ -94,9 +109,9 @@ export const run = async (request: Request): Promise<unknown> => {
     scope: "online",
     query: track.title,
     artist: track.artists[0]?.name ?? "",
-  }).catch(() => ({ tracks: [] }))) as { tracks: Track[] };
+  }).catch(() => ({ tracks: [], groups: [] }))) as SiriSearchResult;
   // 换源不能悄悄改成翻唱、串烧或另一场现场版本。
-  for (const candidate of alternatives.tracks) {
+  for (const candidate of alternatives.groups.flatMap((group) => group.tracks)) {
     if (
       candidate.source === track.source ||
       candidate.title.normalize("NFKC").trim().toLowerCase() !==

@@ -46,6 +46,8 @@ const adopt = async (snapshot: SiriSnapshot): Promise<void> => {
     if (changed || status.trackLoading || lyricTrack === null) adoptNativePlayback();
     playbackQueue.setQueue(snapshot.queue);
     status.playIndex = current;
+    if (snapshot.repeatMode) status.repeatMode = snapshot.repeatMode;
+    if (snapshot.shuffleMode) status.shuffleMode = snapshot.shuffleMode;
     status.trackLoading = false;
     status.position = native?.position ?? snapshot.position;
     status.duration = native?.duration || track.duration || 0;

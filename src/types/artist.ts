@@ -12,6 +12,9 @@ export interface CoverItem {
   subtitle?: string;
   /** 歌曲数量 */
   trackCount: number;
+  /** 歌手搜索提供的作品量，缺失时保持平台搜索排名。 */
+  artistSongCount?: number;
+  artistAlbumCount?: number;
 }
 
 /** 歌手详情 */
