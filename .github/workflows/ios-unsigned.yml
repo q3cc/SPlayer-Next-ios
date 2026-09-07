@@ -90,7 +90,7 @@ jobs:
         if: matrix.kind == 'ipa'
         run: |
           python3 scripts/ios-siri-tests/test_manifest.py
-          pnpm vitest run src/mobile/siri.spec.ts src/mobile/siri/ src/mobile/nativePlayer.spec.ts
+          pnpm vitest run src/mobile/siri.spec.ts src/mobile/siri/ src/mobile/nativePlayer.spec.ts src/mobile/smokeChecks.spec.ts
           pnpm vite build --config vite.siri.config.ts --mode mobile
           node scripts/ios-siri-tests/background.test.mjs
           swiftc src-tauri/plugins/native-audio/ios/Sources/SiriQueue.swift src-tauri/plugins/native-audio/ios/Sources/SiriSelection.swift scripts/ios-siri-tests/main.swift -o "$RUNNER_TEMP/splayer-siri-tests"
@@ -212,14 +212,12 @@ jobs:
             return 1
           }
 
-          wait_for_network() {
+          wait_for_checks() {
             local boot_log="$1"
-            for _ in {1..90}; do
-              if [[ -f "$boot_log" ]] && grep -Fxq 'network-smoke-ready' "$boot_log"; then
-                return 0
-              fi
-              if [[ -f "$boot_log" ]] && grep -Fq 'network-smoke-failed:' "$boot_log"; then
-                return 1
+            for _ in {1..180}; do
+              if [[ -f "$boot_log" ]] && grep -Fq 'smoke-complete:' "$boot_log"; then
+                grep -Fxq 'smoke-complete:passed' "$boot_log"
+                return $?
               fi
               sleep 1
             done
@@ -274,7 +272,7 @@ jobs:
           first_mounted=1
           wait_for_mount "$boot_log" || first_mounted=0
           first_network=1
-          wait_for_network "$boot_log" || first_network=0
+          wait_for_checks "$boot_log" || first_network=0
           sleep 1
           capture first-launch
           cp "$boot_log" ios-smoke/first-boot.log 2>/dev/null || true
@@ -287,7 +285,7 @@ jobs:
           second_mounted=1
           wait_for_mount "$boot_log" || second_mounted=0
           second_network=1
-          wait_for_network "$boot_log" || second_network=0
+          wait_for_checks "$boot_log" || second_network=0
           sleep 1
           capture second-launch || true
           cp "$boot_log" ios-smoke/second-boot.log 2>/dev/null || true
@@ -308,13 +306,14 @@ jobs:
             exit 1
           fi
           if [[ "$first_network" != 1 ]]; then
-            echo "The common recommendations or QR login smoke test failed" >&2
-            exit 1
+            echo "::error::First-launch smoke checks failed or timed out; see stage results below"
+            cat ios-smoke/first-boot.log >&2 || true
           fi
           if [[ "$second_network" != 1 ]]; then
-            echo "The home recommendation UI smoke test failed" >&2
-            exit 1
+            echo "::error::Second-launch smoke checks failed or timed out; see stage results below"
+            cat ios-smoke/second-boot.log >&2 || true
           fi
+          [[ "$first_network" == 1 && "$second_network" == 1 ]]
 
       - name: Verify iPad portrait and landscape layouts
         if: always() && matrix.kind == 'smoke' && env.IOS_SIMULATOR_DEVICE != ''

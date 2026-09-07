@@ -331,6 +331,11 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
   @objc func status(_ invoke: Invoke) {
     DispatchQueue.main.async {
       var value = self.snapshot()
+      let info = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
+      value["nowPlaying"] = [
+        "title": info[MPMediaItemPropertyTitle] as? String ?? "",
+        "artist": info[MPMediaItemPropertyArtist] as? String ?? ""
+      ] as JSObject
       value["equalizer"] = [
         "enabled": self.audioEffects.equalizer.bands.allSatisfy { !$0.bypass },
         "bands": self.audioEffects.equalizer.bands.map { Double($0.gain) },

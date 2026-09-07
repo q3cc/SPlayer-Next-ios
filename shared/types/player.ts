@@ -10,6 +10,12 @@ export type RepeatMode = "list" | "one";
 /** 随机模式 */
 export type ShuffleMode = "off" | "on";
 
+/** 系统媒体中心实际公布的轻量信息，用于诊断原生卡片同步。 */
+export interface SystemMediaMetadata {
+  title: string;
+  artist: string;
+}
+
 /** 歌曲来源：本地 / 流媒体 / 在线平台 */
 export type TrackSource = "local" | "streaming" | Platform;
 

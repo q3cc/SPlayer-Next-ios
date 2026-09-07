@@ -11,6 +11,7 @@ import { CURRENT_AGREEMENT_VERSION } from "@shared/constants/agreement";
 import { appCacheDir, join } from "@tauri-apps/api/path";
 import { mkdir, remove, writeFile } from "@tauri-apps/plugin-fs";
 import { scanMobileDirectories } from "./library";
+import { runSmokeChecks, waitForMediaMetadata } from "./smokeChecks";
 
 const requireItems = (name: string, items: unknown[]): void => {
   if (!items.length) throw new Error(`${name} returned no items`);
@@ -72,79 +73,85 @@ const testHomeRecommendationsVisible = async (): Promise<void> => {
       sections.every((section) => section && section.getBoundingClientRect().height > 0)
     ) {
       reportBootStage("home-recommendations-ready");
-      const playerButton = document.createElement("button");
-      playerButton.textContent = "Open test player";
-      playerButton.style.cssText =
-        "position:fixed;right:40px;top:80px;z-index:9999;background:#fff;color:#000;padding:8px";
-      playerButton.onclick = async () => {
-        const status = useStatusStore();
-        status.isPlayerExpanded = !status.isPlayerExpanded;
-        if (!status.isPlayerExpanded) {
-          playerButton.textContent = "Open test player";
-          return;
-        }
-        useMediaStore().setTrack({
-          id: "layout-test",
-          source: "local",
-          title: "SPlayer layout test",
-          artists: [{ name: "SPlayer" }],
-          duration: 120000,
-        });
-        await new Promise((resolve) => setTimeout(resolve, 700));
-        const root = document.querySelector<HTMLElement>(".full-player");
-        const background = root?.querySelector<HTMLElement>(".bg-solid-wrap");
-        const fillsWindow = (node: HTMLElement | null | undefined): boolean => {
-          const rect = node?.getBoundingClientRect();
-          return (
-            !!rect &&
-            Math.abs(rect.top) < 1 &&
-            Math.abs(rect.left) < 1 &&
-            Math.abs(rect.width - innerWidth) < 1 &&
-            Math.abs(rect.height - innerHeight) < 1
-          );
-        };
-        if (!fillsWindow(root) || !fillsWindow(background)) {
-          playerButton.textContent = "Player edge test failed";
-          reportBootStage("player-edge-failed");
-          return;
-        }
-        playerButton.textContent = "Close test player";
-        reportBootStage("player-edge-ready");
-      };
-      document.body.append(playerButton);
-      const folderButton = document.createElement("button");
-      folderButton.textContent = "Open test folder picker";
-      folderButton.style.cssText =
-        "position:fixed;right:40px;top:125px;z-index:9998;background:#fff;color:#000;padding:8px";
-      folderButton.onclick = async () => {
-        const result = await useLibraryStore().addScanDir();
-        if (result.success || result.error === "canceled") {
-          folderButton.textContent = "Folder picker closed";
-          reportBootStage("folder-picker-returned");
-        } else {
-          folderButton.textContent = `Folder picker failed: ${result.error}`;
-          reportBootStage("folder-picker-failed");
-        }
-      };
-      document.body.append(folderButton);
-      const checkLayout = (): void => {
-        requestAnimationFrame(() =>
-          requestAnimationFrame(() => {
-            const compact = matchMedia("(max-width: 900px)").matches;
-            const nav = document.querySelector(".mobile-nav");
-            const sidebar = document.querySelector(".app-viewport aside");
-            if (compact ? nav && !sidebar : sidebar && !nav) {
-              reportBootStage(compact ? "layout-mobile-ready" : "layout-desktop-ready");
-            }
-          }),
-        );
-      };
-      window.addEventListener("resize", checkLayout);
-      checkLayout();
       return;
     }
   }
   throw new Error(`home recommendation sections missing at ${location.hash}`);
+};
+
+/** 布局测试入口不依赖外部推荐接口，否则网络故障会伪装成按钮丢失。 */
+const installLayoutControls = (): void => {
+  if (document.getElementById("smoke-player-button")) return;
+  const playerButton = document.createElement("button");
+  playerButton.id = "smoke-player-button";
+  playerButton.textContent = "Open test player";
+  playerButton.style.cssText =
+    "position:fixed;right:40px;top:80px;z-index:9999;background:#fff;color:#000;padding:8px";
+  playerButton.onclick = async () => {
+    const status = useStatusStore();
+    status.isPlayerExpanded = !status.isPlayerExpanded;
+    if (!status.isPlayerExpanded) {
+      playerButton.textContent = "Open test player";
+      return;
+    }
+    useMediaStore().setTrack({
+      id: "layout-test",
+      source: "local",
+      title: "SPlayer layout test",
+      artists: [{ name: "SPlayer" }],
+      duration: 120000,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 700));
+    const root = document.querySelector<HTMLElement>(".full-player");
+    const background = root?.querySelector<HTMLElement>(".bg-solid-wrap");
+    const fillsWindow = (node: HTMLElement | null | undefined): boolean => {
+      const rect = node?.getBoundingClientRect();
+      return (
+        !!rect &&
+        Math.abs(rect.top) < 1 &&
+        Math.abs(rect.left) < 1 &&
+        Math.abs(rect.width - innerWidth) < 1 &&
+        Math.abs(rect.height - innerHeight) < 1
+      );
+    };
+    if (!fillsWindow(root) || !fillsWindow(background)) {
+      playerButton.textContent = "Player edge test failed";
+      reportBootStage("player-edge-failed");
+      return;
+    }
+    playerButton.textContent = "Close test player";
+    reportBootStage("player-edge-ready");
+  };
+  document.body.append(playerButton);
+  const folderButton = document.createElement("button");
+  folderButton.textContent = "Open test folder picker";
+  folderButton.style.cssText =
+    "position:fixed;right:40px;top:125px;z-index:9998;background:#fff;color:#000;padding:8px";
+  folderButton.onclick = async () => {
+    const result = await useLibraryStore().addScanDir();
+    if (result.success || result.error === "canceled") {
+      folderButton.textContent = "Folder picker closed";
+      reportBootStage("folder-picker-returned");
+    } else {
+      folderButton.textContent = `Folder picker failed: ${result.error}`;
+      reportBootStage("folder-picker-failed");
+    }
+  };
+  document.body.append(folderButton);
+  const checkLayout = (): void => {
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        const compact = matchMedia("(max-width: 900px)").matches;
+        const nav = document.querySelector(".mobile-nav");
+        const sidebar = document.querySelector(".app-viewport aside");
+        if (compact ? nav && !sidebar : sidebar && !nav) {
+          reportBootStage(compact ? "layout-mobile-ready" : "layout-desktop-ready");
+        }
+      }),
+    );
+  };
+  window.addEventListener("resize", checkLayout);
+  checkLayout();
 };
 
 const createSilentWav = (): Uint8Array => {
@@ -207,56 +214,24 @@ const testLibraryScan = async (): Promise<void> => {
         ],
       });
       await window.api.player.seek(500);
-      if (
-        navigator.mediaSession.metadata?.title !== "测试动态歌词" ||
-        navigator.mediaSession.metadata?.artist !== "smoke - Unknown Artist"
-      ) {
-        throw new Error("dynamic lyrics media metadata did not update");
-      }
+      const artist = tracks[0].artists.map((item) => item.name).join(" / ");
+      await waitForMediaMetadata({ title: "测试动态歌词", artist: `smoke - ${artist}` });
       await window.api.config.set("media.dynamicLyrics", false);
-      if (String(navigator.mediaSession.metadata?.title) !== "smoke") {
-        throw new Error("disabling dynamic lyrics did not restore song title");
-      }
+      await waitForMediaMetadata({ title: "smoke", artist });
       reportBootStage("dynamic-lyrics-ready");
     } finally {
       await window.api.config.set("media.dynamicLyrics", dynamicLyrics);
       await window.api.config.set("media.systemMediaControls", mediaControls);
       window.api.nowPlaying.update({ track: null, lyric: [], source: null });
     }
-    await window.api.player.stop();
   } finally {
+    await window.api.player.stop().catch(() => undefined);
     await remove(directory, { recursive: true }).catch(() => undefined);
   }
 };
 
-/** 在移动端模拟器中验证公共在线业务链路 */
-export const runMobileSmokeTest = async (): Promise<void> => {
-  reportBootStage("network-smoke-start");
+const testSearchPlayback = async (): Promise<void> => {
   try {
-    if (!document.querySelector(".onboarding-page")) {
-      await testHomeRecommendationsVisible();
-      reportBootStage("network-smoke-ready");
-      return;
-    }
-
-    // 等待挂载后的首帧与启动遮罩淡出，再验证用户实际能看到的公共引导页。
-    await new Promise((resolve) => window.setTimeout(resolve, 500));
-    await testOnboardingVisible();
-    reportBootStage("onboarding-ready");
-
-    const [playlists, artists, albums] = await Promise.all([
-      fetchRecommendPlaylists(false),
-      fetchArtists(),
-      fetchNewAlbums(),
-    ]);
-    requireItems("recommend playlists", playlists);
-    requireItems("artists", artists);
-    requireItems("albums", albums);
-    reportBootStage("recommendations-ready");
-
-    await testLibraryScan();
-    reportBootStage("library-scan-ready");
-
     // 覆盖游客会话初始化、搜索、播放地址与 WKWebView 音频解码，不能仅检查首页公开接口。
     const search = await searchSongs("netease", "纯音乐", 0, 5);
     requireItems("search songs", search.items);
@@ -284,22 +259,58 @@ export const runMobileSmokeTest = async (): Promise<void> => {
     }
     if (!played) throw new Error("search returned no playable tracks");
     reportBootStage("search-playback-ready");
-
-    const qr = await neteaseQrLoginAdapter.create();
-    if (!qr.key || !qr.content.includes("/st/platform/scanlogin")) {
-      throw new Error("web QR login URL missing");
-    }
-    reportBootStage("qr-login-ready");
-
-    // 为第二次冷启动准备真实首页，随后由冒烟流程核对推荐区块已经渲染。
-    const settings = useSettingsStore();
-    await settings.setSystem("system.onboardingCompleted", true);
-    await settings.setSystem("system.agreedAgreementVersion", CURRENT_AGREEMENT_VERSION);
-    reportBootStage("home-smoke-prepared");
-    reportBootStage("network-smoke-ready");
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    reportBootStage(`network-smoke-failed:${message.replace(/[\r\n]/g, " ").slice(0, 160)}`);
-    if (error instanceof Error && error.stack) console.error("[mobile-smoke]", error.stack);
+  } finally {
+    await window.api.player.stop().catch(() => undefined);
   }
+};
+
+/** 分开报告本地、联网和布局结果，失败仍为第二次启动准备独立测试条件。 */
+export const runMobileSmokeTest = async (): Promise<void> => {
+  reportBootStage("smoke-start");
+  const onboarding = !!document.querySelector(".onboarding-page");
+  if (!onboarding) installLayoutControls();
+  const checks = onboarding
+    ? [
+        {
+          name: "onboarding",
+          run: async () => {
+            await new Promise((resolve) => window.setTimeout(resolve, 500));
+            await testOnboardingVisible();
+          },
+        },
+        { name: "local-media", run: testLibraryScan },
+        {
+          name: "recommendations",
+          run: async () => {
+            const [playlists, artists, albums] = await Promise.all([
+              fetchRecommendPlaylists(false),
+              fetchArtists(),
+              fetchNewAlbums(),
+            ]);
+            requireItems("recommend playlists", playlists);
+            requireItems("artists", artists);
+            requireItems("albums", albums);
+          },
+        },
+        { name: "online-playback", run: testSearchPlayback },
+        {
+          name: "qr-login",
+          run: async () => {
+            const qr = await neteaseQrLoginAdapter.create();
+            if (!qr.key || !qr.content.includes("/st/platform/scanlogin"))
+              throw new Error("web QR login URL missing");
+          },
+        },
+        {
+          name: "prepare-home",
+          run: async () => {
+            const settings = useSettingsStore();
+            await settings.setSystem("system.onboardingCompleted", true);
+            await settings.setSystem("system.agreedAgreementVersion", CURRENT_AGREEMENT_VERSION);
+          },
+        },
+      ]
+    : [{ name: "home-recommendations", run: testHomeRecommendationsVisible }];
+  const passed = await runSmokeChecks(checks, reportBootStage);
+  reportBootStage(`smoke-complete:${passed ? "passed" : "failed"}`);
 };
