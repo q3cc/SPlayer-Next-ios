@@ -89,6 +89,7 @@ jobs:
       - name: Test Siri background APIs and native queue
         if: matrix.kind == 'ipa'
         run: |
+          python3 scripts/ios-siri-tests/test_manifest.py
           pnpm vite build --config vite.siri.config.ts --mode mobile
           node scripts/ios-siri-tests/background.test.mjs
           swiftc src-tauri/plugins/native-audio/ios/Sources/SiriQueue.swift scripts/ios-siri-tests/main.swift -o "$RUNNER_TEMP/splayer-siri-tests"

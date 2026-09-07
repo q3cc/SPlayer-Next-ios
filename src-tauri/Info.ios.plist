@@ -6,8 +6,33 @@
   <string>允许 Siri 按歌名或歌手搜索音乐，并控制 SPlayer 播放。</string>
   <key>INIntentsSupported</key>
   <array><string>INPlayMediaIntent</string></array>
-  <key>CFBundleSpokenName</key>
+  <key>INSupportedMediaCategories</key>
+  <array><string>INMediaCategoryMusic</string></array>
+  <key>CFBundleDisplayName</key>
   <string>SPlayer</string>
+  <key>CFBundleSpokenName</key>
+  <string>S Player</string>
+  <key>INAlternativeAppNames</key>
+  <array>
+    <dict>
+      <key>INAlternativeAppName</key>
+      <string>SPlayer Next</string>
+      <key>INAlternativeAppNamePronunciationHint</key>
+      <string>S Player Next</string>
+    </dict>
+    <dict>
+      <key>INAlternativeAppName</key>
+      <string>S Play</string>
+      <key>INAlternativeAppNamePronunciationHint</key>
+      <string>S Play</string>
+    </dict>
+    <dict>
+      <key>INAlternativeAppName</key>
+      <string>SPlay</string>
+      <key>INAlternativeAppNamePronunciationHint</key>
+      <string>S Play</string>
+    </dict>
+  </array>
   <key>UIApplicationSceneManifest</key>
   <dict>
     <key>UIApplicationSupportsMultipleScenes</key>
