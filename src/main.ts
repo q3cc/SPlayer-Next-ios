@@ -14,6 +14,7 @@ import { handleOrpheus } from "./services/orpheus";
 import { installHotkeyManager } from "./core/hotkey/manager";
 import { vRipple } from "./directives/ripple";
 import { reportBootStage } from "./boot";
+import { dismissSplash } from "./splash";
 
 const startApp = async (): Promise<void> => {
   reportBootStage("vue-setup-start");
@@ -38,26 +39,6 @@ const startApp = async (): Promise<void> => {
     },
     { immediate: true },
   );
-
-  /** splash 笔画动画总时长（ms） */
-  const SPLASH_ANIM_MS = import.meta.env.MODE === "mobile" ? 150 : 2050;
-
-  /** 标记 splash 定时器是否已触发 */
-  let splashTimerFired = false;
-
-  /** 移除 splash 层 */
-  const removeSplash = (): void => {
-    const el = document.getElementById("app-loading");
-    if (!el) return;
-    el.classList.add("hidden");
-    el.addEventListener("transitionend", () => el.remove(), { once: true });
-  };
-
-  /** 挂载后移除 */
-  const onSplashTimerDone = (): void => {
-    splashTimerFired = true;
-    removeSplash();
-  };
 
   /**
    * 启动播放服务并分发冷启动任务
@@ -93,16 +74,11 @@ const startApp = async (): Promise<void> => {
   // 挂载应用
   app.mount("#app");
   reportBootStage("vue-mounted");
-  if (import.meta.env.VITE_MOBILE_SMOKE === "1") {
-    void import("./mobile/smoke").then(({ runMobileSmokeTest }) => runMobileSmokeTest());
-  }
-  // 计算剩余时间
-  const elapsed = performance.now() - (window.__splashStart ?? 0);
-  const remaining = Math.max(0, SPLASH_ANIM_MS - elapsed);
-  setTimeout(onSplashTimerDone, remaining);
-  if (!splashTimerFired) {
-    setTimeout(removeSplash, SPLASH_ANIM_MS + 100);
-  }
+  void dismissSplash().then(() => {
+    if (import.meta.env.VITE_MOBILE_SMOKE === "1") {
+      void import("./mobile/smoke").then(({ runMobileSmokeTest }) => runMobileSmokeTest());
+    }
+  });
   // 初始化播放器与冷启动分发
   bootstrapPlayback()
     .then(async () => {

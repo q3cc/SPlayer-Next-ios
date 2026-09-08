@@ -90,6 +90,7 @@
       .splash-next {
         width: 98px;
         height: 24px;
+        overflow: visible;
       }
       .splash-next .letter {
         stroke: currentColor;
@@ -177,6 +178,19 @@
       }
       @keyframes splash-draw {
         to {
+          stroke-dashoffset: 0;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        #app-loading {
+          transition: none;
+        }
+        .splash-logo,
+        .splash-footer,
+        .splash-next .letter {
+          animation: none;
+        }
+        .splash-next .letter {
           stroke-dashoffset: 0;
         }
       }
