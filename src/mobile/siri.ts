@@ -2,6 +2,7 @@ import { addPluginListener, invoke, isTauri } from "@tauri-apps/api/core";
 import { nextTick, watch } from "vue";
 import { store } from "./shims/store";
 import { getSessionCookies } from "./shims/sessions";
+import { mobileMediaSession } from "./mediaSession";
 import { useSettingsStore } from "@/stores/settings";
 import { useStatusStore } from "@/stores/status";
 import { useMediaStore } from "@/stores/media";
@@ -58,6 +59,9 @@ const adopt = async (snapshot: SiriSnapshot): Promise<void> => {
     playback.setSpeed(native?.speed ?? status.speed ?? 1);
     playback.setPlaying(status.state === "playing");
     playback.setCurrentTime(status.position, { force: true });
+    // Siri 不经过网页播放器的 load，接管时也要同步系统卡片的曲目身份。
+    mobileMediaSession.setTrack(track);
+    mobileMediaSession.setPosition(status.position);
     if (changed) {
       media.detail = null;
       media.setTrack(track);

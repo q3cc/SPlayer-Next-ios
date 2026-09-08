@@ -13,6 +13,11 @@ const mocks = vi.hoisted(() => ({
   media: null as any,
   lyrics: vi.fn().mockResolvedValue(undefined),
   adoptNative: vi.fn(),
+  mediaTrack: vi.fn(),
+  mediaPosition: vi.fn(),
+}));
+vi.mock("./mediaSession", () => ({
+  mobileMediaSession: { setTrack: mocks.mediaTrack, setPosition: mocks.mediaPosition },
 }));
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: mocks.invoke,
@@ -106,6 +111,8 @@ it("原生切歌与网页同时更新时，明确拒绝旧快照并忽略乱序�
   expect(mocks.status.state).toBe("playing");
   expect(mocks.status.duration).toBe(200000);
   expect(mocks.status.position).toBe(42000);
+  expect(mocks.mediaTrack).toHaveBeenLastCalledWith(second);
+  expect(mocks.mediaPosition).toHaveBeenLastCalledWith(42000);
   expect(playback.getDuration()).toBe(200000);
   expect(playback.getCurrentTime()).toBeGreaterThanOrEqual(42000);
   expect(playback.isPlaying()).toBe(true);

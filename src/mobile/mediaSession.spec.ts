@@ -3,7 +3,12 @@ import type { LyricLine } from "@shared/types/lyrics";
 import type { Track } from "@shared/types/player";
 import { mobileMediaSession } from "./mediaSession";
 
-const config = vi.hoisted(() => ({ enabled: true, dynamic: true }));
+const config = vi.hoisted(() => ({ enabled: true, dynamic: true, native: false }));
+const nativeInvoke = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: nativeInvoke,
+  isTauri: () => config.native,
+}));
 vi.mock("./shims/store", () => ({
   store: {
     get: (key: string) => (key === "media.dynamicLyrics" ? config.dynamic : config.enabled),
@@ -44,6 +49,7 @@ class ArtworkImage {
 
 beforeEach(() => {
   config.enabled = true;
+  config.native = false;
   config.dynamic = true;
   ArtworkImage.instances = [];
   vi.stubGlobal("Image", ArtworkImage);
@@ -62,6 +68,64 @@ beforeEach(() => {
   mobileMediaSession.setTrack(null);
   mobileMediaSession.setTrack(track);
   mobileMediaSession.setLyrics({ track, lyric: [line], source: null }, 0);
+});
+
+describe("iOS 原生控制中心", () => {
+  beforeEach(() => {
+    config.native = true;
+    mobileMediaSession.setTrack(null);
+    nativeInvoke.mockClear();
+  });
+
+  it("普通播放直接提交歌名、歌手和封面，不依赖浏览器卡片", () => {
+    mobileMediaSession.setTrack(track);
+    expect(nativeInvoke).toHaveBeenLastCalledWith(
+      "plugin:native-audio|metadata",
+      expect.objectContaining({
+        enabled: true,
+        title: track.title,
+        artist: "歌手",
+        cover: track.cover,
+      }),
+    );
+  });
+
+  it("Siri 接管后歌词同步保留当前歌曲，不清空原生卡片", () => {
+    mobileMediaSession.setTrack(track);
+    mobileMediaSession.setLyrics({ track, lyric: [line], source: null }, 0);
+    expect(nativeInvoke).toHaveBeenLastCalledWith(
+      "plugin:native-audio|metadata",
+      expect.objectContaining({
+        enabled: true,
+        title: track.title,
+        lines: [{ start: 1000, end: 2000, text: "当前歌词" }],
+      }),
+    );
+    const next = { ...track, id: "next", title: "Siri 下一首" };
+    mobileMediaSession.setTrack(next);
+    mobileMediaSession.setLyrics({ track, lyric: [line], source: null }, 0);
+    expect(nativeInvoke).toHaveBeenLastCalledWith(
+      "plugin:native-audio|metadata",
+      expect.objectContaining({
+        enabled: true,
+        title: next.title,
+        lines: [],
+      }),
+    );
+  });
+
+  it("关闭系统控制仅清除原生卡片，不向 WebKit 写入空媒体信息", () => {
+    const setter = vi.fn();
+    Object.defineProperty(navigator.mediaSession, "metadata", { configurable: true, set: setter });
+    mobileMediaSession.setTrack(track);
+    config.enabled = false;
+    mobileMediaSession.refresh();
+    expect(nativeInvoke).toHaveBeenLastCalledWith(
+      "plugin:native-audio|metadata",
+      expect.objectContaining({ enabled: false }),
+    );
+    expect(setter).not.toHaveBeenCalled();
+  });
 });
 
 describe("系统高清封面", () => {

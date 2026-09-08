@@ -66,7 +66,8 @@ const refresh = (): void => {
   if (!("mediaSession" in navigator) && !isTauri()) return;
   if (!track || !store.get("media.systemMediaControls")) {
     clearArtwork();
-    if ("mediaSession" in navigator) navigator.mediaSession.metadata = null;
+    // 原生模式只更新 MPNowPlayingInfoCenter，不能让 WebKit 的空会话参与系统卡片竞争。
+    if (!isTauri() && "mediaSession" in navigator) navigator.mediaSession.metadata = null;
     lastMetadata = null;
     nativeKey = "";
     nativeLyrics = undefined;
