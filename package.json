@@ -2,7 +2,7 @@
   "name": "splayer-next",
   "productName": "SPlayer-Next",
   "desktopName": "top.imsyy.splayer_next",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "description": "SPlayer Next adapted for iOS and iPadOS",
   "type": "module",
   "packageManager": "pnpm@11.5.2",

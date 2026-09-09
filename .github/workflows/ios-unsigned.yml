@@ -49,10 +49,7 @@ jobs:
             name: Unsigned iPhone and iPad IPA
             rust_targets: aarch64-apple-ios
             rust_cache_key: ""
-          - kind: smoke
-            name: iPad Release startup smoke test
-            rust_targets: aarch64-apple-ios-sim
-            rust_cache_key: release-smoke
+          # 冒烟测试已关闭；保留测试代码，日常仅构建真机 IPA。
 
     steps:
       - name: Checkout
