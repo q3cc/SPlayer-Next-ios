@@ -25,7 +25,7 @@ beforeEach(() => {
   mocks.get.mockImplementation((key) => (key === "update.autoCheck" ? true : "stable"));
 });
 
-const release = (tag = "ios-v1.1.0", extra = {}) => ({
+const release = (tag = "ios-v2.1.0", extra = {}) => ({
   tag_name: tag,
   draft: false,
   prerelease: false,
@@ -213,7 +213,7 @@ describe("iOS 检查当前仓库更新", () => {
         manual: true,
         canInstall: true,
         meta: {
-          version: "1.1.0",
+          version: "2.1.0",
           releaseNotes: "更新说明",
           releaseDate: "2026-09-05T00:00:00Z",
           size: 1234,
@@ -222,14 +222,14 @@ describe("iOS 检查当前仓库更新", () => {
     ]);
     await mobileUpdate.openDownloadPage();
     expect(mocks.open).toHaveBeenCalledWith(
-      "https://github.com/q3cc/SPlayer-Next-ios/releases/tag/ios-v1.1.0",
+      "https://github.com/q3cc/SPlayer-Next-ios/releases/tag/ios-v2.1.0",
     );
     stop();
     await mobileUpdate.check(true);
     expect(events).toHaveLength(2);
   });
 
-  it.each(["ios-v1.0.0", "ios-v0.1.0"])("同版或旧版 %s 不提示更新", async (tag) => {
+  it.each(["ios-v2.0.0", "ios-v1.0.0", "ios-v0.1.0"])("同版或旧版 %s 不提示更新", async (tag) => {
     const { mobileUpdate } = await import("./update");
     const listener = vi.fn();
     mobileUpdate.onEvent(listener);
@@ -248,19 +248,19 @@ describe("iOS 检查当前仓库更新", () => {
         release("ios-v8.0.0", { draft: true }),
         release("ios-v7.0.0", { assets: [] }),
         release("ios-v6.0.0-alpha.1"),
-        release("ios-v1.2.0"),
-        release("ios-v1.10.0"),
+        release("ios-v2.2.0"),
+        release("ios-v2.10.0"),
       ]),
     );
     await mobileUpdate.check(true);
     expect(listener).toHaveBeenLastCalledWith(
-      expect.objectContaining({ meta: expect.objectContaining({ version: "1.10.0" }) }),
+      expect.objectContaining({ meta: expect.objectContaining({ version: "2.10.0" }) }),
     );
   });
 
   it.each([
-    ["beta", "2.0.0-beta.10"],
-    ["alpha", "3.0.0-alpha.1"],
+    ["beta", "3.0.0-beta.10"],
+    ["alpha", "4.0.0-alpha.1"],
   ])("%s 通道筛选版本", async (channel, expected) => {
     const { mobileUpdate } = await import("./update");
     mocks.get.mockImplementation((key) => (key === "update.channel" ? channel : true));
@@ -268,9 +268,9 @@ describe("iOS 检查当前仓库更新", () => {
     mobileUpdate.onEvent(listener);
     mocks.fetch.mockResolvedValue(
       Response.json([
-        release("ios-v2.0.0-beta.2", { prerelease: true }),
-        release("ios-v2.0.0-beta.10", { prerelease: true }),
-        release("ios-v3.0.0-alpha.1", { prerelease: true }),
+        release("ios-v3.0.0-beta.2", { prerelease: true }),
+        release("ios-v3.0.0-beta.10", { prerelease: true }),
+        release("ios-v4.0.0-alpha.1", { prerelease: true }),
       ]),
     );
     await mobileUpdate.check(true);
