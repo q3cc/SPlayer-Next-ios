@@ -4,13 +4,13 @@ export const isDev = import.meta.env.MODE === "development" || import.meta.env.D
 /** 操作系统平台 */
 const platform = window.api.system.platform;
 /** 是否为 Windows 系统 */
-export const isWin = platform === "win32";
+export const isWin = import.meta.env.MODE !== "mobile" && platform === "win32";
 /** 是否为 macOS 系统 */
-export const isMac = platform === "darwin";
+export const isMac = import.meta.env.MODE !== "mobile" && platform === "darwin";
 /** 是否为 Linux 系统 */
-export const isLinux = platform === "linux";
+export const isLinux = import.meta.env.MODE !== "mobile" && platform === "linux";
 /** 是否为 iOS / iPadOS 移动端 */
-export const isIOS = platform === "ios";
+export const isIOS = import.meta.env.MODE === "mobile" || platform === "ios";
 
 /** 应用版本号 */
 export const APP_VERSION = __APP_VERSION__;

@@ -35,6 +35,8 @@ private struct SystemVolumeRequest: Decodable {
   let x: Double?
   let y: Double?
   let value: Float?
+  let viewportWidth: Double?
+  let viewportHeight: Double?
 }
 
 private struct PlaybackCompletion {
@@ -84,6 +86,7 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
       self.volumeView.showsRouteButton = false
       self.volumePanel.layer.cornerRadius = 18
       self.volumePanel.clipsToBounds = true
+      self.volumePanel.accessibilityIdentifier = "splayer-system-volume"
       self.volumeLabel.textAlignment = .center
       self.volumeLabel.font = .monospacedDigitSystemFont(ofSize: 13, weight: .medium)
       self.volumePanel.contentView.addSubview(self.volumeView)
@@ -115,17 +118,22 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
     DispatchQueue.main.async {
       if request.show == false { self.dismissSystemVolume() }
       if request.show == true || request.value != nil {
-        guard self.visible, let webview = self.volumeWebView else { invoke.reject("播放器尚未显示"); return }
-        self.volumeOverlay.frame = webview.bounds
+        guard self.visible, let webview = self.volumeWebView, let window = webview.window else { invoke.reject("播放器尚未显示"); return }
+        // 挂在当前窗口顶层，避免 WKWebView 的内容层或播放器全屏层覆盖原生控件。
+        self.volumeOverlay.frame = window.bounds
         self.volumeOverlay.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        let inset = webview.safeAreaInsets
-        let width = min(240, webview.bounds.width - inset.left - inset.right - 24)
-        let x = min(max(CGFloat(request.x ?? Double(webview.bounds.midX)) - width / 2, inset.left + 12), webview.bounds.width - inset.right - width - 12)
-        let y = min(max(CGFloat(request.y ?? Double(webview.bounds.midY)) - 88, inset.top + 12), webview.bounds.height - inset.bottom - 88)
+        let inset = window.safeAreaInsets
+        let scaleX = webview.bounds.width / CGFloat(max(1, request.viewportWidth ?? Double(webview.bounds.width)))
+        let scaleY = webview.bounds.height / CGFloat(max(1, request.viewportHeight ?? Double(webview.bounds.height)))
+        let anchor = webview.convert(CGPoint(x: CGFloat(request.x ?? Double(webview.bounds.midX)) * scaleX,
+          y: CGFloat(request.y ?? Double(webview.bounds.midY)) * scaleY), to: window)
+        let width = min(240, window.bounds.width - inset.left - inset.right - 24)
+        let x = min(max(anchor.x - width / 2, inset.left + 12), window.bounds.width - inset.right - width - 12)
+        let y = min(max(anchor.y - 88, inset.top + 12), window.bounds.height - inset.bottom - 88)
         self.volumePanel.frame = CGRect(x: x, y: y, width: width, height: 76)
         self.volumeView.frame.size.width = width - 32
         self.volumeLabel.frame.size.width = width - 32
-        webview.addSubview(self.volumeOverlay)
+        window.addSubview(self.volumeOverlay)
         self.volumePanel.layoutIfNeeded()
         if let value = request.value {
           guard value.isFinite, (0...1).contains(value),
@@ -402,6 +410,7 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
         self.artworkTask?.cancel()
         self.artworkURL = value.cover
         info.removeValue(forKey: MPMediaItemPropertyArtwork)
+        if #available(iOS 26.0, *) { StillArtwork.clear(from: &info) }
         if let url = URL(string: value.cover), ["https", "http"].contains(url.scheme ?? "") {
           self.artworkTask = URLSession.shared.dataTask(with: url) { [weak self] data, _, _ in
             guard let data = data, let image = UIImage(data: data) else { return }
@@ -409,6 +418,7 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
               guard let self = self, self.artworkURL == value.cover, self.mediaEnabled else { return }
               var current = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
               current[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+              if #available(iOS 26.0, *) { StillArtwork.install(image: image, id: value.cover, into: &current) }
               MPNowPlayingInfoCenter.default().nowPlayingInfo = current
             }
           }

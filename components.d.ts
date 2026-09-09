@@ -117,7 +117,6 @@ declare module 'vue' {
     IconLucideListMusic: typeof import('~icons/lucide/list-music')['default']
     IconLucideLoaderCircle: typeof import('~icons/lucide/loader-circle')['default']
     IconLucideLocate: typeof import('~icons/lucide/locate')['default']
-    IconLucideLock: typeof import('~icons/lucide/lock')['default']
     IconLucideLogIn: typeof import('~icons/lucide/log-in')['default']
     IconLucideLogOut: typeof import('~icons/lucide/log-out')['default']
     IconLucideMaximize: typeof import('~icons/lucide/maximize')['default']
@@ -155,7 +154,6 @@ declare module 'vue' {
     IconLucideTrash2: typeof import('~icons/lucide/trash2')['default']
     IconLucideTriangleAlert: typeof import('~icons/lucide/triangle-alert')['default']
     IconLucideType: typeof import('~icons/lucide/type')['default']
-    IconLucideUnlock: typeof import('~icons/lucide/unlock')['default']
     IconLucideUnplug: typeof import('~icons/lucide/unplug')['default']
     IconLucideUpload: typeof import('~icons/lucide/upload')['default']
     IconLucideUser: typeof import('~icons/lucide/user')['default']
@@ -302,6 +300,7 @@ declare module 'vue' {
     TrackInfo: typeof import('./src/components/player/TrackInfo.vue')['default']
     UiZoomDialog: typeof import('./src/components/modals/UiZoomDialog.vue')['default']
     UpdateDialog: typeof import('./src/components/modals/UpdateDialog.vue')['default']
+    VolumeControl: typeof import('./src/components/player/VolumeControl.vue')['default']
     WindowControls: typeof import('./src/components/layout/WindowControls.vue')['default']
   }
 }

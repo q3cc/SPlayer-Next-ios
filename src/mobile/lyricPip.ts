@@ -1,4 +1,5 @@
 import { addPluginListener, invoke } from "@tauri-apps/api/core";
+import { playbackDuration } from "@shared/utils/playbackDuration";
 import type { NowPlayingSnapshot } from "@shared/types/nowPlaying";
 import type { PlayerStatus } from "@shared/types/player";
 import { toast } from "@/composables/useToast";
@@ -199,9 +200,10 @@ export const mobileLyricPip = {
       await mobileLyricPip.update();
       const value = await snapshot?.();
       if (!value?.track) throw new Error("请先选择并播放一首歌曲，再开启歌词小窗");
+      const audioStatus = await window.api.player.getStatus();
       await invoke("plugin:lyric-pip|sync", {
         position: value.position,
-        duration: value.track.duration,
+        duration: playbackDuration(audioStatus.data?.duration, value.track.duration),
         playing: value.playing,
         speed: value.speed,
         timestamp: value.sendTimestamp,

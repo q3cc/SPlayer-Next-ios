@@ -6,7 +6,11 @@ targets:
     type: bundle.ui-testing
     platform: iOS
     deploymentTarget: "16.0"
-    sources: [LayoutTests.swift, PlaybackTests.swift]
+    sources:
+      - LayoutTests.swift
+      - PlaybackTests.swift
+      - ArtworkTests.swift
+      - ../../src-tauri/plugins/native-audio/ios/Sources/StillArtwork.swift
     settings:
       GENERATE_INFOPLIST_FILE: YES
       CODE_SIGNING_ALLOWED: NO

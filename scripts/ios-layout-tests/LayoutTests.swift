@@ -30,6 +30,17 @@ final class LayoutTests: XCTestCase {
             playerAttachment.name = name + "-player"
             playerAttachment.lifetime = .keepAlways
             add(playerAttachment)
+            let volume = app.buttons["播放器音量"].firstMatch
+            XCTAssertTrue(volume.waitForExistence(timeout: 10))
+            volume.tap()
+            let volumePanel = app.otherElements["splayer-system-volume"].firstMatch
+            XCTAssertTrue(volumePanel.waitForExistence(timeout: 5))
+            let volumeAttachment = XCTAttachment(screenshot: app.screenshot())
+            volumeAttachment.name = name + "-volume"
+            volumeAttachment.lifetime = .keepAlways
+            add(volumeAttachment)
+            expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: volumePanel)
+            waitForExpectations(timeout: 8)
             closePlayer.tap()
         }
     }

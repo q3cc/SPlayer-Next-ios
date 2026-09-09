@@ -38,6 +38,10 @@ beforeEach(() => {
   vi.resetModules();
   mocks.invoke.mockReset().mockResolvedValue(undefined);
   mocks.events.clear();
+  Object.defineProperty(window, "api", {
+    configurable: true,
+    value: { player: { getStatus: async () => ({ success: true, data: { duration: 30000 } }) } },
+  });
   mocks.addListener.mockImplementation(async (_plugin, event, callback) => {
     mocks.events.set(event, callback);
     return { unregister: vi.fn() };
@@ -286,6 +290,10 @@ describe("歌词画中画", () => {
     pip.configure(async () => value, playback);
     const off = pip.onVisibility(visibility);
     await pip.toggle();
+    expect(mocks.invoke).toHaveBeenCalledWith(
+      "plugin:lyric-pip|sync",
+      expect.objectContaining({ duration: 30000 }),
+    );
     expect(mocks.invoke.mock.calls.map((args) => args[0])).toEqual([
       "plugin:lyric-pip|update",
       "plugin:lyric-pip|sync",

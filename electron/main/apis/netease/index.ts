@@ -116,6 +116,7 @@ const sessionRealIp = (): string => {
 /** 内存缓存 */
 let sessionCache: Record<string, string> | null = null;
 let anonymousSessionPromise: Promise<void> | null = null;
+let anonymousRetryAfter = 0;
 
 const syncDeviceState = (session: Record<string, string>): void => {
   if (session.deviceId) setDeviceId(session.deviceId);
@@ -184,11 +185,18 @@ export const ensureNeteaseAnonymousSession = async (): Promise<void> => {
 
   anonymousSessionPromise = (async () => {
     const session = loadSession();
-    const result = await modules.register_anonimous({ cookie: { ...session } }, createRequest);
+    const result = await modules.register_anonimous(
+      {
+        cookie: { ...session },
+        ...(store.get("system.neteaseRealIp") ? { realIP: sessionRealIp() } : {}),
+      },
+      createRequest,
+    );
     const body = result.body as { token?: unknown };
     const patch = parseSetCookie(result.cookie ?? []);
     const token = typeof body.token === "string" ? body.token : patch.MUSIC_A;
-    if (!token) throw new Error("netease anonymous registration missing MUSIC_A");
+    if (!token)
+      throw new Error(`netease anonymous registration missing MUSIC_A (status=${result.status})`);
     persistSession({
       ...loadSession(),
       ...patch,
@@ -223,7 +231,19 @@ export const callNetease = async (
     name === "logout" ||
     name === "register_anonimous";
   if (!isSessionEndpoint && !SESSIONLESS.has(name) && params.cookie === undefined) {
-    await ensureNeteaseAnonymousSession();
+    // 游客注册失败不代表公开搜索或试听不可用，继续请求真实接口，由其返回可用性。
+    if (Date.now() >= anonymousRetryAfter) {
+      try {
+        await ensureNeteaseAnonymousSession();
+        anonymousRetryAfter = 0;
+      } catch (error) {
+        anonymousRetryAfter = Date.now() + 30_000;
+        neteaseLog.warn(
+          "游客会话初始化失败，继续匿名请求",
+          error instanceof Error ? error.message : "未知错误",
+        );
+      }
+    }
   }
   const session = loadSession();
 

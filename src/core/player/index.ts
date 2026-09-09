@@ -1,4 +1,5 @@
 import type { PlaybackContext, Track } from "@shared/types/player";
+import { playbackDuration } from "@shared/utils/playbackDuration";
 import type { TagEditRequest, TagWriteOutcome } from "@shared/types/tagEditor";
 import type { PersonalFmOptions } from "@/types/netease";
 import { handleEvent } from "./events";
@@ -168,7 +169,8 @@ export const load = async (
         extractColorFromUrl(enriched?.cover ?? null);
         if (enriched) void coverLoader.loadCoverForTrack(enriched);
       }
-      const dur = enriched?.duration ?? mediaInfo.duration;
+      // 列表元数据是整首歌曲时长；进度条必须使用实际音源时长，尤其是 QQ/KG 试听。
+      const dur = playbackDuration(mediaInfo.duration, enriched?.duration ?? 0);
       status.duration = dur;
       status.state = autoPlay ? "playing" : "paused";
       status.currentSource = source;

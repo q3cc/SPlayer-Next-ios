@@ -15,6 +15,7 @@ on:
       - "scripts/ios-siri-tests/**"
       - "scripts/configure-ios-siri.mjs"
       - "scripts/publish-action-update.cjs"
+      - "scripts/optimize-ios-ipa.py"
       - "src-tauri/**"
       - "shared/**"
       - "public/**"
@@ -63,6 +64,13 @@ jobs:
           version: 11.5.2
           run_install: false
 
+      - name: Select Xcode 26 for system artwork
+        run: |
+          xcode_app=$(find /Applications -maxdepth 1 -name 'Xcode_26*.app' -print | sort -V | tail -n 1)
+          test -n "$xcode_app"
+          sudo xcode-select -s "$xcode_app/Contents/Developer"
+          xcodebuild -version
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -90,7 +98,7 @@ jobs:
         if: matrix.kind == 'ipa'
         run: |
           python3 scripts/ios-siri-tests/test_manifest.py
-          pnpm vitest run src/splash.spec.ts src/mobile/siri.spec.ts src/mobile/siri/ src/mobile/nativePlayer.spec.ts src/mobile/mediaSession.spec.ts src/mobile/smokeChecks.spec.ts
+          pnpm vitest run src/splash.spec.ts src/mobile/siri.spec.ts src/mobile/siri/ src/mobile/nativePlayer.spec.ts src/mobile/mediaSession.spec.ts src/mobile/smokeChecks.spec.ts src/mobile/anonymousSession.spec.ts src/mobile/playbackDuration.spec.ts src/mobile/lyricPip.spec.ts src/components/player/VolumeControl.spec.ts
           pnpm vite build --config vite.siri.config.ts --mode mobile
           node scripts/ios-siri-tests/background.test.mjs
           swiftc src-tauri/plugins/native-audio/ios/Sources/SiriQueue.swift src-tauri/plugins/native-audio/ios/Sources/SiriSelection.swift scripts/ios-siri-tests/main.swift -o "$RUNNER_TEMP/splayer-siri-tests"
@@ -137,7 +145,7 @@ jobs:
             echo "Tauri did not produce an IPA" >&2
             exit 1
           fi
-          cp "$ipa_path" SPlayer-Next-iOS-unsigned.ipa
+          python3 scripts/optimize-ios-ipa.py "$ipa_path" SPlayer-Next-iOS-unsigned.ipa
           # 验证最终安装包确实开放文稿共享，不启动模拟器。
           inspect_dir="$(mktemp -d)"
           unzip -q "$ipa_path" 'Payload/*.app/Info.plist' -d "$inspect_dir"
@@ -326,6 +334,7 @@ jobs:
           xcodebuild test -project scripts/ios-layout-tests/SPlayerLayoutTests.xcodeproj \
             -scheme LayoutTests -destination "platform=iOS Simulator,id=$IOS_SIMULATOR_DEVICE" \
             -only-testing:LayoutTests/LayoutTests \
+            -only-testing:LayoutTests/ArtworkTests \
             -parallel-testing-enabled NO -resultBundlePath ios-smoke/layout.xcresult \
             CODE_SIGNING_ALLOWED=NO > ios-smoke/layout-tests.log 2>&1 || test_status=$?
           xcrun xcresulttool export attachments --path ios-smoke/layout.xcresult \

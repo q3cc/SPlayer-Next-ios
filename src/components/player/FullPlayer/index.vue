@@ -659,6 +659,7 @@ const showComments = (): void => {
             </span>
           </div>
           <div class="flex items-center justify-center gap-3">
+            <VolumeControl cover />
             <SButton
               type="cover"
               variant="ghost"

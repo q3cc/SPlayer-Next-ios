@@ -101,7 +101,7 @@ const installLayoutControls = (): void => {
       artists: [{ name: "SPlayer" }],
       duration: 120000,
     });
-    await new Promise((resolve) => setTimeout(resolve, 700));
+    await nextPaint();
     const root = document.querySelector<HTMLElement>(".full-player");
     const background = root?.querySelector<HTMLElement>(".bg-solid-wrap");
     const fillsWindow = (node: HTMLElement | null | undefined): boolean => {
@@ -114,9 +114,24 @@ const installLayoutControls = (): void => {
         Math.abs(rect.height - innerHeight) < 1
       );
     };
+    // 模拟器负载下 CSS 转场和旋转布局不一定在固定 700ms 内完成。
+    for (
+      let attempt = 0;
+      attempt < 50 && (!fillsWindow(root) || !fillsWindow(background));
+      attempt++
+    ) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
     if (!fillsWindow(root) || !fillsWindow(background)) {
       playerButton.textContent = "Player edge test failed";
-      reportBootStage("player-edge-failed");
+      reportBootStage(
+        `player-edge-failed:${JSON.stringify({
+          viewport: [innerWidth, innerHeight],
+          visual: [visualViewport?.width, visualViewport?.height, visualViewport?.offsetTop],
+          root: root?.getBoundingClientRect().toJSON(),
+          background: background?.getBoundingClientRect().toJSON(),
+        })}`,
+      );
       return;
     }
     playerButton.textContent = "Close test player";

@@ -1,4 +1,5 @@
 import { execSync } from "node:child_process";
+import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { defineConfig } from "vite";
 import vue from "@vitejs/plugin-vue";
@@ -37,7 +38,7 @@ export default defineConfig(({ mode }) => ({
     port: 14558,
     strictPort: true,
   },
-  publicDir: resolve(__dirname, "public"),
+  publicDir: mode === "mobile" ? false : resolve(__dirname, "public"),
   build: {
     outDir: "dist-mobile",
     emptyOutDir: true,
@@ -45,6 +46,7 @@ export default defineConfig(({ mode }) => ({
   },
   resolve: {
     alias: [
+      { find: "/fonts", replacement: resolve(__dirname, "public/fonts") },
       {
         find: "@main/database/sessions",
         replacement: resolve(__dirname, "src/mobile/shims/sessions.ts"),
@@ -73,12 +75,39 @@ export default defineConfig(({ mode }) => ({
   },
   plugins: [
     {
+      name: "splayer-mobile-public-assets",
+      generateBundle() {
+        if (mode !== "mobile") return;
+        const root = resolve(__dirname, "public");
+        for (const relative of readdirSync(root, { recursive: true }) as string[]) {
+          // iOS 图标由 Asset Catalog 提供，不嵌入 Windows 安装器、托盘和 macOS 图标。
+          if (
+            !/^(fonts\/|licenses\/|images\/avatar\.jpg$|icons\/(favicon\.png|logo\.svg)$)/.test(
+              relative,
+            )
+          )
+            continue;
+          if (!/\.[a-z0-9]+$/i.test(relative)) continue;
+          this.emitFile({
+            type: "asset",
+            fileName: relative,
+            source: readFileSync(resolve(root, relative)),
+          });
+        }
+      },
+    },
+    {
       name: "splayer-mobile-entry",
       transformIndexHtml: {
         order: "pre",
         handler(html) {
           if (mode !== "mobile") return html;
-          return html.replace("/src/entry.ts", "/src/mobile-entry.ts");
+          return html
+            .replace("/src/entry.ts", "/src/mobile-entry.ts")
+            .replace(
+              'type="image/icon" href="/icons/favicon.ico"',
+              'type="image/png" href="/icons/favicon.png"',
+            );
         },
       },
     },

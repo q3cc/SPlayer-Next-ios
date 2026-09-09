@@ -3,6 +3,7 @@ import { nextTick, watch } from "vue";
 import { store } from "./shims/store";
 import { getSessionCookies } from "./shims/sessions";
 import { mobileMediaSession } from "./mediaSession";
+import { playbackDuration } from "@shared/utils/playbackDuration";
 import { useSettingsStore } from "@/stores/settings";
 import { useStatusStore } from "@/stores/status";
 import { useMediaStore } from "@/stores/media";
@@ -51,7 +52,7 @@ const adopt = async (snapshot: SiriSnapshot): Promise<void> => {
     if (snapshot.shuffleMode) status.shuffleMode = snapshot.shuffleMode;
     status.trackLoading = false;
     status.position = native?.position ?? snapshot.position;
-    status.duration = native?.duration || track.duration || 0;
+    status.duration = playbackDuration(native?.duration, track.duration || 0);
     status.state =
       native && native.state !== "idle" ? native.state : snapshot.playing ? "playing" : "paused";
     playback.setSeeking(false);
