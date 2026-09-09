@@ -134,8 +134,7 @@ const lyricFontSize = computed(() =>
     : `${settings.lyric.fontSize}px`,
 );
 
-const { immersive, onPlayerMouseEnter, onPlayerMouseLeave, onMainMove, onBarEnter, onBarLeave } =
-  useImmersiveMode(isPlayerExpanded);
+const { immersive, onActivity, onPointerDown, onPointerUp } = useImmersiveMode(isPlayerExpanded);
 
 const { isFullscreen, toggleFullscreen } = useWindowControls();
 
@@ -227,8 +226,12 @@ const showComments = (): void => {
         class="full-player fixed inset-0 z-200 overflow-hidden text-cover"
         :class="immersive ? 'cursor-none [&_*]:!cursor-none' : ''"
         style="--lp-color: rgb(var(--s-cover))"
-        @mouseenter="onPlayerMouseEnter"
-        @mouseleave="onPlayerMouseLeave"
+        @pointerdown.capture="onPointerDown"
+        @pointerup.capture="onPointerUp"
+        @pointercancel.capture="onPointerUp"
+        @click.capture="onActivity"
+        @keydown.capture="onActivity"
+        @wheel.capture.passive="onActivity"
       >
         <!-- 背景 -->
         <PlayerBackground />
@@ -259,8 +262,6 @@ const showComments = (): void => {
             immersive ? 'opacity-0 pointer-events-none' : 'opacity-100',
             useMobileLayout || isIOS ? 'safe-full-player-header' : '',
           ]"
-          @mouseenter="onBarEnter"
-          @mouseleave="onBarLeave"
         >
           <div class="app-no-drag flex items-center gap-2">
             <SButton
@@ -302,7 +303,6 @@ const showComments = (): void => {
             useMobileLayout ? 'bottom-34 mobile-full-player-main' : 'bottom-20',
             isIOS && !useMobileLayout ? 'safe-wide-player-main' : '',
           ]"
-          @mousemove="onMainMove"
         >
           <!-- 左侧 -->
           <div
@@ -480,8 +480,6 @@ const showComments = (): void => {
             immersive ? 'opacity-0 pointer-events-none' : 'opacity-100',
             isIOS ? 'safe-wide-player-controls' : '',
           ]"
-          @mouseenter="onBarEnter"
-          @mouseleave="onBarLeave"
         >
           <div class="flex-1 min-w-0 flex items-center justify-start gap-2">
             <SButton type="cover" variant="ghost" size="large" circle @click="collapse">
@@ -638,7 +636,8 @@ const showComments = (): void => {
         </div>
         <div
           v-else
-          class="mobile-full-player-controls absolute inset-x-0 bottom-0 z-10 flex flex-col gap-3 px-5 pt-2"
+          class="mobile-full-player-controls absolute inset-x-0 bottom-0 z-10 flex flex-col gap-3 px-5 pt-2 transition-opacity duration-400"
+          :class="immersive ? 'opacity-0 pointer-events-none' : 'opacity-100'"
         >
           <div class="flex items-center gap-2 w-full">
             <span class="w-10 text-center text-xs text-cover/60 tabular-nums">

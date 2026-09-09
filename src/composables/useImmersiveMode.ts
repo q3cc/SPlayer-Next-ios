@@ -1,70 +1,60 @@
-import type { Ref } from "vue";
+import { computed, onBeforeUnmount, ref, watch, type Ref } from "vue";
 import { useSettingsStore } from "@/stores/settings";
+import { isIOS } from "@/utils/config";
 
 /** 沉浸模式闲置时间（ms） */
-const IMMERSIVE_IDLE_MS = 3000;
+const IMMERSIVE_IDLE_MS = 5000;
 
 /**
  * 全屏播放器沉浸模式
- * 闲置指定时间后自动隐藏顶栏/底栏，鼠标移动时恢复
+ * 闲置五秒隐藏顶栏/底栏，触摸、点击或键盘操作恢复，不依赖悬停
  * @param isPlayerExpanded - 播放器是否展开
  */
 export const useImmersiveMode = (isPlayerExpanded: Ref<boolean>) => {
   const settings = useSettingsStore();
 
   const immersive = ref(false);
-  const barHovered = ref(false);
+  let pressing = false;
   let idleTimer: ReturnType<typeof setTimeout> | undefined;
 
-  const enabled = computed(() => settings.player.autoImmersive && isPlayerExpanded.value);
+  const enabled = computed(
+    () => (isIOS || settings.player.autoImmersive) && isPlayerExpanded.value,
+  );
 
   const armIdle = (): void => {
     clearTimeout(idleTimer);
     immersive.value = false;
-    if (!enabled.value) return;
+    if (!enabled.value || pressing) return;
     idleTimer = setTimeout(() => {
-      if (!barHovered.value) immersive.value = true;
+      immersive.value = true;
     }, IMMERSIVE_IDLE_MS);
   };
 
-  const onPlayerMouseEnter = (): void => armIdle();
-
-  const onPlayerMouseLeave = (): void => {
-    clearTimeout(idleTimer);
-    if (enabled.value) immersive.value = true;
-  };
-
-  const onMainMove = (): void => {
-    if (!barHovered.value) armIdle();
-  };
-
-  const onBarEnter = (): void => {
-    barHovered.value = true;
-    clearTimeout(idleTimer);
-    immersive.value = false;
-  };
-
-  const onBarLeave = (): void => {
-    barHovered.value = false;
+  const onPointerDown = (): void => {
+    pressing = true;
     armIdle();
   };
 
-  watch(enabled, (on) => {
-    if (!on) {
-      clearTimeout(idleTimer);
-      immersive.value = false;
-      barHovered.value = false;
-    }
-  });
+  const onPointerUp = (): void => {
+    pressing = false;
+    armIdle();
+  };
+
+  watch(
+    enabled,
+    () => {
+      pressing = false;
+      armIdle();
+    },
+    { immediate: true },
+  );
 
   onBeforeUnmount(() => clearTimeout(idleTimer));
 
   return {
     immersive,
-    onPlayerMouseEnter,
-    onPlayerMouseLeave,
-    onMainMove,
-    onBarEnter,
-    onBarLeave,
+    onActivity: armIdle,
+    onPointerDown,
+    onPointerUp,
   };
 };
