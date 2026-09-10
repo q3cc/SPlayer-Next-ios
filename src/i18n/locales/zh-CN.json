@@ -453,6 +453,8 @@
     }
   },
   "player": {
+    "airPlay": "隔空播放",
+    "airPlayError": "无法打开隔空播放，请重试",
     "prev": "上一首",
     "next": "下一首",
     "heartMode": {

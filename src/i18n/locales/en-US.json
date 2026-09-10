@@ -465,6 +465,8 @@
     }
   },
   "player": {
+    "airPlay": "AirPlay",
+    "airPlayError": "Could not open AirPlay. Please try again.",
     "prev": "Previous",
     "next": "Next",
     "heartMode": {

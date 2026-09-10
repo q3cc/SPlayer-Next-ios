@@ -1,4 +1,5 @@
 import AVFoundation
+import AVKit
 import AudioStreaming
 import MediaPlayer
 import Tauri
@@ -45,7 +46,7 @@ private struct PlaybackCompletion {
   func reject(_ message: String) { callback(.failure(NSError(domain: "SPlayer", code: 1, userInfo: [NSLocalizedDescriptionKey: message]))) }
 }
 
-final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
+final class NativeAudioPlugin: Plugin, AudioPlayerDelegate, AVRoutePickerViewDelegate {
   static let shared = NativeAudioPlugin()
   private var player: AudioPlayer?
   private var audioEffects = AudioEffects()
@@ -77,6 +78,44 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
   private var volumeObservation: NSKeyValueObservation?
   private var volumeDismiss: DispatchWorkItem?
   private weak var volumeWebView: WKWebView?
+  private var airPlayPicker: AVRoutePickerView?
+
+  /// 由系统处理设备发现和音频路由，不创建第二个播放器。
+  @objc func airplay(_ invoke: Invoke) throws {
+    let request = try invoke.parseArgs(SystemVolumeRequest.self)
+    DispatchQueue.main.async {
+      guard self.visible, let webview = self.volumeWebView, let window = webview.window else {
+        invoke.reject("播放器尚未显示"); return
+      }
+      self.dismissSystemVolume()
+      if self.airPlayPicker != nil { invoke.resolve(); return }
+      let scaleX = webview.bounds.width / CGFloat(max(1, request.viewportWidth ?? Double(webview.bounds.width)))
+      let scaleY = webview.bounds.height / CGFloat(max(1, request.viewportHeight ?? Double(webview.bounds.height)))
+      let anchor = webview.convert(CGPoint(x: CGFloat(request.x ?? 0) * scaleX,
+        y: CGFloat(request.y ?? 0) * scaleY), to: window)
+      let picker = AVRoutePickerView(frame: CGRect(
+        x: min(max(anchor.x - 22, window.safeAreaInsets.left), window.bounds.width - window.safeAreaInsets.right - 44),
+        y: min(max(anchor.y - 22, window.safeAreaInsets.top), window.bounds.height - window.safeAreaInsets.bottom - 44),
+        width: 44, height: 44))
+      picker.prioritizesVideoDevices = false
+      picker.delegate = self
+      picker.accessibilityLabel = "AirPlay"
+      window.addSubview(picker)
+      picker.layoutIfNeeded()
+      guard let button = picker.subviews.compactMap({ $0 as? UIButton }).first else {
+        picker.removeFromSuperview()
+        invoke.reject("系统隔空播放控件不可用"); return
+      }
+      self.airPlayPicker = picker
+      button.sendActions(for: .touchUpInside)
+      invoke.resolve()
+    }
+  }
+
+  func routePickerViewDidEndPresentingRoutes(_ routePickerView: AVRoutePickerView) {
+    routePickerView.removeFromSuperview()
+    if airPlayPicker === routePickerView { airPlayPicker = nil }
+  }
 
   override func load(webview: WKWebView) {
     super.load(webview: webview)

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { DropdownMenuItem } from "@/components/ui/SDropdownMenu.vue";
+import AirPlayControl from "./AirPlayControl.vue";
 import { useStatusStore } from "@/stores/status";
 import { useSettingsStore } from "@/stores/settings";
 import IconLucideSliders from "~icons/lucide/sliders-horizontal";
@@ -59,6 +60,7 @@ const onMoreMenuSelect = (key: string): void => {
     <!-- 在线音质 -->
     <QualityControl v-if="settings.appearance.showQualitySwitch" :cover="cover" />
     <VolumeControl :cover="cover" />
+    <AirPlayControl :cover="cover" />
     <SButton
       :type="lyricButtonType"
       :variant="isDesktopLyricOpen ? 'tertiary' : 'ghost'"

@@ -12,6 +12,7 @@ import { useImmersiveMode } from "@/composables/useImmersiveMode";
 import { useTimeFormat } from "@/composables/useTimeFormat";
 import { useProgressLyric } from "@/composables/useProgressLyric";
 import Lyrics from "@/components/player/Lyrics/index.vue";
+import AirPlayControl from "@/components/player/AirPlayControl.vue";
 import AMLLLyrics from "@/components/player/Lyrics/AMLLLyrics.vue";
 import PlaylistPickerDialog from "@/components/modals/PlaylistPickerDialog.vue";
 import { useWindowControls } from "@/composables/useWindowControls";
@@ -693,6 +694,7 @@ const showComments = (): void => {
             >
               <template #icon><IconLucideSkipForward /></template>
             </SButton>
+            <AirPlayControl cover />
           </div>
         </div>
       </div>
