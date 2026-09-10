@@ -1,5 +1,4 @@
 import AVFoundation
-import AVKit
 import AudioStreaming
 import MediaPlayer
 import Tauri
@@ -46,7 +45,7 @@ private struct PlaybackCompletion {
   func reject(_ message: String) { callback(.failure(NSError(domain: "SPlayer", code: 1, userInfo: [NSLocalizedDescriptionKey: message]))) }
 }
 
-final class NativeAudioPlugin: Plugin, AudioPlayerDelegate, AVRoutePickerViewDelegate {
+final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
   static let shared = NativeAudioPlugin()
   private var player: AudioPlayer?
   private var audioEffects = AudioEffects()
@@ -78,7 +77,7 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate, AVRoutePickerViewDel
   private var volumeObservation: NSKeyValueObservation?
   private var volumeDismiss: DispatchWorkItem?
   private weak var volumeWebView: WKWebView?
-  private var airPlayPicker: AVRoutePickerView?
+  private var airPlayPicker: MPVolumeView?
 
   /// 由系统处理设备发现和音频路由，不创建第二个播放器。
   @objc func airplay(_ invoke: Invoke) throws {
@@ -88,7 +87,8 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate, AVRoutePickerViewDel
         invoke.reject("播放器尚未显示"); return
       }
       self.dismissSystemVolume()
-      if self.airPlayPicker != nil { invoke.resolve(); return }
+      self.airPlayPicker?.removeFromSuperview()
+      self.airPlayPicker = nil
       // 打开路由面板前刷新系统播放信息，沿用当前音源，不重新播放歌曲。
       self.updatePosition()
       // 使用当前 WebView 的视图控制器承载路由按钮，保留正确的响应者链。
@@ -100,12 +100,13 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate, AVRoutePickerViewDel
       let scaleY = webview.bounds.height / CGFloat(max(1, request.viewportHeight ?? Double(webview.bounds.height)))
       let anchor = webview.convert(CGPoint(x: CGFloat(request.x ?? 0) * scaleX,
         y: CGFloat(request.y ?? 0) * scaleY), to: window)
-      let picker = AVRoutePickerView(frame: CGRect(
+      let picker = MPVolumeView(frame: CGRect(
         x: min(max(anchor.x - 22, window.safeAreaInsets.left), window.bounds.width - window.safeAreaInsets.right - 44),
         y: min(max(anchor.y - 22, window.safeAreaInsets.top), window.bounds.height - window.safeAreaInsets.bottom - 44),
         width: 44, height: 44))
-      picker.prioritizesVideoDevices = false
-      picker.delegate = self
+      // AVRoutePickerView 在此音频引擎下拿不到当前卡片，使用公开的旧音频路由入口兼容。
+      picker.showsVolumeSlider = false
+      picker.showsRouteButton = true
       picker.accessibilityLabel = "AirPlay"
       // 保留可用的呈现锚点，只关闭图层绘制，避免原生按钮覆盖前端图标。
       picker.layer.opacity = 0
@@ -129,6 +130,7 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate, AVRoutePickerViewDel
         let session = AVAudioSession.sharedInstance()
         let info = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
         let diagnostics: JSObject = [
+          "routePicker": "MPVolumeView",
           "state": self.snapshot()["state"] ?? "unknown",
           "mediaEnabled": self.mediaEnabled,
           "hasTitle": !(info[MPMediaItemPropertyTitle] as? String ?? "").isEmpty,
@@ -143,11 +145,6 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate, AVRoutePickerViewDel
         invoke.resolve(diagnostics)
       }
     }
-  }
-
-  func routePickerViewDidEndPresentingRoutes(_ routePickerView: AVRoutePickerView) {
-    routePickerView.removeFromSuperview()
-    if airPlayPicker === routePickerView { airPlayPicker = nil }
   }
 
   override func load(webview: WKWebView) {
@@ -429,7 +426,11 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate, AVRoutePickerViewDel
     let request = try invoke.parseArgs(VisibilityRequest.self)
     DispatchQueue.main.async {
       self.visible = request.visible
-      if !request.visible { self.dismissSystemVolume() }
+      if !request.visible {
+        self.dismissSystemVolume()
+        self.airPlayPicker?.removeFromSuperview()
+        self.airPlayPicker = nil
+      }
       invoke.resolve()
     }
   }

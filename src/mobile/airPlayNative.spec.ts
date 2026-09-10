@@ -15,9 +15,15 @@ it("原生按钮仅作为锚点，不绘制图标，也不拦截前端点击", (
   expect(picker).toContain("picker.layer.opacity = 0");
   expect(picker).toContain("picker.isUserInteractionEnabled = false");
   expect(picker).not.toContain("picker.isHidden = true");
-  expect(picker).toContain("routePickerView.removeFromSuperview()");
+  expect(picker).toContain("self.airPlayPicker?.removeFromSuperview()");
   expect(picker).toContain("host.addSubview(picker)");
   expect(picker).not.toContain("window.addSubview(picker)");
+});
+it("使用系统音频路由入口，而非独立的 AVKit 路由面板", () => {
+  expect(picker).toContain("MPVolumeView(frame:");
+  expect(picker).toContain("picker.showsVolumeSlider = false");
+  expect(picker).toContain("picker.showsRouteButton = true");
+  expect(picker).not.toContain("AVRoutePickerView(frame:");
 });
 it("打开面板之前同步歌曲信息，不另起播放器", () => {
   expect(picker.indexOf("self.updatePosition()")).toBeLessThan(
