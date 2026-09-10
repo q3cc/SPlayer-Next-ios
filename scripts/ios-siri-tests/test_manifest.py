@@ -34,7 +34,7 @@ class SiriManifestTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_missing_registration_is_rejected(self):
-        for key in ["INSupportedMediaCategories", "INAlternativeAppNames", "INIntentsSupported"]:
+        for key in ["INSupportedMediaCategories", "INAlternativeAppNames", "INIntentsSupported", "AVInitialRouteSharingPolicy"]:
             with self.subTest(key=key):
                 info = copy.deepcopy(self.info)
                 info.pop(key)
@@ -42,6 +42,10 @@ class SiriManifestTests(unittest.TestCase):
 
     def test_wrong_media_category_is_rejected(self):
         self.info["INSupportedMediaCategories"] = ["INMediaCategoryPodcasts"]
+        self.assertNotEqual(self.check_package(self.info).returncode, 0)
+
+    def test_wrong_airplay_policy_is_rejected(self):
+        self.info["AVInitialRouteSharingPolicy"] = "Default"
         self.assertNotEqual(self.check_package(self.info).returncode, 0)
 
 

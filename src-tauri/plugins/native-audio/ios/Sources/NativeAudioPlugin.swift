@@ -89,6 +89,8 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate, AVRoutePickerViewDel
       }
       self.dismissSystemVolume()
       if self.airPlayPicker != nil { invoke.resolve(); return }
+      // 打开路由面板前刷新系统播放信息，沿用当前音源，不重新播放歌曲。
+      self.updatePosition()
       let scaleX = webview.bounds.width / CGFloat(max(1, request.viewportWidth ?? Double(webview.bounds.width)))
       let scaleY = webview.bounds.height / CGFloat(max(1, request.viewportHeight ?? Double(webview.bounds.height)))
       let anchor = webview.convert(CGPoint(x: CGFloat(request.x ?? 0) * scaleX,
@@ -100,6 +102,10 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate, AVRoutePickerViewDel
       picker.prioritizesVideoDevices = false
       picker.delegate = self
       picker.accessibilityLabel = "AirPlay"
+      // 保留可用的呈现锚点，只关闭图层绘制，避免原生按钮覆盖前端图标。
+      picker.layer.opacity = 0
+      picker.isUserInteractionEnabled = false
+      picker.accessibilityElementsHidden = true
       window.addSubview(picker)
       picker.layoutIfNeeded()
       guard let button = picker.subviews.compactMap({ $0 as? UIButton }).first else {
@@ -272,7 +278,7 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate, AVRoutePickerViewDel
       self.player = nil
       do {
         let session = AVAudioSession.sharedInstance()
-        try session.setCategory(.playback, mode: .default)
+        try session.setCategory(.playback, mode: .default, policy: .longFormAudio)
         try session.setActive(true)
         let player = AudioPlayer()
         self.audioEffects = AudioEffects()
@@ -412,6 +418,9 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate, AVRoutePickerViewDel
       info[MPMediaItemPropertyArtist] = text.isEmpty ? value.artist : "\(value.title) - \(value.artist)"
     }
     info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = player?.progress ?? 0
+    info[MPNowPlayingInfoPropertyMediaType] = MPNowPlayingInfoMediaType.audio.rawValue
+    info[MPNowPlayingInfoPropertyIsLiveStream] = false
+    info[MPNowPlayingInfoPropertyDefaultPlaybackRate] = 1.0
     info[MPMediaItemPropertyPlaybackDuration] = player?.duration ?? 0
     info[MPNowPlayingInfoPropertyPlaybackRate] = player?.state == .playing ? effects.speed : 0
     MPNowPlayingInfoCenter.default().nowPlayingInfo = info

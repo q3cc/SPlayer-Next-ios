@@ -7,6 +7,7 @@ with zipfile.ZipFile(sys.argv[1]) as archive:
     info_path = next(name for name in names if name.startswith("Payload/") and name.endswith(".app/Info.plist"))
     root = info_path.removesuffix("Info.plist")
     info = plistlib.loads(archive.read(info_path))
+    assert info.get("AVInitialRouteSharingPolicy") == "LongFormAudio", "缺少 AirPlay 音乐路由策略"
     assert info.get("NSSiriUsageDescription"), "缺少 Siri 权限说明"
     assert "INPlayMediaIntent" in info.get("INIntentsSupported", []), "未注册媒体意图"
     assert "INMediaCategoryMusic" in info.get("INSupportedMediaCategories", []), "未声明 Siri 音乐类别"
