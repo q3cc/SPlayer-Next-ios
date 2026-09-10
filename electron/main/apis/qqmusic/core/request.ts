@@ -227,8 +227,6 @@ export const qmRequest = async <T = unknown>(
         coreLog.warn(
           `[qm-request] 接口遇到鉴权异常 (outer=${outerCode} inner=${innerCode})，尝试自动刷新凭据...`,
         );
-        invalidateSession();
-
         const refreshed = await refreshQMCredential();
         if (refreshed) {
           coreLog.info("[qm-request] 凭据刷新成功，重试当前请求");
@@ -272,6 +270,8 @@ interface RefreshCredentialData {
  * 执行 LoginServer.Login（loginMode=2）向服务端请求刷新 musickey
  */
 const performRefreshCredential = async (): Promise<boolean> => {
+  // 并发请求共享一次刷新；不能让后来的请求使正在刷新的账号快照失效。
+  invalidateSession();
   const generation = sessionGeneration;
   const cookies = getQQMusicCookies();
   const uin = getQQMusicUin();
