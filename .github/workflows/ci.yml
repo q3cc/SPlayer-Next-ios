@@ -1,13 +1,19 @@
 name: CI
 
 on:
+  workflow_call:
+  workflow_dispatch:
   pull_request:
-  push:
-    branches: [main]
+
+permissions:
+  contents: read
 
 jobs:
   check:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
     steps:
       - uses: actions/checkout@v5
 
@@ -18,7 +24,8 @@ jobs:
           node-version: 22
           cache: pnpm
 
-      - run: pnpm install --frozen-lockfile
+      # 本仓库检查不运行桌面 Electron，也不重建桌面 SQLite。
+      - run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Format check
         run: pnpm prettier --check .
@@ -30,3 +37,12 @@ jobs:
         run: pnpm typecheck
         env:
           SKIP_NATIVE_BUILD: true
+
+      - name: Frontend regression tests
+        run: pnpm vitest run --maxWorkers=2
+
+      - name: Siri background API and manifest tests
+        run: |
+          python3 scripts/ios-siri-tests/test_manifest.py
+          pnpm vite build --config vite.siri.config.ts --mode mobile
+          node scripts/ios-siri-tests/background.test.mjs

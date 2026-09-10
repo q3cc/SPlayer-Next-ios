@@ -8,9 +8,19 @@ on:
       - feat/ios-ipados
     paths:
       - ".github/workflows/ios-unsigned.yml"
+      - ".github/workflows/ci.yml"
+      - "vitest.config.ts"
+      - "tsconfig*.json"
+      - "eslint.config.*"
+      - ".prettierignore"
+      - "components.d.ts"
+      - "auto-imports.d.ts"
+      - "scripts/ios-audio-tests/**"
+      - "scripts/ios-lyric-tests/**"
+      - "scripts/verify-mobile-bundle.ts"
       - "src/**"
-      - "electron/main/apis/**"
-      - "scripts/ios-layout-tests/**"
+      - "electron/main/**"
+      - "windows/shared/**"
       - "scripts/ios-update-tests/**"
       - "scripts/ios-siri-tests/**"
       - "scripts/configure-ios-siri.mjs"
@@ -32,24 +42,21 @@ permissions:
   contents: read
 
 concurrency:
-  # macOS runner 偶尔会卡在收尾阶段，按提交隔离并发组，避免阻塞新修复的验证。
-  group: ios-unsigned-${{ github.ref }}-${{ github.sha }}
+  # 同一分支只保留最新构建，避免连续提交占满 macOS runner。
+  group: ios-unsigned-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
+  checks:
+    name: Code checks
+    uses: ./.github/workflows/ci.yml
+
   build-ios:
-    name: ${{ matrix.name }}
+    name: Unsigned iPhone and iPad IPA
     runs-on: macos-15
-    timeout-minutes: 45
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - kind: ipa
-            name: Unsigned iPhone and iPad IPA
-            rust_targets: aarch64-apple-ios
-            rust_cache_key: ""
-          # 冒烟测试已关闭；保留测试代码，日常仅构建真机 IPA。
+    timeout-minutes: 35
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
 
     steps:
       - name: Checkout
@@ -77,44 +84,38 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.rust_targets }}
+          targets: aarch64-apple-ios
 
       - name: Cache Rust artifacts
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
-          key: ${{ matrix.rust_cache_key }}
+          cache-workspace-crates: true
+          key: ios-device-${{ hashFiles('src-tauri/**/*.rs', 'src-tauri/**/*.swift', 'src-tauri/**/*.m', 'src-tauri/**/*.h') }}
 
       - name: Install frontend dependencies
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Generate the Xcode project
         run: pnpm tauri ios init --ci --skip-targets-install
 
-      - name: Test Siri background APIs and native queue
-        if: matrix.kind == 'ipa'
+      - name: Test native Siri queue and runtime
         run: |
-          python3 scripts/ios-siri-tests/test_manifest.py
-          pnpm vitest run src/splash.spec.ts src/mobile/siri.spec.ts src/mobile/siri/ src/mobile/nativePlayer.spec.ts src/mobile/mediaSession.spec.ts src/mobile/smokeChecks.spec.ts src/mobile/anonymousSession.spec.ts src/mobile/playbackDuration.spec.ts src/mobile/lyricPip.spec.ts src/components/player/VolumeControl.spec.ts
           pnpm vite build --config vite.siri.config.ts --mode mobile
-          node scripts/ios-siri-tests/background.test.mjs
           swiftc src-tauri/plugins/native-audio/ios/Sources/SiriQueue.swift src-tauri/plugins/native-audio/ios/Sources/SiriSelection.swift scripts/ios-siri-tests/main.swift -o "$RUNNER_TEMP/splayer-siri-tests"
           "$RUNNER_TEMP/splayer-siri-tests"
           swiftc src-tauri/plugins/native-audio/ios/Sources/SiriQueue.swift src-tauri/plugins/native-audio/ios/Sources/SiriRuntime.swift scripts/ios-siri-tests/RuntimeTests.swift -o "$RUNNER_TEMP/splayer-siri-runtime-tests"
           "$RUNNER_TEMP/splayer-siri-runtime-tests" src-tauri/plugins/native-audio/ios/Sources/Resources
 
       - name: Test native IPA range downloader
-        if: matrix.kind == 'ipa'
         run: python3 scripts/ios-update-tests/test_download.py
 
       - name: Test native equalizer audio output
-        if: matrix.kind == 'ipa'
         run: |
           swiftc src-tauri/plugins/native-audio/ios/Sources/AudioEffects.swift scripts/ios-audio-tests/main.swift -o "$RUNNER_TEMP/splayer-audio-tests"
           "$RUNNER_TEMP/splayer-audio-tests"
 
       - name: Test native lyric timeline
-        if: matrix.kind == 'ipa'
         run: |
           swiftc src-tauri/plugins/lyric-pip/ios/Sources/LyricTimeline.swift scripts/ios-lyric-tests/main.swift -o "$RUNNER_TEMP/splayer-lyric-tests"
           "$RUNNER_TEMP/splayer-lyric-tests"
@@ -128,11 +129,9 @@ jobs:
           cmp src-tauri/icons/ios/AppIcon-512@2x.png "$icon_set/AppIcon-512@2x.png"
 
       - name: Build the unsigned iOS IPA
-        if: matrix.kind == 'ipa'
         run: pnpm tauri ios build --ci --no-sign
 
       - name: Collect unsigned IPA
-        if: matrix.kind == 'ipa'
         shell: bash
         run: |
           set -euo pipefail
@@ -152,7 +151,6 @@ jobs:
           python3 scripts/ios-siri-tests/verify-ipa.py "$ipa_path"
 
       - name: Upload unsigned IPA
-        if: matrix.kind == 'ipa'
         uses: actions/upload-artifact@v4
         with:
           name: SPlayer-Next-iOS-unsigned-${{ github.sha }}
@@ -161,204 +159,9 @@ jobs:
           compression-level: 0
           retention-days: 14
 
-      - name: Build the iPad simulator application
-        if: matrix.kind == 'smoke'
-        shell: bash
-        run: |
-          set -euo pipefail
-          if [[ "$(uname -m)" == "arm64" ]]; then
-            simulator_target="aarch64-sim"
-          else
-            simulator_target="x86_64"
-          fi
-          device_id="$(xcrun simctl list devices available | sed -nE '/iPad.*11-inch/ s/.*\(([0-9A-F-]{36})\).*/\1/p' | head -1)"
-          if [[ -z "$device_id" ]]; then
-            echo "No available iPad simulator was found" >&2
-            exit 1
-          fi
-          echo "IOS_SIMULATOR_TARGET=$simulator_target" >> "$GITHUB_ENV"
-          echo "IOS_SIMULATOR_DEVICE=$device_id" >> "$GITHUB_ENV"
-          VITE_MOBILE_SMOKE=1 pnpm tauri ios build --ci --no-sign --features startup-smoke --target "$simulator_target"
-
-      - name: Smoke test first and second launch on iPad
-        if: matrix.kind == 'smoke'
-        timeout-minutes: 12
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          timed() {
-            local seconds="$1"
-            shift
-            perl -e 'alarm shift; exec @ARGV' "$seconds" "$@"
-          }
-
-          capture() {
-            local name="$1"
-            for attempt in 1 2 3; do
-              if timed 15 xcrun simctl io "$device_id" screenshot "ios-smoke/$name.png"; then
-                return 0
-              fi
-              printf '%s screenshot attempt %s timed out\n' "$name" "$attempt" \
-                >> "ios-smoke/$name-screenshot-error.txt"
-              sleep 2
-            done
-            return 1
-          }
-
-          wait_for_mount() {
-            local boot_log="$1"
-            for _ in {1..30}; do
-              if [[ -f "$boot_log" ]] && grep -Fxq 'vue-mounted' "$boot_log"; then
-                return 0
-              fi
-              sleep 1
-            done
-            return 1
-          }
-
-          wait_for_checks() {
-            local boot_log="$1"
-            for _ in {1..180}; do
-              if [[ -f "$boot_log" ]] && grep -Fq 'smoke-complete:' "$boot_log"; then
-                grep -Fxq 'smoke-complete:passed' "$boot_log"
-                return $?
-              fi
-              sleep 1
-            done
-            return 1
-          }
-
-          launch_app() {
-            local name="$1"
-            local output="ios-smoke/$name.txt"
-
-            for attempt in 1 2 3; do
-              if timed 30 xcrun simctl launch "$device_id" top.imsyy.splayer-next.ios \
-                >>"$output" 2>&1; then
-                for _ in {1..30}; do
-                  if [[ -f "$boot_log" ]] && grep -Fxq 'native-entry' "$boot_log"; then
-                    return 0
-                  fi
-                  sleep 1
-                done
-              fi
-              printf '\nlaunch attempt %s did not reach native-entry\n' "$attempt" >> "$output"
-              timed 8 xcrun simctl terminate "$device_id" top.imsyy.splayer-next.ios || true
-              sleep 2
-              rm -f "$boot_log"
-            done
-            return 1
-          }
-
-          app_path="$(find src-tauri/gen/apple/build -type d -name '*.app' \
-            ! -path '*.xcarchive/*' -print -quit)"
-          if [[ -z "$app_path" || ! -d "$app_path" ]]; then
-            echo "Tauri did not produce an iOS Simulator app" >&2
-            find src-tauri/gen/apple/build -maxdepth 4 -print >&2 || true
-            exit 1
-          fi
-          app_path="$(cd "$(dirname "$app_path")" && pwd)/$(basename "$app_path")"
-
-          device_id="$IOS_SIMULATOR_DEVICE"
-
-          mkdir -p ios-smoke
-          printf 'app=%s\ndevice=%s\n' "$app_path" "$device_id" | tee ios-smoke/environment.txt
-          # Hosted runner 偶尔遗留表面为 Booted、实际无法响应 launch/io 的模拟器，先冷启动。
-          timed 30 xcrun simctl shutdown "$device_id" >/dev/null 2>&1 || true
-          timed 30 xcrun simctl boot "$device_id"
-          timed 300 xcrun simctl bootstatus "$device_id" -b | tee ios-smoke/bootstatus.txt
-          timed 240 xcrun simctl install "$device_id" "$app_path" 2>ios-smoke/install-error.txt
-          data_container="$(xcrun simctl get_app_container "$device_id" top.imsyy.splayer-next.ios data)"
-          boot_log="$data_container/tmp/splayer-boot.log"
-          rm -f "$boot_log"
-
-          launch_app first-launch || true
-          first_mounted=1
-          wait_for_mount "$boot_log" || first_mounted=0
-          first_network=1
-          wait_for_checks "$boot_log" || first_network=0
-          sleep 1
-          capture first-launch
-          cp "$boot_log" ios-smoke/first-boot.log 2>/dev/null || true
-          timed 10 xcrun simctl spawn "$device_id" log show --last 2m --style compact \
-            --predicate 'process == "SPlayer Next"' > ios-smoke/first-console.log 2>&1 || true
-          timed 5 xcrun simctl terminate "$device_id" top.imsyy.splayer-next.ios || true
-
-          mv "$boot_log" ios-smoke/first-boot-complete.log 2>/dev/null || true
-          launch_app second-launch || true
-          second_mounted=1
-          wait_for_mount "$boot_log" || second_mounted=0
-          second_network=1
-          wait_for_checks "$boot_log" || second_network=0
-          sleep 1
-          capture second-launch || true
-          cp "$boot_log" ios-smoke/second-boot.log 2>/dev/null || true
-          timed 10 xcrun simctl spawn "$device_id" log show --last 2m --style compact \
-            --predicate 'process == "SPlayer Next"' > ios-smoke/second-console.log 2>&1 || true
-          timed 5 xcrun simctl terminate "$device_id" top.imsyy.splayer-next.ios || true
-
-          if ! compgen -G 'ios-smoke/first-launch*.png' > /dev/null; then
-            echo "No first-launch screenshot was captured" >&2
-            exit 1
-          fi
-          if ! compgen -G 'ios-smoke/second-launch*.png' > /dev/null; then
-            echo "No second-launch screenshot was captured" >&2
-            exit 1
-          fi
-          if [[ "$first_mounted" != 1 || "$second_mounted" != 1 ]]; then
-            echo "The application did not reach vue-mounted on both launches" >&2
-            exit 1
-          fi
-          if [[ "$first_network" != 1 ]]; then
-            echo "::error::First-launch smoke checks failed or timed out; see stage results below"
-            cat ios-smoke/first-boot.log >&2 || true
-          fi
-          if [[ "$second_network" != 1 ]]; then
-            echo "::error::Second-launch smoke checks failed or timed out; see stage results below"
-            cat ios-smoke/second-boot.log >&2 || true
-          fi
-          [[ "$first_network" == 1 && "$second_network" == 1 ]]
-
-      - name: Verify iPad portrait and landscape layouts
-        if: always() && matrix.kind == 'smoke' && env.IOS_SIMULATOR_DEVICE != ''
-        timeout-minutes: 8
-        shell: bash
-        run: |
-          set -euo pipefail
-          xcodegen generate --spec scripts/ios-layout-tests/project.yml
-          test_status=0
-          xcodebuild test -project scripts/ios-layout-tests/SPlayerLayoutTests.xcodeproj \
-            -scheme LayoutTests -destination "platform=iOS Simulator,id=$IOS_SIMULATOR_DEVICE" \
-            -only-testing:LayoutTests/LayoutTests \
-            -only-testing:LayoutTests/ArtworkTests \
-            -parallel-testing-enabled NO -resultBundlePath ios-smoke/layout.xcresult \
-            CODE_SIGNING_ALLOWED=NO > ios-smoke/layout-tests.log 2>&1 || test_status=$?
-          xcrun xcresulttool export attachments --path ios-smoke/layout.xcresult \
-            --output-path ios-smoke/layout-screenshots || true
-          data_container="$(xcrun simctl get_app_container "$IOS_SIMULATOR_DEVICE" top.imsyy.splayer-next.ios data)"
-          cp "$data_container/tmp/splayer-boot.log" ios-smoke/layout-boot.log || true
-          if [[ "$test_status" != 0 ]]; then
-            tail -100 ios-smoke/layout-tests.log
-            exit "$test_status"
-          fi
-          grep -Fxq 'layout-desktop-ready' ios-smoke/layout-boot.log
-          grep -Fxq 'layout-mobile-ready' ios-smoke/layout-boot.log
-          grep -Fxq 'player-edge-ready' ios-smoke/layout-boot.log
-          grep -Fxq 'folder-picker-returned' ios-smoke/layout-boot.log
-
-      - name: Upload iPad smoke-test diagnostics
-        if: always() && matrix.kind == 'smoke'
-        uses: actions/upload-artifact@v4
-        with:
-          name: SPlayer-Next-iPad-smoke-${{ github.sha }}
-          path: ios-smoke
-          if-no-files-found: warn
-          retention-days: 7
-
   publish-action:
     name: Publish Action update channel
-    needs: build-ios
+    needs: [checks, build-ios]
     if: github.repository == 'q3cc/SPlayer-Next-ios' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
