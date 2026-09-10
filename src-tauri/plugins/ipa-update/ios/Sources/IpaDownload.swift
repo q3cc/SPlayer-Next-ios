@@ -1,8 +1,9 @@
 import Foundation
 import CryptoKit
 
-/// 下载任务由串行代理队列管理；四路分段落盘，合并时只保留 1 MB 缓冲。
+/// 下载任务由串行代理队列管理；八路分段落盘，合并时只保留 1 MB 缓冲。
 final class IpaDownload: NSObject, URLSessionDownloadDelegate {
+  private static let connectionCount = 8
   private let url: URL
   private let size: Int64
   private let digest: String?
@@ -18,7 +19,7 @@ final class IpaDownload: NSObject, URLSessionDownloadDelegate {
     let config = URLSessionConfiguration.ephemeral
     config.timeoutIntervalForRequest = 30
     config.timeoutIntervalForResource = 1800
-    config.httpMaximumConnectionsPerHost = 4
+    config.httpMaximumConnectionsPerHost = Self.connectionCount
     return URLSession(configuration: config, delegate: self, delegateQueue: queue)
   }()
   private var tasks: [Int: (index: Int, start: Int64, end: Int64)] = [:]
@@ -46,7 +47,7 @@ final class IpaDownload: NSObject, URLSessionDownloadDelegate {
       do {
         guard self.size >= 22 else { throw self.failure("IPA 大小无效") }
         try FileManager.default.createDirectory(at: self.directory, withIntermediateDirectories: true)
-        // 先验证首段，服务器忽略 Range 时切换单连接，避免同时下载四份完整文件。
+        // 先验证首段，服务器忽略 Range 时切换单连接，避免重复下载完整文件。
         self.launch(index: 0, start: 0, end: 0)
       } catch { self.finish(.failure(error)) }
     }
@@ -108,8 +109,9 @@ final class IpaDownload: NSObject, URLSessionDownloadDelegate {
       tasks.removeValue(forKey: downloadTask.taskIdentifier)
       activeTasks.removeValue(forKey: downloadTask.taskIdentifier)
       if ranged && part.end == 0 {
-        let chunk = (size + 3) / 4
-        for index in 0..<4 {
+        let count = Int64(Self.connectionCount)
+        let chunk = (size + count - 1) / count
+        for index in 0..<Self.connectionCount {
           let start = Int64(index) * chunk
           if start < size { launch(index: index, start: start, end: min(size - 1, start + chunk - 1)) }
         }

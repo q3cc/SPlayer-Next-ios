@@ -15,6 +15,11 @@ maximum = 0
 lock = threading.Lock()
 
 
+class DownloadTestServer(http.server.ThreadingHTTPServer):
+    # 默认监听队列较短，不能让本地测试服务成为八路连接的瓶颈。
+    request_queue_size = 16
+
+
 class Handler(http.server.BaseHTTPRequestHandler):
     def log_message(self, *args):
         pass
@@ -61,7 +66,7 @@ with tempfile.TemporaryDirectory(prefix="splayer-ipa-test-") as directory:
         "src-tauri/plugins/ipa-update/ios/Sources/IpaDownload.swift",
         "scripts/ios-update-tests/main.swift", "-o", str(binary),
     ], check=True)
-    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    server = DownloadTestServer(("127.0.0.1", 0), Handler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     digest = hashlib.sha256(payload).hexdigest()
@@ -92,7 +97,7 @@ with tempfile.TemporaryDirectory(prefix="splayer-ipa-test-") as directory:
             assert previous.exists(), "失败下载不能清除之前完整的更新包"
         assert unrelated.read_text() == "keep", "不得清理非下载任务文件"
     server.shutdown()
-    assert maximum >= 4, f"没有实际并行下载：{maximum}"
-    assert len([r for r in requests if r[0] == "/range"]) == 5
+    assert maximum >= 8, f"没有达到八路并行下载：{maximum}"
+    assert len([r for r in requests if r[0] == "/range"]) == 9
     assert ("/single", None) in requests
     print("五组原生下载测试通过，最大并发：", maximum)
