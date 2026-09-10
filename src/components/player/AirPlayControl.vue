@@ -14,12 +14,13 @@ const openAirPlay = async (): Promise<void> => {
   error.value = "";
   try {
     const { invoke } = await import("@tauri-apps/api/core");
-    await invoke("plugin:native-audio|airplay", {
+    const diagnostics = await invoke("plugin:native-audio|airplay", {
       x: rect.x + rect.width / 2,
       y: rect.y + rect.height / 2,
       viewportWidth: innerWidth,
       viewportHeight: innerHeight,
     });
+    console.info("[airplay] native-session", diagnostics);
   } catch (cause) {
     console.warn("[airplay]", cause);
     error.value = t("player.airPlayError");

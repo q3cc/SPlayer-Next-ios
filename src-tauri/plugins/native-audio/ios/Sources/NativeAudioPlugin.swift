@@ -91,6 +91,11 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate, AVRoutePickerViewDel
       if self.airPlayPicker != nil { invoke.resolve(); return }
       // 打开路由面板前刷新系统播放信息，沿用当前音源，不重新播放歌曲。
       self.updatePosition()
+      // 使用当前 WebView 的视图控制器承载路由按钮，保留正确的响应者链。
+      var responder: UIResponder? = webview
+      while responder != nil && !(responder is UIViewController) { responder = responder?.next }
+      guard let owner = responder as? UIViewController, let host = owner.viewIfLoaded,
+            host.window === window else { invoke.reject("找不到播放器视图控制器"); return }
       let scaleX = webview.bounds.width / CGFloat(max(1, request.viewportWidth ?? Double(webview.bounds.width)))
       let scaleY = webview.bounds.height / CGFloat(max(1, request.viewportHeight ?? Double(webview.bounds.height)))
       let anchor = webview.convert(CGPoint(x: CGFloat(request.x ?? 0) * scaleX,
@@ -106,15 +111,37 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate, AVRoutePickerViewDel
       picker.layer.opacity = 0
       picker.isUserInteractionEnabled = false
       picker.accessibilityElementsHidden = true
-      window.addSubview(picker)
+      picker.frame = host.convert(picker.frame, from: window)
+      host.addSubview(picker)
       picker.layoutIfNeeded()
       guard let button = picker.subviews.compactMap({ $0 as? UIButton }).first else {
         picker.removeFromSuperview()
         invoke.reject("系统隔空播放控件不可用"); return
       }
       self.airPlayPicker = picker
-      button.sendActions(for: .touchUpInside)
-      invoke.resolve()
+      // 让本轮媒体信息提交和视图挂载完成后，再请求系统面板。
+      DispatchQueue.main.async {
+        guard picker.window != nil else {
+          self.airPlayPicker = nil
+          picker.removeFromSuperview()
+          invoke.reject("播放器窗口已关闭"); return
+        }
+        let session = AVAudioSession.sharedInstance()
+        let info = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
+        let diagnostics: JSObject = [
+          "state": self.snapshot()["state"] ?? "unknown",
+          "mediaEnabled": self.mediaEnabled,
+          "hasTitle": !(info[MPMediaItemPropertyTitle] as? String ?? "").isEmpty,
+          "hasArtist": !(info[MPMediaItemPropertyArtist] as? String ?? "").isEmpty,
+          "hasArtwork": info[MPMediaItemPropertyArtwork] != nil,
+          "rate": (info[MPNowPlayingInfoPropertyPlaybackRate] as? NSNumber)?.doubleValue ?? 0,
+          "category": session.category.rawValue,
+          "routePolicy": Int(session.routeSharingPolicy.rawValue),
+          "outputs": session.currentRoute.outputs.map { $0.portType.rawValue }
+        ]
+        button.sendActions(for: .touchUpInside)
+        invoke.resolve(diagnostics)
+      }
     }
   }
 
