@@ -18,38 +18,9 @@ import IconLucideInfo from "~icons/lucide/info";
 import LyricPipPreview from "@/components/settings/custom/LyricPipPreview.vue";
 import siriCategory from "./categories/siri";
 
-const onlySections = (category: SettingCategory, ids: string[]): SettingCategory => ({
-  ...category,
-  sections: category.sections?.filter((section) => ids.includes(section.id)),
-});
-
-const mobileGeneral = onlySections(generalCategory, ["language", "update", "debug", "backupReset"]);
-const mobileAppearance = onlySections(appearanceCategory, [
-  "theme",
-  "appearanceStyle",
-  "playerBar",
-  "nowPlaying",
-]);
-const mobilePlayer: SettingCategory = {
-  ...onlySections(playerCategory, ["playControl", "audioSource", "scrobble"]),
-  sections: playerCategory.sections
-    ?.filter((section) => ["playControl", "audioSource", "scrobble"].includes(section.id))
-    .map((section) =>
-      section.id === "playControl"
-        ? {
-            ...section,
-            items: section.items.filter((item) =>
-              ["autoPlay", "rememberLastTrack"].includes(item.key),
-            ),
-          }
-        : section,
-    ),
-};
-const mobileServices = onlySections(servicesCategory, ["network", "media"]);
-const mobileDownload = onlySections(downloadCategory, ["downloadGeneral"]);
 const mobileExternalLyric: SettingCategory = {
-  ...onlySections(externalLyricCategory, ["desktopLyric"]),
   id: "desktopLyric",
+  icon: externalLyricCategory.icon,
   sections: externalLyricCategory.sections
     ?.filter((section) => section.id === "desktopLyric")
     .map((section) => ({
@@ -97,16 +68,16 @@ const mobileExternalLyric: SettingCategory = {
 };
 
 export const settingsSchema: SettingCategory[] = [
-  isIOS ? mobileGeneral : generalCategory,
+  generalCategory,
   ...(isIOS ? [siriCategory] : []),
-  isIOS ? mobileAppearance : appearanceCategory,
-  isIOS ? mobilePlayer : playerCategory,
+  appearanceCategory,
+  playerCategory,
   lyricCategory,
   ...(isIOS ? [mobileExternalLyric] : [externalLyricCategory, hotkeysCategory]),
-  isIOS ? mobileServices : servicesCategory,
+  servicesCategory,
   ...(isIOS ? [] : [aiIntegrationCategory]),
   mediaSourceCategory,
-  isIOS ? mobileDownload : downloadCategory,
+  downloadCategory,
   ...(isIOS ? [] : [localCacheCategory, pluginsCategory]),
   otherCategory,
   { id: "about", icon: IconLucideInfo, component: AboutSettings },

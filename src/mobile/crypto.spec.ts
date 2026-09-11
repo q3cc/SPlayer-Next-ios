@@ -1,16 +1,10 @@
-import { createRequire } from "node:module";
 import { describe, expect, it, vi } from "vitest";
 import { xeapi, xeapiDecryptPublicKey } from "../../electron/main/apis/netease/core/crypto";
 
-vi.mock("node:crypto", async (importOriginal) => {
-  const native = await importOriginal<typeof import("node:crypto")>();
-  const require = createRequire(import.meta.url);
-  const polyfillRequire = createRequire(require.resolve("vite-plugin-node-polyfills"));
-  const stdlibRequire = createRequire(polyfillRequire.resolve("node-stdlib-browser"));
-  const cryptoRequire = createRequire(stdlibRequire.resolve("crypto-browserify"));
-  const aes = cryptoRequire("browserify-aes/browser");
-  return { ...native, createCipheriv: aes.createCipheriv, createDecipheriv: aes.createDecipheriv };
-});
+vi.mock("node:crypto", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("node:crypto")>()),
+  ...(await import("./shims/crypto")),
+}));
 
 describe("移动端匿名会话加密与 Node 服务端互通", () => {
   it("通过浏览器 AES 解密公钥包，不读取 null IV 的 length", async () => {

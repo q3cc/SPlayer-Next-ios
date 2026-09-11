@@ -115,6 +115,7 @@ export default defineConfig(({ mode }) => ({
       include: ["buffer", "crypto", "events", "process", "stream", "util", "vm", "zlib"],
       globals: { Buffer: true, global: true, process: true },
       protocolImports: true,
+      overrides: { crypto: resolve(__dirname, "src/mobile/shims/crypto.ts") },
     }),
     vue(),
     UnoCSS(),

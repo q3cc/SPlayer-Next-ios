@@ -24,8 +24,6 @@
       "identifier": "http:default",
       "allow": ["http://**", "https://**"]
     },
-    "opener:default",
-    "os:default",
-    "store:default"
+    "opener:default"
   ]
 }

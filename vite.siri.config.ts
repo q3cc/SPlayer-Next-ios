@@ -19,6 +19,7 @@ export default defineConfig(async (env) => {
         include: ["buffer", "crypto", "events", "process", "stream", "util", "vm", "zlib"],
         globals: { Buffer: true, global: true, process: true },
         protocolImports: true,
+        overrides: { crypto: resolve(__dirname, "src/mobile/shims/crypto.ts") },
       }),
     ],
     build: {

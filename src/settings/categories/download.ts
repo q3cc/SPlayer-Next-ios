@@ -1,4 +1,5 @@
-import type { SettingCategory } from "@/types/settings-schema";
+import type { SettingCategory, SettingSection } from "@/types/settings-schema";
+import { isIOS } from "@/utils/config";
 import DownloadDirConfig from "@/components/settings/custom/DownloadDirConfig.vue";
 import IconLucideDownload from "~icons/lucide/download";
 
@@ -6,25 +7,29 @@ const downloadCategory: SettingCategory = {
   id: "download",
   icon: IconLucideDownload,
   sections: [
-    {
-      id: "downloadLocation",
-      items: [
-        {
-          key: "downloadEnabled",
-          type: "switch",
-          binding: { store: "settings", path: "system.download.enabled" },
-          defaultValue: false,
-          hideDescription: true,
-        },
-        {
-          key: "downloadDir",
-          type: "custom",
-          component: DownloadDirConfig,
-          fullWidth: true,
-          keywords: ["downloadDir.label"],
-        },
-      ],
-    },
+    ...(isIOS
+      ? []
+      : ([
+          {
+            id: "downloadLocation",
+            items: [
+              {
+                key: "downloadEnabled",
+                type: "switch",
+                binding: { store: "settings", path: "system.download.enabled" },
+                defaultValue: false,
+                hideDescription: true,
+              },
+              {
+                key: "downloadDir",
+                type: "custom",
+                component: DownloadDirConfig,
+                fullWidth: true,
+                keywords: ["downloadDir.label"],
+              },
+            ],
+          },
+        ] satisfies SettingSection[])),
     {
       id: "downloadGeneral",
       items: [
@@ -82,51 +87,55 @@ const downloadCategory: SettingCategory = {
         },
       ],
     },
-    {
-      id: "downloadTags",
-      items: [
-        {
-          key: "downloadLyricFormat",
-          type: "select",
-          binding: { store: "settings", path: "system.download.lyricFileFormat" },
-          options: [
-            { value: "lrc", labelKey: "settings.downloadLyricFormat.lrc" },
-            { value: "enhanced-lrc", labelKey: "settings.downloadLyricFormat.enhanced" },
-          ],
-          defaultValue: "enhanced-lrc",
-        },
-        {
-          key: "downloadEmbedCover",
-          type: "switch",
-          binding: { store: "settings", path: "system.download.embedCover" },
-          defaultValue: true,
-        },
-        {
-          key: "downloadEmbedMeta",
-          type: "switch",
-          binding: { store: "settings", path: "system.download.embedMeta" },
-          defaultValue: true,
-        },
-        {
-          key: "downloadEmbedLyric",
-          type: "switch",
-          binding: { store: "settings", path: "system.download.embedLyric" },
-          defaultValue: true,
-        },
-        {
-          key: "downloadWriteLrc",
-          type: "switch",
-          binding: { store: "settings", path: "system.download.writeLrc" },
-          defaultValue: false,
-        },
-        {
-          key: "downloadSaveTtml",
-          type: "switch",
-          binding: { store: "settings", path: "system.download.saveTtml" },
-          defaultValue: false,
-        },
-      ],
-    },
+    ...(isIOS
+      ? []
+      : ([
+          {
+            id: "downloadTags",
+            items: [
+              {
+                key: "downloadLyricFormat",
+                type: "select",
+                binding: { store: "settings", path: "system.download.lyricFileFormat" },
+                options: [
+                  { value: "lrc", labelKey: "settings.downloadLyricFormat.lrc" },
+                  { value: "enhanced-lrc", labelKey: "settings.downloadLyricFormat.enhanced" },
+                ],
+                defaultValue: "enhanced-lrc",
+              },
+              {
+                key: "downloadEmbedCover",
+                type: "switch",
+                binding: { store: "settings", path: "system.download.embedCover" },
+                defaultValue: true,
+              },
+              {
+                key: "downloadEmbedMeta",
+                type: "switch",
+                binding: { store: "settings", path: "system.download.embedMeta" },
+                defaultValue: true,
+              },
+              {
+                key: "downloadEmbedLyric",
+                type: "switch",
+                binding: { store: "settings", path: "system.download.embedLyric" },
+                defaultValue: true,
+              },
+              {
+                key: "downloadWriteLrc",
+                type: "switch",
+                binding: { store: "settings", path: "system.download.writeLrc" },
+                defaultValue: false,
+              },
+              {
+                key: "downloadSaveTtml",
+                type: "switch",
+                binding: { store: "settings", path: "system.download.saveTtml" },
+                defaultValue: false,
+              },
+            ],
+          },
+        ] satisfies SettingSection[])),
   ],
 };
 

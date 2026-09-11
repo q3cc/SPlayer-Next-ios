@@ -1,6 +1,7 @@
-import type { SettingCategory } from "@/types/settings-schema";
+import type { SettingCategory, SettingSection } from "@/types/settings-schema";
 import { useSettingsStore } from "@/stores/settings";
 import { useThemeStore } from "@/stores/theme";
+import { isIOS } from "@/utils/config";
 import FontConfig from "@/components/settings/custom/FontConfig.vue";
 import BackgroundImagePicker from "@/components/settings/custom/BackgroundImagePicker.vue";
 import SidebarCustomizeConfig from "@/components/settings/custom/SidebarCustomizeConfig.vue";
@@ -114,73 +115,77 @@ const appearanceCategory: SettingCategory = {
         },
       ],
     },
-    {
-      id: "font",
-      items: [
-        {
-          key: "fontConfig",
-          type: "custom",
-          component: FontConfig,
-        },
-      ],
-    },
-    {
-      id: "layout",
-      items: [
-        {
-          key: "layoutMode",
-          type: "select",
-          binding: { store: "settings", path: "appearance.layoutMode" },
-          options: [
-            { value: "default", labelKey: "settings.layoutMode.default" },
-            { value: "sidebar-full", labelKey: "settings.layoutMode.sidebarFull" },
-            { value: "floating", labelKey: "settings.layoutMode.floating" },
-          ],
-          defaultValue: "default",
-        },
-        {
-          key: "routeTransition",
-          type: "select",
-          binding: { store: "settings", path: "appearance.routeTransition" },
-          options: [
-            { value: "none", labelKey: "settings.routeTransition.none" },
-            { value: "fade", labelKey: "settings.routeTransition.fade" },
-            { value: "slide", labelKey: "settings.routeTransition.slide" },
-            { value: "zoom", labelKey: "settings.routeTransition.zoom" },
-          ],
-          defaultValue: "fade",
-        },
-        {
-          key: "sidebarCollapsed",
-          type: "switch",
-          binding: { store: "settings", path: "appearance.sidebarCollapsed" },
-          defaultValue: false,
-        },
-        {
-          key: "sidebarPlaylistCover",
-          type: "switch",
-          binding: { store: "settings", path: "appearance.sidebarPlaylistCover" },
-          defaultValue: false,
-        },
-        {
-          key: "sidebarCustomize",
-          type: "custom",
-          component: SidebarCustomizeConfig,
-        },
-        {
-          key: "showStatsInSidebar",
-          type: "switch",
-          binding: { store: "settings", path: "appearance.showStatsInSidebar" },
-          defaultValue: true,
-        },
-        {
-          key: "showQualitySwitch",
-          type: "switch",
-          binding: { store: "settings", path: "appearance.showQualitySwitch" },
-          defaultValue: false,
-        },
-      ],
-    },
+    ...(isIOS
+      ? []
+      : ([
+          {
+            id: "font",
+            items: [
+              {
+                key: "fontConfig",
+                type: "custom",
+                component: FontConfig,
+              },
+            ],
+          },
+          {
+            id: "layout",
+            items: [
+              {
+                key: "layoutMode",
+                type: "select",
+                binding: { store: "settings", path: "appearance.layoutMode" },
+                options: [
+                  { value: "default", labelKey: "settings.layoutMode.default" },
+                  { value: "sidebar-full", labelKey: "settings.layoutMode.sidebarFull" },
+                  { value: "floating", labelKey: "settings.layoutMode.floating" },
+                ],
+                defaultValue: "default",
+              },
+              {
+                key: "routeTransition",
+                type: "select",
+                binding: { store: "settings", path: "appearance.routeTransition" },
+                options: [
+                  { value: "none", labelKey: "settings.routeTransition.none" },
+                  { value: "fade", labelKey: "settings.routeTransition.fade" },
+                  { value: "slide", labelKey: "settings.routeTransition.slide" },
+                  { value: "zoom", labelKey: "settings.routeTransition.zoom" },
+                ],
+                defaultValue: "fade",
+              },
+              {
+                key: "sidebarCollapsed",
+                type: "switch",
+                binding: { store: "settings", path: "appearance.sidebarCollapsed" },
+                defaultValue: false,
+              },
+              {
+                key: "sidebarPlaylistCover",
+                type: "switch",
+                binding: { store: "settings", path: "appearance.sidebarPlaylistCover" },
+                defaultValue: false,
+              },
+              {
+                key: "sidebarCustomize",
+                type: "custom",
+                component: SidebarCustomizeConfig,
+              },
+              {
+                key: "showStatsInSidebar",
+                type: "switch",
+                binding: { store: "settings", path: "appearance.showStatsInSidebar" },
+                defaultValue: true,
+              },
+              {
+                key: "showQualitySwitch",
+                type: "switch",
+                binding: { store: "settings", path: "appearance.showQualitySwitch" },
+                defaultValue: false,
+              },
+            ],
+          },
+        ] satisfies SettingSection[])),
     {
       id: "playerBar",
       items: [

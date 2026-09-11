@@ -58,8 +58,6 @@ pub fn run() {
         .plugin(tauri_plugin_lyric_pip::init())
         .plugin(tauri_plugin_native_audio::init())
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_os::init())
-        .plugin(tauri_plugin_store::Builder::default().build())
         .setup(|_| {
             record_boot_stage("tauri-setup");
             #[cfg(target_os = "ios")]
