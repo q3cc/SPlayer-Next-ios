@@ -39,7 +39,9 @@ const adopt = async (snapshot: SiriSnapshot): Promise<void> => {
   if (current < 0) return;
   applying++;
   try {
-    const native = (await window.api.player.getStatus()).data;
+    const value = (await window.api.player.getStatus()).data;
+    const native =
+      value && ["playing", "paused", "loading"].includes(value.state) ? value : undefined;
     if (token !== adoption || snapshot.revision < revision) return;
     const status = useStatusStore();
     const track = snapshot.queue[current];
@@ -84,7 +86,7 @@ const adopt = async (snapshot: SiriSnapshot): Promise<void> => {
 
 /** 合并队列变更，不在每次播放进度更新时发送整份队列。 */
 const syncQueue = async (): Promise<void> => {
-  if (applying || !installed || !useSettingsStore().system.siri.enabled) return;
+  if (applying || !installed) return;
   pendingSync = true;
   if (syncing) return;
   syncing = true;
@@ -147,7 +149,7 @@ export const mobileSiri = {
         ? JSON.parse(localStorage.getItem("splayer.mobile.library") ?? "[]")
         : [],
     });
-    if (installed && settings.system.siri.enabled) await syncQueue();
+    if (installed) await syncQueue();
   },
   async initialize(): Promise<boolean> {
     if (!isTauri() || installed) return false;
@@ -169,6 +171,25 @@ export const mobileSiri = {
         position: native.data!.position,
         playing: native.data!.state === "playing",
       });
+    else if (!active && !restored.pending && restored.revision === revision) {
+      const current = restored.queue.findIndex((track) => key(track) === restored.currentId);
+      if (current >= 0) {
+        const status = useStatusStore();
+        const tracks = playbackQueue.queue.value;
+        // 原生后台可能已切歌；队列相同时保留网页保存的播放来源上下文。
+        if (
+          tracks.length !== restored.queue.length ||
+          tracks.some((track, index) => key(track) !== key(restored.queue[index]))
+        )
+          playbackQueue.setQueue(restored.queue);
+        status.playIndex = current;
+        status.position = useSettingsStore().system.player.rememberLastTrack
+          ? restored.position
+          : 0;
+        if (restored.repeatMode) status.repeatMode = restored.repeatMode;
+        if (restored.shuffleMode) status.shuffleMode = restored.shuffleMode;
+      }
+    }
     await mobileSiri.configure();
     installed = true;
     watch([playbackQueue.queueEntries, () => useStatusStore().playIndex], () => void syncQueue(), {

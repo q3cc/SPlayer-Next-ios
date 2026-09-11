@@ -113,6 +113,7 @@ jobs:
           xcodebuild test -project scripts/ios-layout-tests/SPlayerLayoutTests.xcodeproj \
             -scheme LayoutTests -destination "platform=iOS Simulator,id=$IOS_PLAYBACK_DEVICE" \
             "-only-testing:LayoutTests/PlaybackTests/$test_case" -parallel-testing-enabled NO \
+            -only-testing:LayoutTests/AirPlayTests \
             -resultBundlePath ios-playback/playback.xcresult CODE_SIGNING_ALLOWED=NO \
             > ios-playback/test.log 2>&1
       - name: Collect screenshots and application logs

@@ -146,7 +146,9 @@ final class SiriService {
       let accepted = queue.replace(request["snapshot"] as? [String: Any] ?? [:])
       if accepted {
         if queue.tracks.map(SiriQueue.key) != previousKeys { cancelCatalog(); queue.collection = nil }
-        generation += 1; runtime?.cancel(); try persistPlayback()
+        generation += 1; runtime?.cancel()
+        checkpoint()
+        try persistPlayback()
       }
       return ["accepted": accepted, "snapshot": queue.json]
     default: return try await execute(request)
@@ -293,7 +295,7 @@ final class SiriService {
     guard token == generation, let url = source["url"] as? String else { throw SiriFailure("歌曲地址不可用") }
     let player = NativeAudioPlugin.shared
     _ = try await withCheckedThrowingContinuation { continuation in
-      player.startSource(url, autoPlay: true) { result in continuation.resume(with: result) }
+      player.startSource(url, autoPlay: true, trackId: SiriQueue.key(resolvedTrack)) { result in continuation.resume(with: result) }
     }
     guard token == generation else { throw SiriFailure("已被新的播放操作取消") }
     player.setSiriMetadata(resolvedTrack, enabled: preferences["mediaEnabled"] as? Bool ?? true)
@@ -384,9 +386,11 @@ final class SiriService {
   }
 
   func checkpoint() {
-    let value = NativeAudioPlugin.shared.snapshot()
-    queue.position = value["position"] as? Double ?? queue.position
-    queue.playing = value["state"] as? String == "playing"
+    let player = NativeAudioPlugin.shared
+    let value = player.snapshot()
+    guard let state = value["state"] as? String, ["playing", "paused"].contains(state),
+          let position = value["position"] as? Double,
+          queue.checkpoint(trackId: player.currentTrackId, position: position, playing: state == "playing") else { return }
     // 高频存档只写进度；整份队列仅在切歌或队列变更时写入。
     let progress: [String: Any] = ["revision": queue.revision,
       "currentId": queue.currentKey as Any? ?? NSNull(), "position": queue.position]

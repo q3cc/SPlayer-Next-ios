@@ -105,10 +105,11 @@ it("加载前安装原生事件，返回真实进度并同步歌词小窗", asyn
   expect((await player.load("https://example.com/song.mp3", { autoPlay: false })).success).toBe(
     true,
   );
-  expect(mocks.listener).toHaveBeenCalledTimes(6);
+  expect(mocks.listener).toHaveBeenCalledTimes(7);
   expect(mocks.invoke).toHaveBeenCalledWith("plugin:native-audio|load", {
     source: "https://example.com/song.mp3",
     autoPlay: false,
+    trackId: null,
   });
   expect(mocks.sync).toHaveBeenCalledWith(status);
   await player.seek(10000);
@@ -116,4 +117,54 @@ it("加载前安装原生事件，返回真实进度并同步歌词小窗", asyn
     action: "seek",
     position: 10000,
   });
+});
+
+it("加载时将歌曲身份与音源一起下发，避免后台把进度记到另一首歌", async () => {
+  const player = createNativePlayer({} as PlayerApi);
+  await player.load("https://example.com/song.mp3", {
+    meta: { source: "netease", id: "resume", title: "断点测试", artists: [], duration: 200000 },
+  });
+  expect(mocks.invoke).toHaveBeenCalledWith("plugin:native-audio|load", {
+    source: "https://example.com/song.mp3",
+    autoPlay: true,
+    trackId: "netease:resume",
+  });
+});
+
+it("原生加载等实际播放态再完成，等待数据回调不能提前暂停或取消超时", () => {
+  const swift = readFileSync(
+    "src-tauri/plugins/native-audio/ios/Sources/NativeAudioPlugin.swift",
+    "utf8",
+  );
+  const started = swift
+    .split("func audioPlayerDidStartPlaying(")[1]
+    .split("func audioPlayerStateChanged(")[0];
+  expect(started).not.toContain("pending.resolve");
+  expect(started).not.toContain("player.pause()");
+  expect(started).not.toContain("loadTimeout?.cancel()");
+  const changed = swift
+    .split("func audioPlayerStateChanged(")[1]
+    .split("func audioPlayerDidFinishPlaying(")[0];
+  expect(changed).toContain(
+    "newState == .playing, player.state == .playing, let pending = self.pendingLoad",
+  );
+  expect(changed).toContain("pending.resolve(self.snapshot())");
+});
+
+it("后台定期存档、暂停和退后台保存进度均不依赖 Siri 开关", () => {
+  const swift = readFileSync(
+    "src-tauri/plugins/native-audio/ios/Sources/NativeAudioPlugin.swift",
+    "utf8",
+  );
+  expect(swift).not.toContain("if SiriService.shared.enabled { SiriService.shared.checkpoint()");
+  const visibility = swift
+    .split("@objc func visibility(")[1]
+    .split("private func updatePosition(")[0];
+  expect(visibility).toContain("if !request.visible");
+  expect(visibility).toContain("SiriService.shared.checkpoint()");
+  const timer = swift
+    .split("timer = Timer.scheduledTimer")[1]
+    .split("func audioPlayerDidStartPlaying")[0];
+  expect(timer).toContain('if self.visible { self.trigger("position", data: self.snapshot()) }');
+  expect(timer).toContain("SiriService.shared.checkpoint()");
 });

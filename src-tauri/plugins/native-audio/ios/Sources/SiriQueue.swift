@@ -38,6 +38,14 @@ final class SiriQueue {
     repeatMode = value["repeatMode"] as? String
     shuffleMode = value["shuffleMode"] as? String
   }
+  /// 切歌时网页队列可能先于音源更新，断点必须属于当前实际播放的歌曲。
+  @discardableResult
+  func checkpoint(trackId: String?, position: Double, playing: Bool) -> Bool {
+    guard let trackId = trackId, trackId == currentKey, position.isFinite, position >= 0 else { return false }
+    self.position = position
+    self.playing = playing
+    return true
+  }
   @discardableResult
   func replace(_ value: [String: Any]) -> Bool {
     guard value["revision"] as? Int == revision else { return false }

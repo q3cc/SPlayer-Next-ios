@@ -25,6 +25,23 @@ precondition(SiriQueue.key(restoredNext) == "local:one")
 precondition(SiriQueue.key(restoredPrevious) == "local:one")
 print("PASS: 原生队列版本冲突、切歌和冷启动恢复")
 
+let checkpointQueue = SiriQueue()
+precondition(checkpointQueue.replace(["revision": 0, "queue": [first, second], "currentId": "local:one", "position": 1000.0]))
+precondition(!checkpointQueue.checkpoint(trackId: "netease:two", position: 65000, playing: true))
+precondition(!checkpointQueue.checkpoint(trackId: nil, position: 65000, playing: true))
+precondition(!checkpointQueue.checkpoint(trackId: "local:one", position: .nan, playing: true))
+precondition(!checkpointQueue.checkpoint(trackId: "local:one", position: -1, playing: true))
+precondition(checkpointQueue.position == 1000, "错歌与无效断点不能覆盖已保存的进度")
+precondition(checkpointQueue.checkpoint(trackId: "local:one", position: 65000, playing: true))
+precondition(checkpointQueue.position == 65000 && checkpointQueue.playing)
+let checkpointRestored = SiriQueue()
+checkpointRestored.restore(checkpointQueue.json)
+precondition(checkpointRestored.position == 65000 && !checkpointRestored.playing)
+checkpointQueue.select(second)
+precondition(!checkpointQueue.checkpoint(trackId: "local:one", position: 66000, playing: true))
+precondition(checkpointQueue.position == 0, "切歌后旧音源回调不能污染新歌断点")
+print("PASS: 原生断点身份校验、非法位置拒绝与冷启动恢复")
+
 queue.collection = ["artist": "周杰伦", "cursors": [["source": "netease", "offset": 50, "done": false]], "seen": ["晴天"]]
 queue.repeatMode = "list"; queue.shuffleMode = "off"
 let oldPosition = queue.position

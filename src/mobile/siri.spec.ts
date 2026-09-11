@@ -1,6 +1,7 @@
-import { expect, it, vi } from "vitest";
-import * as playback from "@/services/playback";
+import { beforeEach, expect, it, vi } from "vitest";
 import { reactive, shallowRef, nextTick } from "vue";
+
+let playback: typeof import("@/services/playback");
 
 const mocks = vi.hoisted(() => ({
   invoke: vi.fn(),
@@ -47,6 +48,59 @@ vi.mock("@/stores/queue", () => ({
   setQueue: mocks.setQueue,
 }));
 
+beforeEach(async () => {
+  vi.resetModules();
+  mocks.invoke.mockReset();
+  mocks.listener.mockReset().mockResolvedValue({ unregister: vi.fn() });
+  playback = await import("@/services/playback");
+  playback.reset();
+  const track = { source: "local", id: "saved", title: "断点测试", artists: [], duration: 200000 };
+  mocks.entries = shallowRef([{ track, context: { sourceId: "keep-context" } }]);
+  mocks.queue = shallowRef([track]);
+  mocks.setQueue.mockImplementation((tracks) => {
+    mocks.queue.value = tracks;
+    mocks.entries.value = tracks.map((value: unknown) => ({ track: value }));
+  });
+  mocks.status = reactive({
+    get currentTrack() {
+      return mocks.queue.value[mocks.status.playIndex];
+    },
+    playIndex: 0,
+    position: 1000,
+    state: "idle",
+    searchPlatform: "netease",
+    repeatMode: "list",
+    shuffleMode: "off",
+  });
+  mocks.settings = reactive({
+    system: {
+      siri: { enabled: true },
+      media: { systemMediaControls: true },
+      player: { rememberLastTrack: true },
+    },
+    player: { songLevel: "hq", allowTrialPlay: false },
+  });
+  mocks.media = {
+    track,
+    detail: null,
+    setTrack: vi.fn((value) => {
+      mocks.media.track = value;
+    }),
+    setPlaybackContext: vi.fn(),
+    updateLyricIndex: vi.fn(),
+  };
+  Object.defineProperty(window, "api", {
+    configurable: true,
+    value: {
+      player: {
+        getStatus: vi
+          .fn()
+          .mockResolvedValue({ success: true, data: { state: "idle", position: 0, duration: 0 } }),
+      },
+    },
+  });
+});
+
 it("原生切歌与网页同时更新时，明确拒绝旧快照并忽略乱序通知", async () => {
   const first = { source: "local", id: "one", title: "第一首", artists: [] };
   const second = { ...first, id: "two", title: "第二首", duration: 200000 };
@@ -71,7 +125,11 @@ it("原生切歌与网页同时更新时，明确拒绝旧快照并忽略乱序�
     shuffleMode: "off",
   });
   mocks.settings = reactive({
-    system: { siri: { enabled: true }, media: { systemMediaControls: true } },
+    system: {
+      siri: { enabled: true },
+      media: { systemMediaControls: true },
+      player: { rememberLastTrack: true },
+    },
     player: { songLevel: "hq", allowTrialPlay: false },
   });
   const original = {
@@ -154,8 +212,144 @@ it("原生切歌与网页同时更新时，明确拒绝旧快照并忽略乱序�
   expect(mocks.status.position).toBe(9000);
 });
 
+it.each([false, true])("冷启动采用原生断点再同步，Siri 开启：%s", async (enabled) => {
+  mocks.settings.system.siri.enabled = enabled;
+  const queue = mocks.queue.value;
+  const entries = mocks.entries.value;
+  const snapshot = {
+    revision: 10,
+    queue,
+    currentId: "local:saved",
+    position: 65000,
+    playing: false,
+  };
+  mocks.invoke.mockImplementation(async (_command, { request }) => {
+    const value = JSON.parse(request);
+    if (value.action === "snapshot") return { json: JSON.stringify(snapshot) };
+    if (value.action === "syncQueue")
+      return {
+        json: JSON.stringify({ accepted: true, snapshot: { ...value.snapshot, revision: 11 } }),
+      };
+    return { json: "{}" };
+  });
+  const { mobileSiri } = await import("./siri");
+  expect(await mobileSiri.initialize()).toBe(false);
+  expect(mocks.status.position).toBe(65000);
+  expect(mocks.entries.value).toBe(entries);
+  expect(mocks.setQueue).not.toHaveBeenCalled();
+  const synchronized = mocks.invoke.mock.calls
+    .map(([, args]) => JSON.parse(args.request))
+    .find((value) => value.action === "syncQueue");
+  expect(synchronized.snapshot.position).toBe(65000);
+  expect(mocks.adoptNative).not.toHaveBeenCalled();
+});
+
+it("关闭记忆进度时恢复歌曲但不恢复非零断点", async () => {
+  mocks.settings.system.player.rememberLastTrack = false;
+  mocks.invoke.mockImplementation(async (_command, { request }) => {
+    const value = JSON.parse(request);
+    if (value.action === "snapshot")
+      return {
+        json: JSON.stringify({
+          revision: 10,
+          queue: mocks.queue.value,
+          currentId: "local:saved",
+          position: 65000,
+          playing: false,
+        }),
+      };
+    if (value.action === "syncQueue")
+      return {
+        json: JSON.stringify({ accepted: true, snapshot: { ...value.snapshot, revision: 11 } }),
+      };
+    return { json: "{}" };
+  });
+  const { mobileSiri } = await import("./siri");
+  expect(await mobileSiri.initialize()).toBe(false);
+  expect(mocks.status.position).toBe(0);
+});
+
+it("尚无原生存档的升级启动保留网页断点", async () => {
+  mocks.invoke.mockImplementation(async (_command, { request }) => {
+    const value = JSON.parse(request);
+    if (value.action === "snapshot")
+      return {
+        json: JSON.stringify({
+          revision: 0,
+          queue: [],
+          currentId: null,
+          position: 0,
+          playing: false,
+        }),
+      };
+    if (value.action === "syncQueue")
+      return {
+        json: JSON.stringify({ accepted: true, snapshot: { ...value.snapshot, revision: 1 } }),
+      };
+    return { json: "{}" };
+  });
+  const { mobileSiri } = await import("./siri");
+  expect(await mobileSiri.initialize()).toBe(false);
+  expect(mocks.status.position).toBe(1000);
+});
+
+it("冷启动先恢复原生后台已经切换的歌曲，再交给常规恢复流程加载", async () => {
+  const next = { ...mocks.queue.value[0], id: "next" };
+  mocks.invoke.mockImplementation(async (_command, { request }) => {
+    const value = JSON.parse(request);
+    if (value.action === "snapshot")
+      return {
+        json: JSON.stringify({
+          revision: 11,
+          queue: [next],
+          currentId: "local:next",
+          position: 15000,
+          playing: false,
+        }),
+      };
+    if (value.action === "syncQueue")
+      return {
+        json: JSON.stringify({ accepted: true, snapshot: { ...value.snapshot, revision: 12 } }),
+      };
+    return { json: "{}" };
+  });
+  const { mobileSiri } = await import("./siri");
+  expect(await mobileSiri.initialize()).toBe(false);
+  expect(mocks.setQueue).toHaveBeenCalledWith([next]);
+  expect(mocks.status.playIndex).toBe(0);
+  expect(mocks.status.position).toBe(15000);
+  const synchronized = mocks.invoke.mock.calls
+    .map(([, args]) => JSON.parse(args.request))
+    .find((value) => value.action === "syncQueue");
+  expect(synchronized.snapshot.currentId).toBe("local:next");
+  expect(synchronized.snapshot.queue).toEqual([next]);
+});
+
+it("原生有待完成的播放请求时，不用冷启动存档覆盖正在处理的任务", async () => {
+  mocks.invoke.mockImplementation(async (_command, { request }) => {
+    if (JSON.parse(request).action === "snapshot")
+      return {
+        json: JSON.stringify({
+          revision: 10,
+          queue: mocks.queue.value,
+          currentId: "local:saved",
+          position: 65000,
+          playing: false,
+          pending: true,
+        }),
+      };
+    return { json: "{}" };
+  });
+  const { mobileSiri } = await import("./siri");
+  expect(await mobileSiri.initialize()).toBe(true);
+  expect(mocks.status.position).toBe(1000);
+  expect(mocks.setQueue).not.toHaveBeenCalled();
+  expect(
+    mocks.invoke.mock.calls.some(([, args]) => JSON.parse(args.request).action === "syncQueue"),
+  ).toBe(false);
+});
+
 it("冷启动已存有同一首歌曲时仍加载歌词，并接管原生进度而不重播", async () => {
-  vi.resetModules();
   mocks.invoke.mockClear();
   mocks.lyrics.mockClear();
   const track = {
@@ -167,7 +361,7 @@ it("冷启动已存有同一首歌曲时仍加载歌词，并接管原生进度�
   };
   mocks.media.track = track;
   mocks.media.detail = null;
-  mocks.status.currentTrack = track;
+  mocks.queue.value = [track];
   mocks.invoke.mockImplementation(async (_command, { request }) => {
     if (JSON.parse(request).action === "snapshot")
       return {

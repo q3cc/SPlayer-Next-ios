@@ -3,6 +3,7 @@ import { playbackDuration } from "@shared/utils/playbackDuration";
 import type { TagEditRequest, TagWriteOutcome } from "@shared/types/tagEditor";
 import type { PersonalFmOptions } from "@/types/netease";
 import { handleEvent } from "./events";
+import { resetSeek, seek } from "./seek";
 import type { RepeatMode, ShuffleMode } from "@/stores/status";
 import { useMediaStore } from "@/stores/media";
 import { useSettingsStore } from "@/stores/settings";
@@ -33,6 +34,8 @@ import { ErrorCode } from "@shared/types/errors";
 import { shouldSkipDjTrack } from "@/utils/preset/djMode";
 import { toast } from "@/composables/useToast";
 import i18n from "@/i18n";
+
+export { hasReachedSeekTarget, isSeeking, markSeek, seek } from "./seek";
 
 /** 加载运行时选项 */
 interface LoadRuntimeOptions {
@@ -134,8 +137,7 @@ export const load = async (
   // 切歌即清空 AB 循环（per-song 状态）
   abLoop.reset();
   // 清除上一次 seek 残留
-  seekTarget = null;
-  playback.setSeeking(false);
+  resetSeek();
   resetForLoad(meta?.duration ?? 0);
   // 非本地并行歌词与取色
   const isOnline = meta?.source !== "local";
@@ -467,6 +469,7 @@ export const pause = async (): Promise<void> => {
 /** 停止播放并重置进度 */
 export const stop = async (): Promise<void> => {
   const status = useStatusStore();
+  resetSeek();
   status.trackLoading = false;
   const result = await window.api.player.stop();
   if (result.success) {
@@ -476,81 +479,18 @@ export const stop = async (): Promise<void> => {
   }
 };
 
-/**
- * seek 目标位置（毫秒），非 null 表示正在 seek，
- * 后端推送的 position 必须接近此值才会被接受
- */
-let seekTarget: number | null = null;
-
-/**
- * 判断后端推送的 position 是否已到达 seek 目标附近
- * @param position - 后端推送的播放位置（毫秒）
- * @returns 是否已到达 seek 目标
- */
-export const hasReachedSeekTarget = (position: number): boolean => {
-  if (seekTarget === null) return true;
-  // 容差：后端推送的位置在 seek 目标 ±1s 内视为已到达
-  if (Math.abs(position - seekTarget) < 1000) {
-    seekTarget = null;
-    playback.setSeeking(false);
-    return true;
-  }
-  return false;
-};
-
-/** 当前是否正在 seek */
-export const isSeeking = (): boolean => seekTarget !== null;
-
 /** 原生 Siri 已开始播放时，只取消网页旧任务，不触碰正在播放的音源。 */
 export const adoptNativePlayback = (): void => {
   loadToken++;
   trackToken++;
-  seekTarget = null;
+  resetSeek();
   consecutiveFailures = 0;
-  playback.setSeeking(false);
   abLoop.reset();
   cacheScheduler.cancel();
   const status = useStatusStore();
   status.trackLoading = false;
   status.currentSource = null;
   status.fmMode = false;
-};
-
-/**
- * 跳转到指定播放位置
- * @param posMs - 目标位置（毫秒）
- */
-export const seek = async (posMs: number): Promise<void> => {
-  const status = useStatusStore();
-  // 歌曲加载中 seek 无意义：引擎此刻没有可 seek 的解码线程，
-  // 且 seekTarget 残留会让加载完成后的 position 推送被持续丢弃
-  if (status.trackLoading) return;
-  // 先冻结插值，再写入位置
-  playback.setSeeking(true);
-  status.position = posMs;
-  playback.setCurrentTime(posMs);
-
-  // 设置 seek 目标，屏蔽旧 position 推送
-  seekTarget = posMs;
-
-  const result = await window.api.player.seek(posMs);
-  if (result.success) {
-    status.position = posMs;
-    playback.setCurrentTime(posMs);
-  }
-};
-
-/**
- * 标记一次非渲染层发起的 seek
- * @param posMs - 目标位置（毫秒）
- */
-export const markSeek = (posMs: number): void => {
-  const status = useStatusStore();
-  if (status.trackLoading) return;
-  playback.setSeeking(true);
-  status.position = posMs;
-  playback.setCurrentTime(posMs);
-  seekTarget = posMs;
 };
 
 /**

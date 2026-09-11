@@ -8,6 +8,7 @@ import WebKit
 private struct SourceRequest: Decodable {
   let source: String
   let autoPlay: Bool
+  let trackId: String?
 }
 private struct ControlRequest: Decodable {
   let action: String
@@ -59,6 +60,7 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
   private var loadTimeout: DispatchWorkItem?
   private var autoPlay = true
   private var sourceURL: URL?
+  private(set) var currentTrackId: String?
   private var visible = false
   private var timer: Timer?
   private var remoteTargets: [(MPRemoteCommand, Any)] = []
@@ -69,7 +71,7 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
   private var mediaEnabled = true
   private var metadataValue: MetadataRequest?
   private var lastLyricUpdate = Date.distantPast
-  private var lastSiriCheckpoint = Date.distantPast
+  private var lastPlaybackCheckpoint = Date.distantPast
   private lazy var volumeView = MPVolumeView(frame: CGRect(x: 16, y: 10, width: 208, height: 32))
   private lazy var volumeLabel = UILabel(frame: CGRect(x: 16, y: 44, width: 208, height: 22))
   private lazy var volumeOverlay = UIControl()
@@ -77,74 +79,43 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
   private var volumeObservation: NSKeyValueObservation?
   private var volumeDismiss: DispatchWorkItem?
   private weak var volumeWebView: WKWebView?
-  private var airPlayPicker: MPVolumeView?
+  private lazy var airPlayRoutes: AirPlayRouteController = {
+    let routes = AirPlayRouteController()
+    routes.willPresent = { [weak self] in
+      self?.dismissSystemVolume()
+      self?.updatePosition()
+      self?.reportAirPlaySession("presenting")
+    }
+    routes.didDismiss = { [weak self] in self?.reportAirPlaySession("dismissed") }
+    return routes
+  }()
 
   /// 由系统处理设备发现和音频路由，不创建第二个播放器。
   @objc func airplay(_ invoke: Invoke) throws {
-    let request = try invoke.parseArgs(SystemVolumeRequest.self)
+    let request = try invoke.parseArgs(AirPlayRouteRequest.self)
     DispatchQueue.main.async {
-      guard self.visible, let webview = self.volumeWebView, let window = webview.window else {
+      guard let webview = self.volumeWebView else {
         invoke.reject("播放器尚未显示"); return
       }
-      self.dismissSystemVolume()
-      self.airPlayPicker?.removeFromSuperview()
-      self.airPlayPicker = nil
-      // 打开路由面板前刷新系统播放信息，沿用当前音源，不重新播放歌曲。
-      self.updatePosition()
-      // 使用当前 WebView 的视图控制器承载路由按钮，保留正确的响应者链。
-      var responder: UIResponder? = webview
-      while responder != nil && !(responder is UIViewController) { responder = responder?.next }
-      guard let owner = responder as? UIViewController, let host = owner.viewIfLoaded,
-            host.window === window else { invoke.reject("找不到播放器视图控制器"); return }
-      let scaleX = webview.bounds.width / CGFloat(max(1, request.viewportWidth ?? Double(webview.bounds.width)))
-      let scaleY = webview.bounds.height / CGFloat(max(1, request.viewportHeight ?? Double(webview.bounds.height)))
-      let anchor = webview.convert(CGPoint(x: CGFloat(request.x ?? 0) * scaleX,
-        y: CGFloat(request.y ?? 0) * scaleY), to: window)
-      let picker = MPVolumeView(frame: CGRect(
-        x: min(max(anchor.x - 22, window.safeAreaInsets.left), window.bounds.width - window.safeAreaInsets.right - 44),
-        y: min(max(anchor.y - 22, window.safeAreaInsets.top), window.bounds.height - window.safeAreaInsets.bottom - 44),
-        width: 44, height: 44))
-      // AVRoutePickerView 在此音频引擎下拿不到当前卡片，使用公开的旧音频路由入口兼容。
-      picker.showsVolumeSlider = false
-      picker.showsRouteButton = true
-      picker.accessibilityLabel = "AirPlay"
-      // 保留可用的呈现锚点，只关闭图层绘制，避免原生按钮覆盖前端图标。
-      picker.layer.opacity = 0
-      picker.isUserInteractionEnabled = false
-      picker.accessibilityElementsHidden = true
-      picker.frame = host.convert(picker.frame, from: window)
-      host.addSubview(picker)
-      picker.layoutIfNeeded()
-      guard let button = picker.subviews.compactMap({ $0 as? UIButton }).first else {
-        picker.removeFromSuperview()
-        invoke.reject("系统隔空播放控件不可用"); return
-      }
-      self.airPlayPicker = picker
-      // 让本轮媒体信息提交和视图挂载完成后，再请求系统面板。
-      DispatchQueue.main.async {
-        guard picker.window != nil else {
-          self.airPlayPicker = nil
-          picker.removeFromSuperview()
-          invoke.reject("播放器窗口已关闭"); return
-        }
-        let session = AVAudioSession.sharedInstance()
-        let info = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
-        let diagnostics: JSObject = [
-          "routePicker": "MPVolumeView",
-          "state": self.snapshot()["state"] ?? "unknown",
-          "mediaEnabled": self.mediaEnabled,
-          "hasTitle": !(info[MPMediaItemPropertyTitle] as? String ?? "").isEmpty,
-          "hasArtist": !(info[MPMediaItemPropertyArtist] as? String ?? "").isEmpty,
-          "hasArtwork": info[MPMediaItemPropertyArtwork] != nil,
-          "rate": (info[MPNowPlayingInfoPropertyPlaybackRate] as? NSNumber)?.doubleValue ?? 0,
-          "category": session.category.rawValue,
-          "routePolicy": Int(session.routeSharingPolicy.rawValue),
-          "outputs": session.currentRoute.outputs.map { $0.portType.rawValue }
-        ]
-        button.sendActions(for: .touchUpInside)
-        invoke.resolve(diagnostics)
-      }
+      do { invoke.resolve(["visible": try self.airPlayRoutes.update(request, in: webview)]) }
+      catch { invoke.reject(error.localizedDescription) }
     }
+  }
+
+  private func reportAirPlaySession(_ phase: String) {
+    let session = AVAudioSession.sharedInstance()
+    let info = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
+    trigger("airplaySession", data: [
+      "phase": phase, "routePicker": "AVRoutePickerView",
+      "state": snapshot()["state"] ?? "unknown", "mediaEnabled": mediaEnabled,
+      "hasTitle": !(info[MPMediaItemPropertyTitle] as? String ?? "").isEmpty,
+      "hasArtist": !(info[MPMediaItemPropertyArtist] as? String ?? "").isEmpty,
+      "hasArtwork": info[MPMediaItemPropertyArtwork] != nil,
+      "rate": (info[MPNowPlayingInfoPropertyPlaybackRate] as? NSNumber)?.doubleValue ?? 0,
+      "category": session.category.rawValue,
+      "routePolicy": Int(session.routeSharingPolicy.rawValue),
+      "outputs": session.currentRoute.outputs.map { $0.portType.rawValue }
+    ])
   }
 
   override func load(webview: WKWebView) {
@@ -278,7 +249,7 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
   /** 创建单个流式播放器，切歌后释放旧解码器与网络连接。 */
   @objc func load(_ invoke: Invoke) throws {
     let request = try invoke.parseArgs(SourceRequest.self)
-    startSource(request.source, autoPlay: request.autoPlay) { result in
+    startSource(request.source, autoPlay: request.autoPlay, trackId: request.trackId) { result in
       switch result {
       case .success(let value): invoke.resolve(value)
       case .failure(let error): invoke.reject(error.localizedDescription)
@@ -286,7 +257,7 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
     }
   }
 
-  func startSource(_ source: String, autoPlay: Bool, completion: @escaping (Result<JSObject, Error>) -> Void) {
+  func startSource(_ source: String, autoPlay: Bool, trackId: String?, completion: @escaping (Result<JSObject, Error>) -> Void) {
     let invoke = PlaybackCompletion(callback: completion)
     DispatchQueue.main.async {
       self.installControls()
@@ -309,6 +280,7 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
         player.attach(nodes: [self.audioEffects.equalizer, self.audioEffects.timePitch])
         self.player = player
         self.sourceURL = url
+        self.currentTrackId = trackId
         self.autoPlay = autoPlay
         self.applyEffects()
         // 预载不应短暂漏出声音，缓冲完成后再恢复目标音量。
@@ -386,6 +358,7 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
           throw SiriFailure("当前音源暂不支持跳转")
         }
         player.seek(to: max(0, min(ms / 1000, player.duration)))
+        Task { @MainActor in SiriService.shared.checkpoint() }
       default: throw SiriFailure("未知播放操作")
       }
       self.updatePosition()
@@ -426,10 +399,10 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
     let request = try invoke.parseArgs(VisibilityRequest.self)
     DispatchQueue.main.async {
       self.visible = request.visible
+      self.airPlayRoutes.setVisible(request.visible)
       if !request.visible {
+        Task { @MainActor in SiriService.shared.checkpoint() }
         self.dismissSystemVolume()
-        self.airPlayPicker?.removeFromSuperview()
-        self.airPlayPicker = nil
       }
       invoke.resolve()
     }
@@ -543,7 +516,10 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
     remoteTargets.append((seek, seek.addTarget { [weak self] event in
       guard let self = self, let event = event as? MPChangePlaybackPositionCommandEvent,
             let player = self.player, player.duration > 0 else { return .commandFailed }
-      DispatchQueue.main.async { player.seek(to: event.positionTime); self.updatePosition() }
+      DispatchQueue.main.async {
+        player.seek(to: event.positionTime); self.updatePosition()
+        Task { @MainActor in SiriService.shared.checkpoint() }
+      }
       return .success
     }))
     observers.append(NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] notification in
@@ -574,31 +550,28 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
         self.updatePosition()
       }
       if self.visible { self.trigger("position", data: self.snapshot()) }
-      if Date().timeIntervalSince(self.lastSiriCheckpoint) >= 5 {
-        self.lastSiriCheckpoint = Date()
-        Task { @MainActor in if SiriService.shared.enabled { SiriService.shared.checkpoint() } }
+      if Date().timeIntervalSince(self.lastPlaybackCheckpoint) >= 5 {
+        self.lastPlaybackCheckpoint = Date()
+        Task { @MainActor in SiriService.shared.checkpoint() }
       }
     }
   }
 
-  func audioPlayerDidStartPlaying(player: AudioPlayer, with entryId: AudioEntryId) {
+  // 该回调在 waitingForData 阶段触发，此时既不能暂停下载，也不能宣布音源可跳转。
+  func audioPlayerDidStartPlaying(player: AudioPlayer, with entryId: AudioEntryId) {}
+  func audioPlayerStateChanged(player: AudioPlayer, with newState: AudioPlayerState, previous: AudioPlayerState) {
     DispatchQueue.main.async {
       guard self.player === player else { return }
-      self.loadTimeout?.cancel()
-      if let pending = self.pendingLoad {
+      if newState == .playing, player.state == .playing, let pending = self.pendingLoad {
+        self.loadTimeout?.cancel()
         if !self.autoPlay { player.pause(); player.volume = 1 }
         self.pendingLoad = nil
         pending.resolve(self.snapshot())
       }
-    }
-  }
-  func audioPlayerStateChanged(player: AudioPlayer, with newState: AudioPlayerState, previous: AudioPlayerState) {
-    DispatchQueue.main.async {
-      guard self.player === player else { return }
       self.updatePosition()
       self.trigger("state", data: self.snapshot())
       if newState == .paused {
-        Task { @MainActor in if SiriService.shared.enabled { SiriService.shared.checkpoint() } }
+        Task { @MainActor in SiriService.shared.checkpoint() }
       }
     }
   }

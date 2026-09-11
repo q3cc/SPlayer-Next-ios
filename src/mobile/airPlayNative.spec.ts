@@ -6,29 +6,47 @@ const native = readFileSync(
   "utf8",
 );
 const picker = native.split("@objc func airplay(")[1].split("override func load(")[0];
+const routes = readFileSync(
+  "src-tauri/plugins/native-audio/ios/Sources/AirPlayRouteController.swift",
+  "utf8",
+);
 
 it("音乐会话配置长音频路由并声明音频媒体类型", () => {
   expect(native).toContain("setCategory(.playback, mode: .default, policy: .longFormAudio)");
   expect(native).toContain("MPNowPlayingInfoMediaType.audio.rawValue");
 });
-it("原生按钮仅作为锚点，不绘制图标，也不拦截前端点击", () => {
-  expect(picker).toContain("picker.layer.opacity = 0");
-  expect(picker).toContain("picker.isUserInteractionEnabled = false");
-  expect(picker).not.toContain("picker.isHidden = true");
-  expect(picker).toContain("self.airPlayPicker?.removeFromSuperview()");
-  expect(picker).toContain("host.addSubview(picker)");
-  expect(picker).not.toContain("window.addSubview(picker)");
+it("原生路由控件直接接收触摸，不查找内部按钮或模拟点击", () => {
+  expect(routes).toContain("AVRoutePickerView(frame:");
+  expect(routes).toContain("host.addSubview(entry.picker)");
+  expect(routes).toContain("prioritizesVideoDevices = false");
+  for (const source of [picker, routes]) {
+    expect(source).not.toContain("sendActions");
+    expect(source).not.toContain("as? UIButton");
+    expect(source).not.toContain("layer.opacity = 0");
+    expect(source).not.toContain("isUserInteractionEnabled = false");
+    expect(source).not.toContain("MPVolumeView(frame:");
+  }
 });
-it("使用系统音频路由入口，而非独立的 AVKit 路由面板", () => {
-  expect(picker).toContain("MPVolumeView(frame:");
-  expect(picker).toContain("picker.showsVolumeSlider = false");
-  expect(picker).toContain("picker.showsRouteButton = true");
-  expect(picker).not.toContain("AVRoutePickerView(frame:");
+it("生命周期交给原生路由控制器，WebView 隐藏时不直接移除呈现者", () => {
+  const visibility = native
+    .split("@objc func visibility(")[1]
+    .split("private func updatePosition(")[0];
+  expect(visibility).toContain("airPlayRoutes.setVisible(request.visible)");
+  expect(visibility).not.toContain("removeFromSuperview");
+  expect(routes).toContain("routePickerViewWillBeginPresentingRoutes");
+  expect(routes).toContain("routePickerViewDidEndPresentingRoutes");
 });
-it("打开面板之前同步歌曲信息，不另起播放器", () => {
-  expect(picker.indexOf("self.updatePosition()")).toBeLessThan(
-    picker.indexOf("button.sendActions(for: .touchUpInside)"),
-  );
+it("真实呈现回调同步歌曲信息并记录诊断，不另起播放器", () => {
+  const presenting = native.split("routes.willPresent =")[1].split("return routes")[0];
+  expect(presenting).toContain("self?.updatePosition()");
+  expect(presenting).toContain('reportAirPlaySession("presenting")');
+  expect(presenting).toContain('reportAirPlaySession("dismissed")');
   expect(picker).not.toContain("AudioPlayer()");
   expect(picker).not.toContain(".play(");
+  expect(routes).not.toContain("AVPlayer(");
+});
+it("启动阶段不再异步覆盖播放器的音频会话", () => {
+  const startup = readFileSync("src-tauri/src/lib.rs", "utf8");
+  expect(startup).not.toContain("configure_ios_audio_session");
+  expect(startup).not.toContain("setCategory_error");
 });

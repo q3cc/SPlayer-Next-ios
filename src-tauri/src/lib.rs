@@ -16,27 +16,6 @@ fn record_boot_stage(stage: &str) {
     }
 }
 
-#[cfg(target_os = "ios")]
-fn configure_ios_audio_session() {
-    use objc2_avf_audio::{AVAudioSession, AVAudioSessionCategoryPlayback};
-
-    // SAFETY: AVAudioSession 是 iOS 主进程内的线程安全单例；这里只在应用启动时配置一次。
-    unsafe {
-        let session = AVAudioSession::sharedInstance();
-        let Some(category) = AVAudioSessionCategoryPlayback else {
-            eprintln!("AVAudioSessionCategoryPlayback is unavailable");
-            return;
-        };
-        if let Err(error) = session.setCategory_error(category) {
-            eprintln!("failed to set iOS audio session category: {error}");
-            return;
-        }
-        if let Err(error) = session.setActive_error(true) {
-            eprintln!("failed to activate iOS audio session: {error}");
-        }
-    }
-}
-
 #[tauri::command]
 fn report_boot_stage(stage: String) {
     record_boot_stage(&stage);
@@ -60,12 +39,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .setup(|_| {
             record_boot_stage("tauri-setup");
-            #[cfg(target_os = "ios")]
-            std::thread::spawn(|| {
-                record_boot_stage("audio-session-start");
-                configure_ios_audio_session();
-                record_boot_stage("audio-session-ready");
-            });
+            // 音频会话由原生播放器在播放前统一配置，避免启动线程覆盖长音频路由策略。
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

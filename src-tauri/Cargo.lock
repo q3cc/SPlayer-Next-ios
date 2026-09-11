@@ -3684,7 +3684,6 @@ version = "2.0.0"
 dependencies = [
  "chrono",
  "libc",
- "objc2-avf-audio",
  "serde",
  "serde_json",
  "tauri",

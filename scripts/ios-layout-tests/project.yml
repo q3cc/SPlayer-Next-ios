@@ -10,6 +10,8 @@ targets:
       - LayoutTests.swift
       - PlaybackTests.swift
       - ArtworkTests.swift
+      - AirPlayTests.swift
+      - ../../src-tauri/plugins/native-audio/ios/Sources/AirPlayRouteController.swift
       - ../../src-tauri/plugins/native-audio/ios/Sources/StillArtwork.swift
     settings:
       GENERATE_INFOPLIST_FILE: YES

@@ -72,6 +72,11 @@ export const createNativePlayer = (fallback: PlayerApi): PlayerApi => {
           await addPluginListener("native-audio", "ended", () => emit({ type: "ended" })),
         );
         subscriptions.push(
+          await addPluginListener("native-audio", "airplaySession", (value) =>
+            console.info("[airplay] native-session", value),
+          ),
+        );
+        subscriptions.push(
           await addPluginListener<{ message: string }>("native-audio", "error", (value) => {
             console.warn("[native-audio] 播放失败", value.message);
             emit({ type: "sourceError" });
@@ -143,6 +148,7 @@ export const createNativePlayer = (fallback: PlayerApi): PlayerApi => {
         const value = await invoke<PlayerStatus>("plugin:native-audio|load", {
           source,
           autoPlay: options.autoPlay !== false,
+          trackId: options.meta ? `${options.meta.source}:${options.meta.id}` : null,
         });
         if (current !== generation) return { success: false, error: "已切换歌曲" };
         cover = options.meta?.coverOriginal ?? options.meta?.cover ?? null;
