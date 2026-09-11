@@ -5,6 +5,7 @@ import { useSettingsStore } from "@/stores/settings";
 import { useOrpheusProtocol } from "@/composables/useOrpheusProtocol";
 import { useExternalFileHandler } from "@/composables/useExternalFileHandler";
 import { isIOS } from "@/utils/config";
+import PlayerSurface from "@/components/player/PlayerSurface.vue";
 
 const route = useRoute();
 const status = useStatusStore();
@@ -198,7 +199,7 @@ const playerBarInnerClass = computed(() => {
   <!-- Dialog -->
   <SDialogProvider />
   <!-- 全屏播放器 -->
-  <FullPlayer />
+  <PlayerSurface />
   <!-- 全局设置 -->
   <SettingsDialog />
   <!-- 更新弹窗 -->

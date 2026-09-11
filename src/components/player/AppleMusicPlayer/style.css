@@ -1,0 +1,335 @@
+.apple-music-player {
+  --s-cover: 255 255 255;
+  --lp-color: #fff;
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  overflow: hidden;
+  isolation: isolate;
+  color: #fff;
+  background: #25202b;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif;
+  outline: none;
+}
+.apple-music-player .am-shade {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(160deg, #11131b38, #0a08156b);
+  pointer-events: none;
+}
+.apple-music-player .am-header {
+  position: relative;
+  height: calc(64px + var(--s-safe-top, 0px));
+  padding: var(--s-safe-top, 0px) 24px 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.apple-music-player .am-handle {
+  position: absolute;
+  top: calc(12px + var(--s-safe-top, 0px));
+  left: calc(50% - 18px);
+  width: 36px;
+  height: 5px;
+  border-radius: 8px;
+  background: #ffffff70;
+}
+.apple-music-player .am-context {
+  font-size: 12px;
+  letter-spacing: 1.4px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: #ffffffbf;
+}
+.apple-music-player .am-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 10px;
+  border: none;
+  border-radius: 12px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  transition:
+    background 160ms,
+    transform 160ms;
+  flex-shrink: 0;
+}
+.apple-music-player .am-icon > svg {
+  width: 24px;
+  height: 24px;
+}
+.apple-music-player button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.apple-music-player button:focus-visible {
+  outline: 2px solid white;
+  outline-offset: 3px;
+}
+.apple-music-player .am-icon:active:not(:disabled) {
+  transform: scale(0.92);
+  background: #ffffff24;
+}
+.apple-music-player .am-icon[aria-pressed="true"] {
+  background: #ffffff24;
+}
+.apple-music-player .am-body {
+  position: relative;
+  height: calc(100% - 64px - var(--s-safe-top, 0px));
+  max-width: 580px;
+  margin: auto;
+  padding: 12px max(28px, var(--s-safe-right, 0px)) max(16px, var(--s-safe-bottom, 0px))
+    max(28px, var(--s-safe-left, 0px));
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 16px;
+}
+.apple-music-player .am-record {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: clamp(16px, 3vh, 32px);
+}
+.apple-music-player .am-artwork {
+  width: min(100%, 43vh);
+  align-self: center;
+  min-height: 0;
+}
+.apple-music-player .am-artwork > div {
+  border-radius: 12px;
+  box-shadow: 0 16px 44px #0004;
+}
+.apple-music-player .am-song {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  min-width: 0;
+}
+.apple-music-player .am-song-text {
+  flex: 1;
+  min-width: 0;
+}
+.apple-music-player h1 {
+  margin: 0;
+  font-size: clamp(21px, 2.5vw, 28px);
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: -0.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.apple-music-player .am-song p {
+  margin: 6px 0 0;
+  font-size: 18px;
+  line-height: 1.35;
+  color: #ffffffbd;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.apple-music-player .am-favorite {
+  border-radius: 50%;
+  background: #ffffff17;
+}
+.apple-music-player .am-filled {
+  fill: currentColor;
+}
+.apple-music-player .am-controls {
+  min-width: 0;
+}
+.apple-music-player .am-progress {
+  padding-top: 6px;
+}
+.apple-music-player .am-times {
+  display: flex;
+  justify-content: space-between;
+  color: #ffffffb8;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  padding-top: 6px;
+}
+.apple-music-player .am-transport {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 0;
+}
+.apple-music-player .am-play {
+  width: 72px;
+  height: 72px;
+}
+.apple-music-player .am-play > svg {
+  width: 56px;
+  height: 56px;
+}
+.apple-music-player .am-skip > svg {
+  width: 38px;
+  height: 38px;
+}
+.apple-music-player .am-mode > svg {
+  width: 20px;
+  height: 20px;
+}
+.apple-music-player .am-volume {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: #ffffffb8;
+}
+.apple-music-player .am-volume > :nth-child(2) {
+  flex: 1;
+  min-width: 0;
+}
+.apple-music-player .am-volume > svg {
+  width: 20px;
+  height: 20px;
+}
+.apple-music-player .am-volume button {
+  min-width: 44px;
+  min-height: 44px;
+}
+.apple-music-player .am-footer {
+  display: flex;
+  justify-content: space-around;
+  align-items: center;
+  padding-top: 12px;
+}
+.apple-music-player .am-airplay {
+  width: 44px;
+  height: 44px;
+}
+.apple-music-player .am-detail-panel {
+  min-height: 0;
+  min-width: 0;
+  font-size: clamp(26px, 3vw, 42px);
+  font-weight: 700;
+  line-height: 1.25;
+}
+.apple-music-player .am-empty {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 16px;
+  font-size: 17px;
+  font-weight: 500;
+  text-align: center;
+  color: #ffffffbd;
+}
+.apple-music-player .am-empty > svg {
+  width: 40px;
+  height: 40px;
+}
+.apple-music-player.am-details:not(.am-wide) .am-body {
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 8px;
+}
+.apple-music-player.am-details:not(.am-wide) .am-record {
+  flex-direction: row;
+  gap: 16px;
+  align-items: center;
+}
+.apple-music-player.am-details:not(.am-wide) .am-artwork {
+  width: 56px;
+  flex-shrink: 0;
+}
+.apple-music-player.am-details:not(.am-wide) .am-song {
+  flex: 1;
+}
+.apple-music-player.am-details:not(.am-wide) h1 {
+  font-size: 18px;
+}
+.apple-music-player.am-details:not(.am-wide) .am-song p {
+  font-size: 15px;
+}
+.apple-music-player.am-wide .am-body {
+  max-width: 1440px;
+  padding: 24px max(48px, var(--s-safe-right, 0px)) max(32px, var(--s-safe-bottom, 0px))
+    max(48px, var(--s-safe-left, 0px));
+  grid-template-columns: minmax(0, 440px);
+  justify-content: center;
+  gap: 24px;
+}
+.apple-music-player.am-wide.am-details .am-body {
+  grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+  column-gap: clamp(48px, 7vw, 112px);
+}
+.apple-music-player.am-wide .am-record {
+  grid-column: 1;
+  grid-row: 1;
+}
+.apple-music-player.am-wide .am-artwork {
+  width: min(100%, 43vh);
+}
+.apple-music-player.am-wide .am-controls {
+  grid-column: 1;
+  grid-row: 2;
+}
+.apple-music-player.am-wide .am-detail-panel {
+  grid-column: 2;
+  grid-row: 1 / 3;
+}
+.apple-music-player.am-wide .am-handle {
+  display: none;
+}
+.am-player-enter-active,
+.am-player-leave-active {
+  transition:
+    transform 350ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 250ms;
+}
+.am-player-enter-from,
+.am-player-leave-to {
+  transform: translateY(100%);
+  opacity: 0;
+}
+.apple-music-player .am-loading {
+  animation: am-spin 1s linear infinite;
+}
+@keyframes am-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (max-height: 650px) {
+  .apple-music-player .am-header {
+    height: calc(48px + var(--s-safe-top, 0px));
+  }
+  .apple-music-player .am-body {
+    height: calc(100% - 48px - var(--s-safe-top, 0px));
+    gap: 8px;
+    padding-top: 0;
+  }
+  .apple-music-player .am-artwork {
+    width: min(100%, 32vh);
+  }
+  .apple-music-player .am-transport {
+    padding: 0;
+  }
+  .apple-music-player .am-play {
+    width: 56px;
+    height: 56px;
+  }
+  .apple-music-player .am-volume {
+    margin-top: 0;
+  }
+  .apple-music-player .am-footer {
+    padding-top: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .am-player-enter-active,
+  .am-player-leave-active,
+  .apple-music-player *,
+  .apple-music-player *::before {
+    transition-duration: 0ms !important;
+  }
+}

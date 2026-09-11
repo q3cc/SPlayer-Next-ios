@@ -19,7 +19,6 @@ import { useWindowControls } from "@/composables/useWindowControls";
 import * as player from "@/core/player";
 import { openExternal } from "@/utils/url";
 import { isIOS } from "@/utils/config";
-import { invoke } from "@tauri-apps/api/core";
 import IconFavorite from "~icons/material-symbols/favorite-rounded";
 import IconFavoriteOutline from "~icons/material-symbols/favorite-outline-rounded";
 import IconLucideListPlus from "~icons/lucide/list-plus";
@@ -73,6 +72,11 @@ const onAfterEnter = () => {
     startTick();
   });
 };
+
+// 从其他主题切回时播放页可能已展开，不会再触发展开动画回调。
+onMounted(() => {
+  if (isPlayerExpanded.value) onAfterEnter();
+});
 
 /** 收起前 */
 const onBeforeLeave = () => {
@@ -174,28 +178,6 @@ const lyricToggleDisabled = computed(() => !hasLyric.value || fullscreenCover.va
 const lyricToggleActive = computed(
   () => showLyric.value && hasLyric.value && !status.fullQueueOpen && !fullscreenCover.value,
 );
-
-const pageVisibility = useDocumentVisibility();
-// 常亮只跟随前台播放页的歌词显示，不跟随后台音频或歌词小窗。
-if (isIOS) {
-  let updateAwake = Promise.resolve();
-  watch(
-    () => isPlayerExpanded.value && lyricToggleActive.value && pageVisibility.value === "visible",
-    (enabled) => {
-      updateAwake = updateAwake
-        .catch(() => {})
-        .then(() => invoke<void>("plugin:lyric-pip|keepawake", { enabled }));
-      void updateAwake.catch((error) => console.warn("[lyrics] 常亮状态更新失败", error));
-    },
-    { immediate: true },
-  );
-  onBeforeUnmount(() => {
-    void updateAwake
-      .catch(() => {})
-      .then(() => invoke("plugin:lyric-pip|keepawake", { enabled: false }))
-      .catch((error) => console.warn("[lyrics] 恢复自动熄屏失败", error));
-  });
-}
 
 const toggleLyric = (): void => {
   if (status.fullQueueOpen) {

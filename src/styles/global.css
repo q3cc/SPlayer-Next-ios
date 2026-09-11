@@ -81,7 +81,7 @@ html.mobile #app {
   }
 
   /* 颜色、音量等浮层同样使用 dialog 角色，但不应套用整页弹窗宽度。 */
-  html.mobile [role="dialog"]:not([data-s-popover]),
+  html.mobile [role="dialog"]:not([data-s-popover], [data-fullscreen]),
   html.mobile [role="alertdialog"]:not([data-s-popover]) {
     max-width: calc(100vw - 1rem) !important;
     max-height: calc(
@@ -91,7 +91,7 @@ html.mobile #app {
 }
 
 @media (max-width: 639px) {
-  html.mobile [role="dialog"]:not([data-s-popover]),
+  html.mobile [role="dialog"]:not([data-s-popover], [data-fullscreen]),
   html.mobile [role="alertdialog"]:not([data-s-popover]) {
     width: calc(100vw - 1rem) !important;
   }
@@ -99,7 +99,7 @@ html.mobile #app {
 
 /* 平板弹窗保留自身宽度，并随窗口大小预留对称边距。 */
 @media (min-width: 640px) {
-  html.mobile [role="dialog"]:not([data-s-popover]),
+  html.mobile [role="dialog"]:not([data-s-popover], [data-fullscreen]),
   html.mobile [role="alertdialog"]:not([data-s-popover]) {
     max-width: calc(100vw - clamp(4rem, 12vw, 10rem)) !important;
   }

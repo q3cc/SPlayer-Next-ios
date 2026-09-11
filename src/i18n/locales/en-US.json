@@ -465,6 +465,25 @@
     }
   },
   "player": {
+    "appleMusic": {
+      "nowPlaying": "Now Playing",
+      "close": "Minimize player",
+      "play": "Play",
+      "pause": "Pause",
+      "lyrics": "Lyrics",
+      "queue": "Playing Next",
+      "cover": "Album artwork",
+      "more": "More song actions",
+      "favorite": "Favorite song",
+      "unfavorite": "Remove favorite",
+      "progress": "Playback position",
+      "volume": "Volume",
+      "noTrack": "Choose a song to start listening",
+      "noLyrics": "No lyrics available. Enjoy the music.",
+      "loadingLyrics": "Loading lyrics…",
+      "remove": "Remove from Playing Next",
+      "locate": "Go to the current song"
+    },
     "airPlay": "AirPlay",
     "airPlayError": "Could not open AirPlay. Please try again.",
     "prev": "Previous",
@@ -1490,6 +1509,12 @@
     "taskbarLyricWordByWord": {
       "label": "Word by Word",
       "description": "Render highlight progress per word"
+    },
+    "playerTheme": {
+      "label": "Player theme",
+      "description": "Choose the look of Now Playing without interrupting your music",
+      "original": "Original",
+      "appleMusic": "Apple Music"
     },
     "playerBgType": {
       "label": "Player Background",

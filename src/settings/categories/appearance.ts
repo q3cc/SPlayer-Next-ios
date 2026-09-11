@@ -233,7 +233,18 @@ const appearanceCategory: SettingCategory = {
       id: "nowPlaying",
       items: [
         {
+          key: "playerTheme",
+          type: "select",
+          binding: { store: "settings", path: "player.theme" },
+          options: [
+            { value: "original", labelKey: "settings.playerTheme.original" },
+            { value: "apple-music", labelKey: "settings.playerTheme.appleMusic" },
+          ],
+          defaultValue: "original",
+        },
+        {
           key: "playerBgType",
+          visible: () => useSettingsStore().player.theme !== "apple-music",
           type: "select",
           binding: { store: "settings", path: "player.playerBgType" },
           options: [
@@ -297,6 +308,7 @@ const appearanceCategory: SettingCategory = {
         },
         {
           key: "coverLayout",
+          visible: () => useSettingsStore().player.theme !== "apple-music",
           type: "select",
           binding: { store: "settings", path: "player.coverLayout" },
           options: [
@@ -307,6 +319,7 @@ const appearanceCategory: SettingCategory = {
         },
         {
           key: "coverLyricRatio",
+          visible: () => useSettingsStore().player.theme !== "apple-music",
           type: "slider",
           binding: { store: "settings", path: "player.coverLyricRatio" },
           min: 0.3,
@@ -317,24 +330,28 @@ const appearanceCategory: SettingCategory = {
         },
         {
           key: "autoCenterCover",
+          visible: () => useSettingsStore().player.theme !== "apple-music",
           type: "switch",
           binding: { store: "settings", path: "player.autoCenterCover" },
           defaultValue: true,
         },
         {
           key: "showPlaybackSource",
+          visible: () => useSettingsStore().player.theme !== "apple-music",
           type: "switch",
           binding: { store: "settings", path: "player.showPlaybackSource" },
           defaultValue: false,
         },
         {
           key: "followCoverColor",
+          visible: () => useSettingsStore().player.theme !== "apple-music",
           type: "switch",
           binding: { store: "settings", path: "player.followCoverColor" },
           defaultValue: true,
         },
         {
           key: "autoImmersive",
+          visible: () => useSettingsStore().player.theme !== "apple-music",
           type: "switch",
           binding: { store: "settings", path: "player.autoImmersive" },
           defaultValue: false,

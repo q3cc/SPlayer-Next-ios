@@ -207,6 +207,8 @@ export interface LyricSettings {
 
 /** 播放器设置 */
 export interface PlayerSettings {
+  /** 播放页主题，不影响全局配色与歌词引擎偏好 */
+  theme: "original" | "apple-music";
   /** 播放器背景类型 */
   playerBgType: PlayerBgType;
   /** 流体背景帧率（fps） */

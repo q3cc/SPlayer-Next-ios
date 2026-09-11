@@ -126,6 +126,7 @@ export const useSettingsStore = defineStore(
 
     /** 播放器 */
     const player = reactive<PlayerSettings>({
+      theme: "original",
       playerBgType: "blur",
       playerBgFps: 30,
       playerBgFlowSpeed: 4,
@@ -360,10 +361,12 @@ export const useSettingsStore = defineStore(
       storage: localStorage,
       omit: ["system"],
       afterHydrate: ({ store }) => {
-        const { lyric, appearance } = store as unknown as {
+        const { lyric, appearance, player } = store as unknown as {
+          player: PlayerSettings;
           lyric: LyricSettings;
           appearance: AppearanceSettings;
         };
+        if (player.theme !== "apple-music") player.theme = "original";
         if (typeof lyric.detectBackgroundLyrics !== "boolean") {
           lyric.detectBackgroundLyrics = true;
         }

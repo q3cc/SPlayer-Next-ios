@@ -10,6 +10,8 @@ import { acquireFft, releaseFft } from "@/services/fftCapture";
 import { getBassPulse, toAmllLowFreqVolume } from "@/services/audioFeatures";
 
 export interface BackgroundRenderProps {
+  /** 界面不可见时暂停所有渲染 */
+  active?: boolean;
   /** 专辑封面资源 URL */
   album?: string;
   /** 是否处于播放状态，默认为 true */
@@ -29,6 +31,7 @@ export interface BackgroundRenderProps {
 }
 
 const props = withDefaults(defineProps<BackgroundRenderProps>(), {
+  active: true,
   playing: true,
   flowSpeed: 2,
   hasLyric: true,
@@ -39,6 +42,7 @@ const props = withDefaults(defineProps<BackgroundRenderProps>(), {
 });
 
 const wrapperRef = ref<HTMLDivElement | null>(null);
+const visibility = useDocumentVisibility();
 
 // 外部渲染器实例引用
 const bgRenderRef = shallowRef<AbstractBaseRenderer>();
@@ -66,8 +70,12 @@ const syncRendererMotion = () => {
   const renderer = bgRenderRef.value;
   if (!renderer) return;
 
+  if (!props.active || visibility.value !== "visible") {
+    renderer.pause();
+    return;
+  }
+  renderer.setStaticMode(!props.playing);
   if (props.playing) {
-    renderer.setStaticMode(false);
     renderer.setFlowSpeed(props.flowSpeed);
     renderer.resume();
   } else {
@@ -132,7 +140,7 @@ const stopFftCapture = () => {
  * 按播放状态与跳动开关同步 FFT 采集
  */
 const syncFftCapture = () => {
-  if (props.playing && props.enableBeat) {
+  if (props.active && visibility.value === "visible" && props.playing && props.enableBeat) {
     startFftCapture();
   } else {
     stopFftCapture();
@@ -184,7 +192,7 @@ watch(
 );
 
 watch(
-  () => props.playing,
+  () => [props.playing, props.active, visibility.value],
   () => {
     syncRendererMotion();
     syncFftCapture();
