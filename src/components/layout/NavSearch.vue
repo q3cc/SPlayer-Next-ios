@@ -146,7 +146,8 @@ const navigateToResource = async (
 };
 
 const onPickSuggest = (kind: SuggestKind, id: number, name: string): void => {
-  if (trimmedQuery.value) data.addSearchHistory(trimmedQuery.value);
+  const keyword = kind === "song" ? name : trimmedQuery.value;
+  if (keyword.trim()) data.addSearchHistory(keyword);
   navigateToResource(kind, String(id), "netease", name);
 };
 

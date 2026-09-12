@@ -36,6 +36,9 @@ const immersive = computed(() => !wide.value && panel.value === "lyrics" && !con
 const lyrics = ref<InstanceType<typeof AMLLLyrics>>();
 const root = ref<HTMLElement>();
 const track = computed(() => media.track ?? status.currentTrack);
+const sourceLabel = computed(() =>
+  track.value?.cloud ? "CLOUD" : (track.value?.source ?? "local").toUpperCase(),
+);
 const artist = computed(
   () => track.value?.artists?.map((value) => value.name).join(" / ") || t("playlist.unknownArtist"),
 );
@@ -54,6 +57,12 @@ const {
   openPicker,
 } = usePlaylistPicker();
 const { enqueue } = useDownload();
+const equalizerOpen = ref(false);
+const speedOpen = ref(false);
+const abLoopOpen = ref(false);
+const autoCloseOpen = ref(false);
+const fmModeOpen = ref(false);
+const copyLyricsOpen = ref(false);
 const { items: trackMenuItems, handleSelect } = useTrackMenu(track, {
   hidePlayActions: true,
   canRemove: false,
@@ -71,9 +80,27 @@ const menuItems = computed(() => [
     disabled: !track.value || !favorite.isSupported(track.value),
   },
   ...unref(trackMenuItems),
+  { key: "am-desktop-lyric", label: t("settings.section.desktopLyric"), separator: true },
+  {
+    key: "am-copy-lyrics",
+    label: t("player.copyLyric.title"),
+    disabled: !media.parsedLyric.length,
+  },
+  { key: "am-equalizer", label: t("equalizer.title") },
+  { key: "am-speed", label: t("speed.title") },
+  { key: "am-ab-loop", label: t("abLoop.title") },
+  { key: "am-auto-close", label: t("autoClose.title") },
+  { key: "am-fm", label: t("player.fm.modeTooltip"), show: status.fmMode },
 ]);
 const selectMenu = (key: string): void => {
   if (key === "am-favorite") favorite.toggle(track.value);
+  else if (key === "am-desktop-lyric") void window.api.window.toggleDesktopLyric().catch(() => {});
+  else if (key === "am-copy-lyrics") copyLyricsOpen.value = true;
+  else if (key === "am-equalizer") equalizerOpen.value = true;
+  else if (key === "am-speed") speedOpen.value = true;
+  else if (key === "am-ab-loop") abLoopOpen.value = true;
+  else if (key === "am-auto-close") autoCloseOpen.value = true;
+  else if (key === "am-fm") fmModeOpen.value = true;
   else void handleSelect(key);
 };
 
@@ -126,6 +153,62 @@ const seekLyric = async (time: number): Promise<void> => {
 const close = (): void => {
   status.isPlayerExpanded = false;
 };
+const dragOffset = ref(0);
+const dragging = ref(false);
+let dismissGesture: { id: number; x: number; y: number; time: number } | undefined;
+let suppressHandleClick = false;
+
+/** 手势仅从顶部栏开始，方向锁定后才接管指针。 */
+const startDismiss = (event: PointerEvent): void => {
+  if (!event.isPrimary || event.button !== 0) return;
+  dismissGesture = {
+    id: event.pointerId,
+    x: event.clientX,
+    y: event.clientY,
+    time: event.timeStamp,
+  };
+  suppressHandleClick = false;
+};
+const moveDismiss = (event: PointerEvent): void => {
+  const gesture = dismissGesture;
+  if (!gesture || gesture.id !== event.pointerId) return;
+  const dx = event.clientX - gesture.x;
+  const dy = event.clientY - gesture.y;
+  if (!dragging.value) {
+    if (Math.max(Math.abs(dx), Math.abs(dy)) < 8) return;
+    suppressHandleClick = true;
+    if (dy <= 0 || Math.abs(dx) > dy) {
+      dismissGesture = undefined;
+      return;
+    }
+    dragging.value = true;
+    (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+  }
+  dragOffset.value = Math.max(0, dy);
+};
+const endDismiss = (event: PointerEvent): void => {
+  const gesture = dismissGesture;
+  if (!gesture || gesture.id !== event.pointerId) return;
+  const distance = Math.max(0, event.clientY - gesture.y);
+  const velocity = distance / Math.max(1, event.timeStamp - gesture.time);
+  const shouldClose = dragging.value && (distance >= 80 || (distance >= 24 && velocity >= 0.6));
+  dismissGesture = undefined;
+  dragging.value = false;
+  if (shouldClose) close();
+  else dragOffset.value = 0;
+};
+const cancelDismiss = (): void => {
+  dismissGesture = undefined;
+  dragging.value = false;
+  dragOffset.value = 0;
+};
+const guardHandleClick = (event: MouseEvent): void => {
+  if (suppressHandleClick && event.detail !== 0) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+  suppressHandleClick = false;
+};
 const togglePanel = (value: "lyrics" | "queue"): void => {
   panel.value = panel.value === value ? "cover" : value;
 };
@@ -133,12 +216,18 @@ const togglePanel = (value: "lyrics" | "queue"): void => {
 
 <template>
   <Teleport to="body">
-    <Transition name="am-player">
+    <Transition name="am-player" @after-leave="cancelDismiss">
       <section
         v-if="status.isPlayerExpanded"
         ref="root"
         class="apple-music-player"
-        :class="{ 'am-wide': wide, 'am-details': panel !== 'cover', 'am-immersive': immersive }"
+        :class="{
+          'am-wide': wide,
+          'am-details': panel !== 'cover',
+          'am-immersive': immersive,
+          'am-dragging': dragging,
+        }"
+        :style="{ '--am-drag-offset': `${dragOffset}px` }"
         role="dialog"
         data-fullscreen
         aria-modal="true"
@@ -148,7 +237,15 @@ const togglePanel = (value: "lyrics" | "queue"): void => {
       >
         <PlayerBackground :active="visible" :reduced-motion="reducedMotion" />
         <div class="am-shade" aria-hidden="true" />
-        <header class="am-header">
+        <header
+          class="am-header"
+          @pointerdown="startDismiss"
+          @pointermove="moveDismiss"
+          @pointerup="endDismiss"
+          @pointercancel="cancelDismiss"
+          @lostpointercapture="dismissGesture && cancelDismiss()"
+          @click.capture="guardHandleClick"
+        >
           <button
             type="button"
             class="am-handle"
@@ -163,7 +260,10 @@ const togglePanel = (value: "lyrics" | "queue"): void => {
             <div class="am-artwork"><PlayerCover /></div>
             <div class="am-song">
               <div class="am-song-text">
-                <h1 :title="track?.title">{{ track?.title || t("player.appleMusic.noTrack") }}</h1>
+                <h1 :title="track?.title">
+                  <span class="am-title">{{ track?.title || t("player.appleMusic.noTrack") }}</span>
+                  <span v-if="track" class="am-source">{{ sourceLabel }}</span>
+                </h1>
                 <p :title="artist">{{ track ? artist : t("player.appleMusic.nowPlaying") }}</p>
               </div>
               <SDropdownMenu :items="menuItems" align="end" @select="selectMenu">
@@ -338,5 +438,11 @@ const togglePanel = (value: "lyrics" | "queue"): void => {
       </section>
     </Transition>
     <PlaylistPickerDialog v-model:open="pickerOpen" :mode="pickerMode" :tracks="pickerTracks" />
+    <EqualizerDialog v-if="equalizerOpen" v-model:open="equalizerOpen" />
+    <SpeedDialog v-if="speedOpen" v-model:open="speedOpen" />
+    <AbLoopDialog v-if="abLoopOpen" v-model:open="abLoopOpen" />
+    <AutoCloseDialog v-if="autoCloseOpen" v-model:open="autoCloseOpen" />
+    <FmModeDialog v-if="fmModeOpen" v-model:open="fmModeOpen" />
+    <CopyLyricsDialog v-if="copyLyricsOpen" v-model:open="copyLyricsOpen" />
   </Teleport>
 </template>

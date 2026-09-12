@@ -69,8 +69,8 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
   private var artworkTask: URLSessionDataTask?
   private var artworkURL = ""
   private var mediaEnabled = true
+  private var airPlayPlaybackPrepared = false
   private var metadataValue: MetadataRequest?
-  private var lastLyricUpdate = Date.distantPast
   private var lastPlaybackCheckpoint = Date.distantPast
   private lazy var volumeView = MPVolumeView(frame: CGRect(x: 16, y: 10, width: 208, height: 32))
   private lazy var volumeLabel = UILabel(frame: CGRect(x: 16, y: 44, width: 208, height: 22))
@@ -107,6 +107,9 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
     let info = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
     trigger("airplaySession", data: [
       "phase": phase, "routePicker": "AVRoutePickerView",
+      "systemVersion": UIDevice.current.systemVersion,
+      "initialRoutePolicy": Bundle.main.object(forInfoDictionaryKey: "AVInitialRouteSharingPolicy") as? String ?? "missing",
+      "playbackPrepared": airPlayPlaybackPrepared,
       "state": snapshot()["state"] ?? "unknown", "mediaEnabled": mediaEnabled,
       "hasTitle": !(info[MPMediaItemPropertyTitle] as? String ?? "").isEmpty,
       "hasArtist": !(info[MPMediaItemPropertyArtist] as? String ?? "").isEmpty,
@@ -122,6 +125,12 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
     super.load(webview: webview)
     volumeWebView = webview
     DispatchQueue.main.async {
+      // 在音量和路由控件创建前声明长音频用途，但启动应用时不抢占其他应用的音频。
+      do {
+        try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default, policy: .longFormAudio)
+      } catch {
+        NSLog("[SPlayer AirPlay] 初始化音频路由失败: %@", error.localizedDescription)
+      }
       self.visible = true; self.installControls()
       self.volumeView.showsRouteButton = false
       self.volumePanel.layer.cornerRadius = 18
@@ -408,15 +417,20 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
     }
   }
 
-  private func updatePosition() {
+  private func updatePosition(onlyIfLyricsChanged: Bool = false) {
     guard mediaEnabled else { return }
     var info = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
     if let value = metadataValue {
       let time = (player?.progress ?? 0) * 1000 + (value.offset ?? 0)
       let line = value.dynamic == true ? value.lines?.last(where: { $0.start <= time }) : nil
       let text = line.flatMap { time < $0.end + 3000 ? $0.text : nil } ?? ""
-      info[MPMediaItemPropertyTitle] = text.isEmpty ? value.title : text
-      info[MPMediaItemPropertyArtist] = text.isEmpty ? value.artist : "\(value.title) - \(value.artist)"
+      let title = text.isEmpty ? value.title : text
+      let artist = text.isEmpty ? value.artist : "\(value.title) - \(value.artist)"
+      // 每个原生时钟周期检查歌词边界，但只有换行时才提交系统元数据。
+      if onlyIfLyricsChanged && info[MPMediaItemPropertyTitle] as? String == title
+          && info[MPMediaItemPropertyArtist] as? String == artist { return }
+      info[MPMediaItemPropertyTitle] = title
+      info[MPMediaItemPropertyArtist] = artist
     }
     info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = player?.progress ?? 0
     info[MPNowPlayingInfoPropertyMediaType] = MPNowPlayingInfoMediaType.audio.rawValue
@@ -545,9 +559,8 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
     timer = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] _ in
       guard let self = self, self.player?.state == .playing else { return }
       // 后台动态歌词由原生时钟更新，不依赖 WebView 的定时器继续运行。
-      if self.metadataValue?.dynamic == true && Date().timeIntervalSince(self.lastLyricUpdate) >= 1 {
-        self.lastLyricUpdate = Date()
-        self.updatePosition()
+      if self.metadataValue?.dynamic == true {
+        self.updatePosition(onlyIfLyricsChanged: true)
       }
       if self.visible { self.trigger("position", data: self.snapshot()) }
       if Date().timeIntervalSince(self.lastPlaybackCheckpoint) >= 5 {
@@ -555,6 +568,8 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
         Task { @MainActor in SiriService.shared.checkpoint() }
       }
     }
+    // 系统面板交互期间也继续检查歌词，不受默认 RunLoop 模式暂停影响。
+    if let timer = timer { RunLoop.main.add(timer, forMode: .common) }
   }
 
   // 该回调在 waitingForData 阶段触发，此时既不能暂停下载，也不能宣布音源可跳转。
@@ -567,6 +582,12 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
         if !self.autoPlay { player.pause(); player.volume = 1 }
         self.pendingLoad = nil
         pending.resolve(self.snapshot())
+      }
+      if newState == .playing, player.state == .playing, !self.airPlayPlaybackPrepared {
+        self.airPlayPlaybackPrepared = true
+        self.updatePosition()
+        self.airPlayRoutes.refreshForPlayback()
+        self.reportAirPlaySession("playbackPrepared")
       }
       self.updatePosition()
       self.trigger("state", data: self.snapshot())

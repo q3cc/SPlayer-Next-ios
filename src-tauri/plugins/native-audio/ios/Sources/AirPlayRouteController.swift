@@ -21,6 +21,7 @@ final class AirPlayRouteController: NSObject, AVRoutePickerViewDelegate {
   private final class Entry {
     let picker = AVRoutePickerView(frame: .zero)
     var presenting = false
+    var refreshAfterDismissal = false
     var removeAfterDismissal = false
     var shown = false
     var request: AirPlayRouteRequest?
@@ -30,6 +31,22 @@ final class AirPlayRouteController: NSObject, AVRoutePickerViewDelegate {
   private var visible = true
   var willPresent: (() -> Void)?
   var didDismiss: (() -> Void)?
+
+  /// 音频会话激活后重建提前创建的控件，已呈现的弹窗保持到用户关闭。
+  func refreshForPlayback() {
+    for (id, entry) in Array(entries) {
+      if entry.presenting {
+        entry.refreshAfterDismissal = true
+        continue
+      }
+      entry.picker.removeFromSuperview()
+      entries.removeValue(forKey: id)
+      if entry.shown, let request = entry.request, let webview = entry.webview {
+        do { try update(request, in: webview) }
+        catch { NSLog("[SPlayer AirPlay] 刷新路由控件失败: %@", error.localizedDescription) }
+      }
+    }
+  }
 
   @discardableResult
   func update(_ request: AirPlayRouteRequest, in webview: WKWebView) throws -> Bool {
@@ -108,9 +125,14 @@ final class AirPlayRouteController: NSObject, AVRoutePickerViewDelegate {
   func routePickerViewDidEndPresentingRoutes(_ routePickerView: AVRoutePickerView) {
     guard let (id, entry) = entries.first(where: { $0.value.picker === routePickerView }) else { return }
     entry.presenting = false
-    if entry.removeAfterDismissal {
+    if entry.removeAfterDismissal || entry.refreshAfterDismissal {
       entry.picker.removeFromSuperview()
       entries.removeValue(forKey: id)
+      if !entry.removeAfterDismissal, entry.shown,
+         let request = entry.request, let webview = entry.webview {
+        do { try update(request, in: webview) }
+        catch { NSLog("[SPlayer AirPlay] 刷新路由控件失败: %@", error.localizedDescription) }
+      }
     } else {
       entry.picker.isHidden = !visible || !entry.shown
       if entry.shown, let request = entry.request, let webview = entry.webview {

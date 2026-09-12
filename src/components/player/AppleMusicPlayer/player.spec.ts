@@ -102,7 +102,22 @@ const create = () => {
         teleport: true,
         transition: false,
         IconSpLossless: true,
-        SDropdownMenu: { template: "<div><slot name='trigger' /></div>" },
+        SDropdownMenu: {
+          name: "SDropdownMenu",
+          props: ["items"],
+          emits: ["select"],
+          template: "<div><slot name='trigger' /></div>",
+        },
+        ...Object.fromEntries(
+          [
+            "EqualizerDialog",
+            "SpeedDialog",
+            "AbLoopDialog",
+            "AutoCloseDialog",
+            "FmModeDialog",
+            "CopyLyricsDialog",
+          ].map((name) => [name, { name, props: ["open"], template: "<div />" }]),
+        ),
         SSlider: {
           emits: ["dragEnd", "change"],
           template: "<button data-slider @click=\"$emit('dragEnd', 18000)\" />",
@@ -165,6 +180,49 @@ afterEach(() => {
   wrappers.splice(0).forEach((wrapper) => wrapper.unmount());
 });
 
+it("歌名同行显示平台标签，切换歌曲时更新云盘与平台来源", async () => {
+  const wrapper = create();
+  expect(wrapper.get("h1 .am-source").text()).toBe("LOCAL");
+  mocks.media.track = { id: "two", title: "特别的人", source: "netease", artists: [] };
+  await flushPromises();
+  expect(wrapper.get("h1 .am-title").text()).toBe("特别的人");
+  expect(wrapper.get("h1 .am-source").text()).toBe("NETEASE");
+  mocks.media.track = {
+    id: "three",
+    title: "云盘歌曲",
+    source: "netease",
+    cloud: true,
+    artists: [],
+  };
+  await flushPromises();
+  expect(wrapper.get("h1 .am-source").text()).toBe("CLOUD");
+});
+
+it("三点菜单可打开播放器工具并调用桌面歌词", async () => {
+  const toggleDesktopLyric = vi.fn().mockResolvedValue(undefined);
+  vi.stubGlobal("api", undefined);
+  Object.defineProperty(window, "api", {
+    configurable: true,
+    value: { window: { toggleDesktopLyric } },
+  });
+  const wrapper = create();
+  for (const [key, name] of [
+    ["am-equalizer", "EqualizerDialog"],
+    ["am-speed", "SpeedDialog"],
+    ["am-ab-loop", "AbLoopDialog"],
+    ["am-auto-close", "AutoCloseDialog"],
+    ["am-copy-lyrics", "CopyLyricsDialog"],
+  ]) {
+    wrapper.findComponent({ name: "SDropdownMenu" }).vm.$emit("select", key);
+    await flushPromises();
+    expect(wrapper.findComponent({ name }).exists(), name).toBe(true);
+  }
+  wrapper.findComponent({ name: "SDropdownMenu" }).vm.$emit("select", "am-desktop-lyric");
+  await flushPromises();
+  expect(toggleDesktopLyric).toHaveBeenCalledOnce();
+  vi.unstubAllGlobals();
+});
+
 it("手机先显示封面，切换歌词始终使用 AMLL 并按当前进度对齐", async () => {
   const wrapper = create();
   expect(wrapper.find("[data-lyrics]").exists()).toBe(false);
@@ -210,6 +268,49 @@ it("顶部横条是唯一的收起按钮，点击只收起界面而不中断播�
   await handle.trigger("click");
   expect(mocks.status.isPlayerExpanded).toBe(false);
   expect(mocks.toggle).not.toHaveBeenCalled();
+});
+it("顶部整行下拉跟手并关闭，不改变播放状态", async () => {
+  const wrapper = create();
+  const header = wrapper.get(".am-header");
+  Object.defineProperty(header.element, "setPointerCapture", { value: vi.fn() });
+  const pointer = { pointerId: 1, isPrimary: true, button: 0, clientX: 20 };
+  await header.trigger("pointerdown", { ...pointer, clientY: 4 });
+  await header.trigger("pointermove", { ...pointer, clientY: 104 });
+  expect(wrapper.get(".apple-music-player").attributes("style")).toContain("100px");
+  await header.trigger("pointerup", { ...pointer, clientY: 104 });
+  expect(mocks.status.isPlayerExpanded).toBe(false);
+  expect(mocks.toggle).not.toHaveBeenCalled();
+});
+it("短拖回弹并阻止误点击，横滑和歌词区域下滑不关闭", async () => {
+  const wrapper = create();
+  const header = wrapper.get(".am-header");
+  Object.defineProperty(header.element, "setPointerCapture", { value: vi.fn() });
+  const pointer = { pointerId: 1, isPrimary: true, button: 0, clientX: 20, clientY: 0 };
+  await header.trigger("pointerdown", pointer);
+  await header.trigger("pointermove", { ...pointer, clientY: 15 });
+  await header.trigger("pointerup", { ...pointer, clientY: 15 });
+  await wrapper.get(".am-handle").trigger("click", { detail: 1 });
+  expect(mocks.status.isPlayerExpanded).toBe(true);
+  expect(wrapper.get(".apple-music-player").attributes("style")).toContain("0px");
+  await header.trigger("pointerdown", pointer);
+  await header.trigger("pointermove", { ...pointer, clientX: 150, clientY: 10 });
+  await header.trigger("pointerup", { ...pointer, clientY: 150 });
+  expect(mocks.status.isPlayerExpanded).toBe(true);
+  await wrapper.get(".am-body").trigger("pointerdown", pointer);
+  await wrapper.get(".am-body").trigger("pointermove", { ...pointer, clientY: 150 });
+  await wrapper.get(".am-body").trigger("pointerup", { ...pointer, clientY: 150 });
+  expect(mocks.status.isPlayerExpanded).toBe(true);
+});
+it("系统取消下拉手势时回弹", async () => {
+  const wrapper = create();
+  const header = wrapper.get(".am-header");
+  Object.defineProperty(header.element, "setPointerCapture", { value: vi.fn() });
+  const pointer = { pointerId: 1, isPrimary: true, button: 0, clientX: 20, clientY: 0 };
+  await header.trigger("pointerdown", pointer);
+  await header.trigger("pointermove", { ...pointer, clientY: 100 });
+  await header.trigger("pointercancel", pointer);
+  expect(mocks.status.isPlayerExpanded).toBe(true);
+  expect(wrapper.get(".apple-music-player").classes()).not.toContain("am-dragging");
 });
 it("歌词点击跳转并恢复播放，进度条不另起播放", async () => {
   wide.value = true;
