@@ -26,6 +26,26 @@ const status = useStatusStore();
 const settings = useSettingsStore();
 
 const canvasRef = ref<HTMLCanvasElement | null>(null);
+const visibility = useDocumentVisibility();
+let context: CanvasRenderingContext2D | null = null;
+let cssWidth = 0;
+let cssHeight = 0;
+let barWidth = 1;
+let slotWidth = 4;
+let binRanges: Array<readonly [number, number]> = [];
+
+/** 仅尺寸或柱宽变化时重建频段映射。 */
+const updateBins = (): void => {
+  barWidth = Math.max(1, settings.player.spectrumBarWidth);
+  slotWidth = barWidth + BAR_GAP;
+  const count = Math.floor(cssWidth / slotWidth);
+  const length = (FFT_SIZE - SKIP_LOW) * 2;
+  binRanges = Array.from({ length: count }, (_, i) => {
+    const start = Math.floor((i * length) / count);
+    const end = Math.floor(((i + 1) * length) / count);
+    return [Math.max(0, start - 1), Math.min(length, Math.max(end, start + 1) + 1)];
+  });
+};
 
 /** 后端推送数据长度 */
 const FFT_SIZE = 128;
@@ -54,20 +74,24 @@ const resizeCanvas = (): void => {
   const canvas = canvasRef.value;
   if (!canvas) return;
   const dpr = window.devicePixelRatio || 1;
-  const cssWidth = Math.min(document.body.clientWidth, props.maxWidth);
+  cssWidth = Math.min(document.body.clientWidth, props.maxWidth);
+  cssHeight = props.height;
   canvas.style.width = `${cssWidth}px`;
   canvas.style.height = `${props.height}px`;
-  canvas.width = Math.round(cssWidth * dpr);
-  canvas.height = Math.round(props.height * dpr);
-  const ctx = canvas.getContext("2d");
-  if (ctx) ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const width = Math.round(cssWidth * dpr);
+  const height = Math.round(cssHeight * dpr);
+  if (canvas.width !== width) canvas.width = width;
+  if (canvas.height !== height) canvas.height = height;
+  context ??= canvas.getContext("2d");
+  context?.setTransform(dpr, 0, 0, dpr, 0, 0);
+  updateBins();
 };
 
 /** 绘制频谱 */
 const draw = (): void => {
   const canvas = canvasRef.value;
   if (!canvas) return;
-  const ctx = canvas.getContext("2d");
+  const ctx = context;
   if (!ctx) return;
 
   // 检测新帧推送
@@ -113,24 +137,13 @@ const draw = (): void => {
     }
   }
 
-  const cssWidth = canvas.clientWidth;
-  const cssHeight = canvas.clientHeight;
-  const usableLen = channelLength * 2;
-  const barWidth = Math.max(1, settings.player.spectrumBarWidth);
-  const slotWidth = barWidth + BAR_GAP;
-  // 能放下的 bar 数；不再限制 ≤ usableLen，允许过采样（多个相邻 bar 共用一个 bin 的均值）
-  const numBars = Math.floor(cssWidth / slotWidth);
-  if (numBars === 0) return;
-
   ctx.clearRect(0, 0, cssWidth, cssHeight);
   ctx.fillStyle = getComputedStyle(canvas).color;
+  ctx.beginPath();
 
-  for (let i = 0; i < numBars; i++) {
+  for (let i = 0; i < binRanges.length; i++) {
     // 每个 bar 覆盖一段 bin，再扩 1 个邻居做空间平滑，避免相邻 bin 方差导致的悬崖
-    const startBin = Math.floor(i * (usableLen / numBars));
-    const endBin = Math.floor((i + 1) * (usableLen / numBars));
-    const lo = Math.max(0, startBin - 1);
-    const hi = Math.min(usableLen, Math.max(endBin, startBin + 1) + 1);
+    const [lo, hi] = binRanges[i];
     let sum = 0;
     for (let j = lo; j < hi; j++) sum += stereoDisplay[j];
     const v = sum / (hi - lo);
@@ -139,10 +152,9 @@ const draw = (): void => {
     if (barHeight <= 0.5) continue;
     const y = cssHeight - barHeight;
     const x = i * slotWidth;
-    ctx.beginPath();
     ctx.roundRect(x, y, barWidth, barHeight, props.radius);
-    ctx.fill();
   }
+  ctx.fill();
 };
 
 const { resume, pause } = useRafFn(draw, { immediate: false });
@@ -168,13 +180,15 @@ const stopCapture = (): void => {
 
 // 暂停时停止 FFT 推送 + RAF 重绘
 watch(
-  () => status.isPlaying,
-  (playing) => {
-    if (playing) startCapture();
+  () => status.isPlaying && visibility.value === "visible",
+  (active) => {
+    if (active) startCapture();
     else stopCapture();
   },
   { immediate: true },
 );
+watch(() => settings.player.spectrumBarWidth, updateBins);
+watch(() => [props.height, props.maxWidth], resizeCanvas);
 
 onMounted(() => {
   resizeCanvas();
@@ -184,6 +198,7 @@ onMounted(() => {
 onBeforeUnmount(() => {
   window.removeEventListener("resize", resizeCanvas);
   stopCapture();
+  context = null;
   prev[0].fill(0);
   prev[1].fill(0);
   curr[0].fill(0);

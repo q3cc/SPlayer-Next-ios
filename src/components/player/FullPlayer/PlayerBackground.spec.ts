@@ -15,10 +15,14 @@ const settings = reactive({
   },
 });
 const status = reactive({ isPlayerExpanded: true, isPlaying: false });
+const media = reactive({
+  parsedLyric: [],
+  track: { cover: "cover.jpg", coverOriginal: "large.jpg" },
+});
 vi.mock("@/stores/settings", () => ({ useSettingsStore: () => settings }));
 vi.mock("@/stores/status", () => ({ useStatusStore: () => status }));
 vi.mock("@/stores/media", () => ({
-  useMediaStore: () => ({ parsedLyric: [], track: { cover: "cover.jpg" } }),
+  useMediaStore: () => media,
 }));
 vi.mock("./BackgroundRender.vue", () => ({
   default: {
@@ -52,5 +56,58 @@ it("Apple Music 背景随设置切换模式和动画参数", async () => {
   } finally {
     wrapper.unmount();
     vi.useRealTimers();
+  }
+});
+
+it("只为可见模糊背景解码缩略图，模式切换使旧解码失效", async () => {
+  settings.player.playerBgType = "animation";
+  status.isPlayerExpanded = true;
+  const images: Array<{ src: string; finish: () => void }> = [];
+  vi.stubGlobal(
+    "Image",
+    class {
+      src = "";
+      finish!: () => void;
+      constructor() {
+        images.push(this);
+      }
+      decode() {
+        return new Promise<void>((resolve) => {
+          this.finish = resolve;
+        });
+      }
+    },
+  );
+  vi.useFakeTimers();
+  const wrapper = mount(PlayerBackground, { global: { stubs: { transition: false } } });
+  try {
+    media.track.cover = "next-small.jpg";
+    await nextTick();
+    expect(images).toHaveLength(0);
+    settings.player.playerBgType = "blur";
+    await nextTick();
+    expect(images).toHaveLength(1);
+    expect(images[0].src).toBe("next-small.jpg");
+    settings.player.playerBgType = "solid";
+    await nextTick();
+    expect(images[0].src).toBe("");
+    images[0].finish();
+    await vi.advanceTimersByTimeAsync(600);
+    expect(wrapper.find(".bg-img").exists()).toBe(false);
+    await wrapper.setProps({ active: false });
+    settings.player.playerBgType = "blur";
+    media.track.cover = "latest-small.jpg";
+    await nextTick();
+    expect(images).toHaveLength(1);
+    await wrapper.setProps({ active: true });
+    expect(images).toHaveLength(2);
+    expect(images[1].src).toBe("latest-small.jpg");
+    images[1].finish();
+    await vi.advanceTimersByTimeAsync(100);
+    expect(wrapper.get(".bg-img.active").attributes("src")).toBe("latest-small.jpg");
+  } finally {
+    wrapper.unmount();
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
   }
 });

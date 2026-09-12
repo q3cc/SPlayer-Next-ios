@@ -13,6 +13,7 @@ const props = withDefaults(defineProps<{ active?: boolean; reducedMotion?: boole
 const media = useMediaStore();
 const settings = useSettingsStore();
 const status = useStatusStore();
+const visibility = useDocumentVisibility();
 
 const bgType = computed(() => settings.player.playerBgType as string);
 
@@ -55,7 +56,7 @@ const bgPlaying = computed(() => {
 });
 
 // 模糊模式：双缓冲层，切歌时交叉淡入淡出
-const initialCover = media.track?.cover || media.track?.coverOriginal || DEFAULT_COVER;
+const initialCover = media.track?.cover || DEFAULT_COVER;
 const blurLayers = reactive([
   { src: initialCover, active: true },
   { src: "", active: false },
@@ -63,17 +64,25 @@ const blurLayers = reactive([
 let currentLayerIndex = 0;
 let preloadImg: HTMLImageElement | null = null;
 let switchToken = 0;
+let switchFrame = 0;
 
 watch(
-  [() => media.track?.cover || media.track?.coverOriginal, () => status.isPlayerExpanded],
-  ([newCover, expanded]) => {
-    if (!expanded) return;
+  [() => media.track?.cover, () => status.isPlayerExpanded, bgType, () => props.active, visibility],
+  ([newCover, expanded, type, active, pageVisibility]) => {
     const token = ++switchToken;
+    cancelAnimationFrame(switchFrame);
+    switchFrame = 0;
 
     if (preloadImg) {
       preloadImg.src = "";
       preloadImg = null;
     }
+    if (type !== "blur") {
+      blurLayers[0].src = "";
+      blurLayers[1].src = "";
+      return;
+    }
+    if (!expanded || !active || pageVisibility !== "visible") return;
     const targetCover = newCover || DEFAULT_COVER;
     // 相同不切换
     if (blurLayers[currentLayerIndex].src === targetCover) return;
@@ -84,7 +93,8 @@ watch(
       blurLayers[nextIndex].src = src;
       nextTick(() => {
         if (token !== switchToken) return;
-        requestAnimationFrame(() => {
+        switchFrame = requestAnimationFrame(() => {
+          switchFrame = 0;
           if (token !== switchToken) return;
           blurLayers[nextIndex].active = true;
           blurLayers[currentLayerIndex].active = false;
@@ -100,11 +110,13 @@ watch(
       .then(() => switchLayer(targetCover))
       .catch(() => switchLayer(DEFAULT_COVER));
   },
+  { immediate: true },
 );
 
 onBeforeUnmount(() => {
   clearTimeout(bgReadyTimer);
   switchToken++;
+  cancelAnimationFrame(switchFrame);
   if (preloadImg) {
     preloadImg.src = "";
     preloadImg = null;
@@ -122,14 +134,15 @@ onBeforeUnmount(() => {
   <!-- 模糊背景 -->
   <Transition v-if="bgType === 'blur'" name="bg-fade">
     <div v-if="bgReady" class="absolute inset-0 overflow-hidden -z-1 bg-blur-wrap">
-      <img
-        v-for="(layer, index) in blurLayers"
-        :key="index"
-        :src="layer.src"
-        :class="['bg-img', { active: layer.active }]"
-        decoding="async"
-        alt=""
-      />
+      <template v-for="(layer, index) in blurLayers" :key="index">
+        <img
+          v-if="layer.src"
+          :src="layer.src"
+          :class="['bg-img', { active: layer.active }]"
+          decoding="async"
+          alt=""
+        />
+      </template>
     </div>
   </Transition>
   <!-- 流体背景 -->

@@ -13,25 +13,43 @@ export const usePlaybackTime = (
   onTick: (currentMs: number, durationMs: number, playing: boolean) => void,
 ): { start: () => void; stop: () => void } => {
   let rafId: number | null = null;
+  let running = false;
+
+  const schedule = (): void => {
+    if (running && !document.hidden && rafId === null) rafId = requestAnimationFrame(tick);
+  };
 
   const tick = (): void => {
+    rafId = null;
+    if (!running || document.hidden) return;
     onTick(Math.round(getCurrentTime()), Math.round(getDuration()), isPlaying());
-    rafId = requestAnimationFrame(tick);
+    schedule();
   };
 
   const start = (): void => {
-    if (rafId !== null) return;
-    rafId = requestAnimationFrame(tick);
+    running = true;
+    schedule();
   };
 
   const stop = (): void => {
+    running = false;
     if (rafId !== null) {
       cancelAnimationFrame(rafId);
       rafId = null;
     }
   };
 
-  onUnmounted(stop);
+  const onVisibility = (): void => {
+    if (document.hidden && rafId !== null) {
+      cancelAnimationFrame(rafId);
+      rafId = null;
+    } else schedule();
+  };
+  document.addEventListener("visibilitychange", onVisibility);
+  onUnmounted(() => {
+    stop();
+    document.removeEventListener("visibilitychange", onVisibility);
+  });
 
   return { start, stop };
 };
