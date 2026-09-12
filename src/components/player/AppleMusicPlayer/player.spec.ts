@@ -79,10 +79,10 @@ vi.mock("../Lyrics/AMLLLyrics.vue", () => ({
     },
   },
 }));
-vi.mock("../FullPlayer/BackgroundRender.vue", () => ({
+vi.mock("../FullPlayer/PlayerBackground.vue", () => ({
   default: {
     name: "BackgroundRender",
-    props: ["active", "playing", "album"],
+    props: ["active", "reducedMotion"],
     template: "<div data-background />",
   },
 }));
@@ -101,7 +101,8 @@ const create = () => {
       stubs: {
         teleport: true,
         transition: false,
-        SDropdownMenu: { template: "<div><slot /></div>" },
+        IconSpLossless: true,
+        SDropdownMenu: { template: "<div><slot name='trigger' /></div>" },
         SSlider: {
           emits: ["dragEnd", "change"],
           template: "<button data-slider @click=\"$emit('dragEnd', 18000)\" />",
@@ -109,6 +110,7 @@ const create = () => {
         ...Object.fromEntries(
           [
             "ChevronDown",
+            "ChevronUp",
             "Ellipsis",
             "Star",
             "Music2",
@@ -123,7 +125,7 @@ const create = () => {
           ].map((name) => [`IconLucide${name}`, true]),
         ),
         ...Object.fromEntries(
-          ["SkipPreviousRounded", "PauseRounded", "PlayArrowRounded", "SkipNextRounded"].map(
+          ["FastRewindRounded", "PauseRounded", "PlayArrowRounded", "FastForwardRounded"].map(
             (name) => [`IconMaterialSymbols${name}`, true],
           ),
         ),
@@ -174,6 +176,19 @@ it("手机先显示封面，切换歌词始终使用 AMLL 并按当前进度对�
   expect(mocks.seek).not.toHaveBeenCalled();
   expect(mocks.play).not.toHaveBeenCalled();
 });
+it("手机沉浸歌词可展开和隐藏播放控制，横屏恢复完整控制", async () => {
+  const wrapper = create();
+  await wrapper.get('[aria-label="player.appleMusic.lyrics"]').trigger("click");
+  expect(wrapper.get(".apple-music-player").classes()).toContain("am-immersive");
+  expect(wrapper.get(".am-controls").attributes("style")).toContain("display: none");
+  await wrapper.get('[aria-label="player.appleMusic.showControls"]').trigger("click");
+  expect(wrapper.get(".apple-music-player").classes()).not.toContain("am-immersive");
+  await wrapper.get('[aria-label="player.appleMusic.hideControls"]').trigger("click");
+  wide.value = true;
+  await flushPromises();
+  expect(wrapper.get(".apple-music-player").classes()).not.toContain("am-immersive");
+  expect(wrapper.find('[aria-label="player.appleMusic.showControls"]').exists()).toBe(false);
+});
 it("宽屏初始显示歌词，切换待播列表会停止歌词时钟", async () => {
   wide.value = true;
   const wrapper = create();
@@ -184,6 +199,17 @@ it("宽屏初始显示歌词，切换待播列表会停止歌词时钟", async (
   expect(wrapper.find("[data-queue]").exists()).toBe(true);
   expect(wrapper.find("[data-lyrics]").exists()).toBe(false);
   expect(mocks.stop).toHaveBeenCalled();
+});
+it("顶部横条是唯一的收起按钮，点击只收起界面而不中断播放", async () => {
+  const wrapper = create();
+  const handle = wrapper.get("button.am-handle");
+  expect(handle.attributes("aria-label")).toBe("player.appleMusic.close");
+  expect(wrapper.findAll('[aria-label="player.appleMusic.close"]')).toHaveLength(1);
+  expect(handle.find("span[aria-hidden='true']").exists()).toBe(true);
+  expect(handle.find("svg").exists()).toBe(false);
+  await handle.trigger("click");
+  expect(mocks.status.isPlayerExpanded).toBe(false);
+  expect(mocks.toggle).not.toHaveBeenCalled();
 });
 it("歌词点击跳转并恢复播放，进度条不另起播放", async () => {
   wide.value = true;
@@ -224,7 +250,7 @@ it("减少动态效果时背景静止，收起后释放背景组件", async () =
   reduceMotion.value = true;
   mocks.status.isPlaying = true;
   const wrapper = create();
-  expect(wrapper.findComponent({ name: "BackgroundRender" }).props("playing")).toBe(false);
+  expect(wrapper.findComponent({ name: "BackgroundRender" }).props("reducedMotion")).toBe(true);
   await wrapper.get('[aria-label="player.appleMusic.close"]').trigger("click");
   await flushPromises();
   expect(mocks.status.isPlayerExpanded).toBe(false);

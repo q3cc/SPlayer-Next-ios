@@ -244,7 +244,6 @@ const appearanceCategory: SettingCategory = {
         },
         {
           key: "playerBgType",
-          visible: () => useSettingsStore().player.theme !== "apple-music",
           type: "select",
           binding: { store: "settings", path: "player.playerBgType" },
           options: [

@@ -10,16 +10,16 @@ import { useDownload } from "@/composables/useDownload";
 import { useTrackMenu } from "@/composables/useTrackMenu";
 import { getCurrentTime } from "@/services/playback";
 import { formatTime } from "@/utils/time";
+import { getQualityLabel, isLosslessQuality } from "@/utils/quality";
 import { isIOS } from "@/utils/config";
 import * as player from "@/core/player";
 import AMLLLyrics from "../Lyrics/AMLLLyrics.vue";
-import BackgroundRender from "../FullPlayer/BackgroundRender.vue";
+import PlayerBackground from "../FullPlayer/PlayerBackground.vue";
 import PlayerCover from "../FullPlayer/PlayerCover.vue";
 import AirPlayControl from "../AirPlayControl.vue";
 import VolumeControl from "../VolumeControl.vue";
 import PlayingNext from "./PlayingNext.vue";
 import PlaylistPickerDialog from "@/components/modals/PlaylistPickerDialog.vue";
-import DEFAULT_COVER from "@/assets/images/song.jpg";
 import "./style.css";
 
 const emit = defineEmits<{ lyricsVisible: [visible: boolean] }>();
@@ -31,6 +31,8 @@ const wide = useMediaQuery("(min-width: 900px)");
 const reducedMotion = useMediaQuery("(prefers-reduced-motion: reduce)");
 const visibility = useDocumentVisibility();
 const panel = ref<"cover" | "lyrics" | "queue">(wide.value ? "lyrics" : "cover");
+const controlsVisible = ref(false);
+const immersive = computed(() => !wide.value && panel.value === "lyrics" && !controlsVisible.value);
 const lyrics = ref<InstanceType<typeof AMLLLyrics>>();
 const root = ref<HTMLElement>();
 const track = computed(() => media.track ?? status.currentTrack);
@@ -43,6 +45,7 @@ const showLyrics = computed(
 );
 const initialTime = ref(getCurrentTime() + status.lyricOffsetMs);
 const favorite = useFavorite();
+const quality = computed(() => media.detail?.quality ?? track.value?.quality);
 const { snapToNearestLyric } = useProgressLyric();
 const {
   open: pickerOpen,
@@ -51,7 +54,7 @@ const {
   openPicker,
 } = usePlaylistPicker();
 const { enqueue } = useDownload();
-const { items: menuItems, handleSelect } = useTrackMenu(track, {
+const { items: trackMenuItems, handleSelect } = useTrackMenu(track, {
   hidePlayActions: true,
   canRemove: false,
   onAddToPlaylist: (value) => openPicker([value]),
@@ -59,6 +62,20 @@ const { items: menuItems, handleSelect } = useTrackMenu(track, {
     void enqueue(value, quality ? { quality } : {});
   },
 });
+const menuItems = computed(() => [
+  {
+    key: "am-favorite",
+    label: t(
+      favorite.isLiked(track.value) ? "player.appleMusic.unfavorite" : "player.appleMusic.favorite",
+    ),
+    disabled: !track.value || !favorite.isSupported(track.value),
+  },
+  ...unref(trackMenuItems),
+]);
+const selectMenu = (key: string): void => {
+  if (key === "am-favorite") favorite.toggle(track.value);
+  else void handleSelect(key);
+};
 
 const { start, stop } = usePlaybackTime((time) => {
   if (!status.trackLoading && !media.lyricLoading)
@@ -121,7 +138,7 @@ const togglePanel = (value: "lyrics" | "queue"): void => {
         v-if="status.isPlayerExpanded"
         ref="root"
         class="apple-music-player"
-        :class="{ 'am-wide': wide, 'am-details': panel !== 'cover' }"
+        :class="{ 'am-wide': wide, 'am-details': panel !== 'cover', 'am-immersive': immersive }"
         role="dialog"
         data-fullscreen
         aria-modal="true"
@@ -129,29 +146,17 @@ const togglePanel = (value: "lyrics" | "queue"): void => {
         tabindex="-1"
         @keydown.esc.stop="close"
       >
-        <BackgroundRender
-          :album="track?.cover || DEFAULT_COVER"
-          :active="visible"
-          :playing="status.isPlaying && !reducedMotion"
-          :fps="settings.player.playerBgFps"
-          :render-scale="settings.player.playerBgRenderScale"
-          :flow-speed="settings.player.playerBgFlowSpeed"
-          :has-lyric="media.parsedLyric.length > 0"
-        />
+        <PlayerBackground :active="visible" :reduced-motion="reducedMotion" />
         <div class="am-shade" aria-hidden="true" />
         <header class="am-header">
-          <button class="am-icon" :aria-label="t('player.appleMusic.close')" @click="close">
-            <IconLucideChevronDown />
+          <button
+            type="button"
+            class="am-handle"
+            :aria-label="t('player.appleMusic.close')"
+            @click="close"
+          >
+            <span aria-hidden="true" />
           </button>
-          <span class="am-handle" aria-hidden="true" />
-          <span class="am-context">{{ t("player.appleMusic.nowPlaying") }}</span>
-          <SDropdownMenu :items="menuItems" align="end" @select="handleSelect">
-            <template #trigger>
-              <button class="am-icon" :disabled="!track" :aria-label="t('player.appleMusic.more')">
-                <IconLucideEllipsis />
-              </button>
-            </template>
-          </SDropdownMenu>
         </header>
         <div class="am-body">
           <div class="am-record">
@@ -161,21 +166,17 @@ const togglePanel = (value: "lyrics" | "queue"): void => {
                 <h1 :title="track?.title">{{ track?.title || t("player.appleMusic.noTrack") }}</h1>
                 <p :title="artist">{{ track ? artist : t("player.appleMusic.nowPlaying") }}</p>
               </div>
-              <button
-                class="am-icon am-favorite"
-                :disabled="!track || !favorite.isSupported(track)"
-                :aria-pressed="favorite.isLiked(track)"
-                :aria-label="
-                  t(
-                    favorite.isLiked(track)
-                      ? 'player.appleMusic.unfavorite'
-                      : 'player.appleMusic.favorite',
-                  )
-                "
-                @click="favorite.toggle(track)"
-              >
-                <IconLucideStar :class="{ 'am-filled': favorite.isLiked(track) }" />
-              </button>
+              <SDropdownMenu :items="menuItems" align="end" @select="selectMenu">
+                <template #trigger>
+                  <button
+                    class="am-icon am-more"
+                    :disabled="!track"
+                    :aria-label="t('player.appleMusic.more')"
+                  >
+                    <IconLucideEllipsis />
+                  </button>
+                </template>
+              </SDropdownMenu>
             </div>
           </div>
           <div v-if="panel !== 'cover'" class="am-detail-panel">
@@ -206,7 +207,7 @@ const togglePanel = (value: "lyrics" | "queue"): void => {
               </p>
             </div>
           </div>
-          <div class="am-controls">
+          <div v-show="!immersive" class="am-controls">
             <div class="am-progress">
               <SSlider
                 :model-value="status.position"
@@ -222,6 +223,10 @@ const togglePanel = (value: "lyrics" | "queue"): void => {
               />
               <div class="am-times">
                 <span>{{ formatTime(status.position) }}</span>
+                <span v-if="quality" class="am-quality">
+                  <IconSpLossless v-if="isLosslessQuality(quality)" />
+                  {{ getQualityLabel(quality) }}
+                </span>
                 <span>−{{ formatTime(Math.max(0, status.duration - status.position)) }}</span>
               </div>
             </div>
@@ -241,7 +246,7 @@ const togglePanel = (value: "lyrics" | "queue"): void => {
                 :aria-label="t('player.prev')"
                 @click="player.prevTrack()"
               >
-                <IconMaterialSymbolsSkipPreviousRounded />
+                <IconMaterialSymbolsFastRewindRounded />
               </button>
               <button
                 class="am-icon am-play"
@@ -262,7 +267,7 @@ const togglePanel = (value: "lyrics" | "queue"): void => {
                 :aria-label="t('player.next')"
                 @click="player.nextTrack()"
               >
-                <IconMaterialSymbolsSkipNextRounded />
+                <IconMaterialSymbolsFastForwardRounded />
               </button>
               <button
                 class="am-icon am-mode"
@@ -289,36 +294,47 @@ const togglePanel = (value: "lyrics" | "queue"): void => {
               />
               <IconLucideVolume2 aria-hidden="true" />
             </div>
-            <footer class="am-footer">
-              <button
-                class="am-icon"
-                :aria-pressed="panel === 'lyrics'"
-                :aria-label="t('player.appleMusic.lyrics')"
-                @click="togglePanel('lyrics')"
-              >
-                <IconLucideMessageSquareQuote />
-              </button>
-              <AirPlayControl v-if="isIOS" cover class="am-airplay" />
-              <button
-                v-else
-                class="am-icon"
-                :aria-pressed="panel === 'cover'"
-                :aria-label="t('player.appleMusic.cover')"
-                @click="panel = 'cover'"
-              >
-                <IconLucideDisc3 />
-              </button>
-              <button
-                class="am-icon"
-                :aria-pressed="panel === 'queue'"
-                :aria-label="t('player.appleMusic.queue')"
-                @click="togglePanel('queue')"
-              >
-                <IconLucideListMusic />
-              </button>
-            </footer>
           </div>
         </div>
+        <footer v-show="!immersive" class="am-footer">
+          <button
+            class="am-icon"
+            :aria-pressed="panel === 'lyrics'"
+            :aria-label="t('player.appleMusic.lyrics')"
+            @click="togglePanel('lyrics')"
+          >
+            <IconLucideMessageSquareQuote />
+          </button>
+          <AirPlayControl v-if="isIOS" cover class="am-airplay" />
+          <button
+            v-else
+            class="am-icon"
+            :aria-pressed="panel === 'cover'"
+            :aria-label="t('player.appleMusic.cover')"
+            @click="panel = 'cover'"
+          >
+            <IconLucideDisc3 />
+          </button>
+          <button
+            class="am-icon"
+            :aria-pressed="panel === 'queue'"
+            :aria-label="t('player.appleMusic.queue')"
+            @click="togglePanel('queue')"
+          >
+            <IconLucideListMusic />
+          </button>
+        </footer>
+        <button
+          v-if="!wide && panel === 'lyrics'"
+          class="am-icon am-reveal"
+          :aria-label="
+            t(immersive ? 'player.appleMusic.showControls' : 'player.appleMusic.hideControls')
+          "
+          @click="controlsVisible = !controlsVisible"
+        >
+          <IconLucideChevronUp v-if="immersive" />
+          <IconLucideChevronDown v-else />
+        </button>
       </section>
     </Transition>
     <PlaylistPickerDialog v-model:open="pickerOpen" :mode="pickerMode" :tracks="pickerTracks" />

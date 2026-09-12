@@ -454,6 +454,8 @@
   },
   "player": {
     "appleMusic": {
+      "showControls": "显示播放控制",
+      "hideControls": "隐藏播放控制",
       "nowPlaying": "正在播放",
       "close": "收起播放器",
       "play": "播放",

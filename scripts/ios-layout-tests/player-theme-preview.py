@@ -52,7 +52,7 @@ with sync_playwright() as playwright:
       media.lyricLoading = false;
       status.playIndex = 0; status.state = 'paused'; status.position = 12000; status.duration = 240000;
       clock.setCurrentTime(12000);
-      settings.player.theme = 'apple-music'; status.isPlayerExpanded = true;
+      settings.player.theme = 'apple-music'; settings.player.playerBgType = 'animation'; status.isPlayerExpanded = true;
       window.themePreview = {settings, status, media, lines: media.parsedLyric};
     }""")
     page.wait_for_timeout(3000)
@@ -64,7 +64,9 @@ with sync_playwright() as playwright:
     page.get_by_role("menu").wait_for(state="visible")
     page.keyboard.press("Escape")
     for name, width, height, panel in [
+        ("ipad-user-ratio", 1180, 820, "歌词"),
         ("ipad-landscape-lyrics", 1280, 800, "歌词"),
+        ("ipad-short-lyrics", 1024, 600, None),
         ("ipad-portrait-cover", 820, 1180, "歌词"),
         ("phone-cover", 390, 844, None),
         ("phone-lyrics", 390, 844, "歌词"),
@@ -72,22 +74,53 @@ with sync_playwright() as playwright:
         ("phone-small-queue", 320, 568, None),
     ]:
         page.set_viewport_size({"width": width, "height": height})
+        page.wait_for_timeout(100)
+        if panel and page.get_by_role("button", name="显示播放控制", exact=True).count():
+            page.get_by_role("button", name="显示播放控制", exact=True).click()
         if panel:
             button = page.get_by_role("button", name=panel, exact=True)
-            if name != "ipad-landscape-lyrics" or button.get_attribute("aria-pressed") != "true":
+            if name not in ("ipad-landscape-lyrics", "ipad-user-ratio") or button.get_attribute("aria-pressed") != "true":
                 button.click()
         page.wait_for_timeout(700)
+        if name == "phone-lyrics":
+            page.get_by_role("button", name="隐藏播放控制", exact=True).click()
         page.screenshot(path=str(output / f"{name}.png"))
+        if page.get_by_role("button", name="显示播放控制", exact=True).count():
+            page.get_by_role("button", name="显示播放控制", exact=True).click()
         bounds = page.locator(".apple-music-player").bounding_box()
         assert bounds and round(bounds["width"]) == width and round(bounds["height"]) == height, page.locator('.apple-music-player').evaluate("e => ({rect:e.getBoundingClientRect().toJSON(), styles: Object.fromEntries(['width','max-width','transform','zoom','left','right','margin'].map(k=>[k,getComputedStyle(e).getPropertyValue(k)]))})")
         assert page.get_by_role("button", name="播放", exact=True).is_visible()
         assert page.get_by_role("button", name="待播列表", exact=True).bounding_box()["y"] < height - 40
+        for state in ("playing", "paused"):
+            page.evaluate("state => window.themePreview.status.state = state", state)
+            page.wait_for_timeout(600)
+            artwork = page.locator(".am-artwork > div").bounding_box()
+            song = page.locator(".am-song").bounding_box()
+            if width >= 900 or "cover" in name:
+                assert artwork["y"] + artwork["height"] <= song["y"] - 12, (name, state, artwork, song)
+            if width >= 900 or "cover" not in name:
+                assert abs(artwork["width"] - artwork["height"]) < 2, (name, artwork)
+            page.screenshot(path=str(output / f"{name}-{state}.png"))
+    canvas_counts = []
+    for _ in range(4):
+        page.evaluate("window.themePreview.status.isPlayerExpanded = false")
+        page.wait_for_timeout(500)
+        assert page.locator(".apple-music-player canvas").count() == 0
+        page.evaluate("window.themePreview.status.isPlayerExpanded = true")
+        page.wait_for_timeout(1100)
+        canvas_counts.append(page.locator(".apple-music-player canvas").count())
+        assert canvas_counts[-1] == 1, canvas_counts
+        page.evaluate("window.themePreview.settings.player.theme = 'original'")
+        page.locator(".full-player").wait_for(state="visible")
+        assert page.locator(".apple-music-player").count() == 0
+        page.evaluate("window.themePreview.settings.player.theme = 'apple-music'")
+        page.locator(".apple-music-player").wait_for(state="visible")
     page.evaluate("window.themePreview.settings.player.theme = 'original'")
     page.locator(".full-player").wait_for(state="visible")
     assert page.locator(".apple-music-player").count() == 0
     assert page.evaluate("window.themePreview.status.position") == 12000
     page.screenshot(path=str(output / "original-restored.png"))
-    print(json.dumps({"screenshots": str(output), "pageErrors": errors}))
+    print(json.dumps({"screenshots": str(output), "pageErrors": errors, "canvasCountsAfterReopen": canvas_counts}))
     context.close()
     browser.close()
     assert not errors, errors

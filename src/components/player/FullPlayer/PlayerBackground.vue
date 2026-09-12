@@ -5,6 +5,11 @@ import { useStatusStore } from "@/stores/status";
 import DEFAULT_COVER from "@/assets/images/song.jpg";
 import BackgroundRender from "./BackgroundRender.vue";
 
+const props = withDefaults(defineProps<{ active?: boolean; reducedMotion?: boolean }>(), {
+  active: true,
+  reducedMotion: false,
+});
+
 const media = useMediaStore();
 const settings = useSettingsStore();
 const status = useStatusStore();
@@ -43,6 +48,7 @@ onBeforeUnmount(() => clearTimeout(bgReadyTimer));
 
 // 流体背景播放态
 const bgPlaying = computed(() => {
+  if (props.reducedMotion) return false;
   if (!status.isPlayerExpanded) return false;
   if (!status.isPlaying && settings.player.playerBgFreezeOnPause) return false;
   return true;
@@ -130,6 +136,7 @@ onBeforeUnmount(() => {
   <Transition v-else-if="bgType === 'animation'" name="bg-fade">
     <div v-if="bgReady" class="absolute inset-0 overflow-hidden -z-1">
       <BackgroundRender
+        :active="props.active && status.isPlayerExpanded"
         :album="media.track?.cover || DEFAULT_COVER"
         :playing="bgPlaying"
         :fps="settings.player.playerBgFps"

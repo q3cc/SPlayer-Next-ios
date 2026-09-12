@@ -466,6 +466,8 @@
   },
   "player": {
     "appleMusic": {
+      "showControls": "Show playback controls",
+      "hideControls": "Hide playback controls",
       "nowPlaying": "Now Playing",
       "close": "Minimize player",
       "play": "Play",
