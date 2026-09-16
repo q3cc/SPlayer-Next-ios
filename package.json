@@ -80,7 +80,8 @@
     "set-cookie-parser": "^3.1.2",
     "undici": "^8.10.0",
     "ws": "^8.21.2",
-    "zod": "^4.4.3"
+    "zod": "^4.4.3",
+    "lyric-kit": "^0.5.4"
   },
   "devDependencies": {
     "@applemusic-like-lyrics/core": "^0.5.2",
@@ -145,6 +146,7 @@
     "vue-eslint-parser": "^10.4.0",
     "vue-i18n": "^11.4.8",
     "vue-router": "^5.2.0",
-    "vue-tsc": "^3.3.9"
+    "vue-tsc": "^3.3.9",
+    "lyric-dom": "^0.1.2"
   }
 }

@@ -290,8 +290,10 @@ const togglePanel = (value: "lyrics" | "queue"): void => {
               :align-position="0.35"
               enable-blur
               :show-translation="settings.lyric.showTranslation"
-              :show-line-romanization="settings.lyric.amllShowLineRomanization"
-              :show-word-romanization="settings.lyric.amllShowWordRomanization"
+              :show-romanization="settings.lyric.showRomanization"
+              :show-ruby="settings.lyric.showRuby"
+              :bg-always-below="settings.lyric.bgAlwaysBelow"
+              :show-word-romanization="settings.lyric.showWordRomanization"
               @seek="seekLyric"
             />
             <div v-else class="am-empty">

@@ -2,12 +2,13 @@ import type { Track } from "@shared/types/player";
 import type { FavoriteEventInput, PlayEventInput, StatsApi } from "@shared/types/stats";
 import { mobileLibrary } from "./library";
 
+const MAX_EVENTS = 5000;
 const PLAY_KEY = "splayer.mobile.stats.plays";
 const FAVORITE_KEY = "splayer.mobile.stats.favorites";
 
 const read = <T>(key: string): T[] => {
   try {
-    return JSON.parse(localStorage.getItem(key) ?? "[]") as T[];
+    return (JSON.parse(localStorage.getItem(key) ?? "[]") as T[]).slice(-MAX_EVENTS);
   } catch {
     return [];
   }
@@ -16,8 +17,18 @@ const read = <T>(key: string): T[] => {
 const plays = read<PlayEventInput>(PLAY_KEY);
 const favorites = read<FavoriteEventInput & { at: number }>(FAVORITE_KEY);
 const save = (): void => {
-  localStorage.setItem(PLAY_KEY, JSON.stringify(plays.slice(-5000)));
-  localStorage.setItem(FAVORITE_KEY, JSON.stringify(favorites.slice(-5000)));
+  plays.splice(0, Math.max(0, plays.length - MAX_EVENTS));
+  favorites.splice(0, Math.max(0, favorites.length - MAX_EVENTS));
+  for (const [key, events] of [
+    [PLAY_KEY, plays],
+    [FAVORITE_KEY, favorites],
+  ] as const) {
+    try {
+      localStorage.setItem(key, JSON.stringify(events));
+    } catch {
+      // 统计落盘失败不能打断播放或收藏，本次会话仍可查看有界记录。
+    }
+  }
 };
 const day = (time: number): string => new Date(time).toLocaleDateString("en-CA");
 const weekStart = (date: Date): number => {

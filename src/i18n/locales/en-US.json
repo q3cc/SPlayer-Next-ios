@@ -1202,17 +1202,25 @@
       "label": "Show Translation",
       "description": "Display translated lyrics"
     },
-    "showRomanization": {
-      "label": "Show Romanization",
-      "description": "Display romanized lyrics"
+    "showRuby": {
+      "label": "Show Ruby",
+      "description": "Display ruby annotation text (furigana/pinyin) above words"
     },
-    "amllShowLineRomanization": {
+    "showRomanization": {
       "label": "Show Line Romanization",
       "description": "Display romanized lyrics for each line"
     },
-    "amllShowWordRomanization": {
+    "showWordRomanization": {
       "label": "Show Word Romanization",
       "description": "Display romanized lyrics for each word in word-by-word lyrics"
+    },
+    "enableScale": {
+      "label": "Lyric Scale",
+      "description": "Scale down inactive lines slightly to highlight current line"
+    },
+    "bgAlwaysBelow": {
+      "label": "Background Lyrics Always Below",
+      "description": "Always place background vocal lines below the main lyric line"
     },
     "enableWordHighlight": {
       "label": "Word Highlight",
@@ -1642,10 +1650,6 @@
       "confirmResetTitle": "Reset to defaults?",
       "confirmResetDesc": "Groups, names, order and visibility will be reset to defaults!",
       "featureDisabled": "Feature disabled"
-    },
-    "showStatsInSidebar": {
-      "label": "Show Play Stats Entry",
-      "description": "Show the play statistics page entry in the sidebar"
     },
     "showQualitySwitch": {
       "label": "Show Quick Quality Switch",

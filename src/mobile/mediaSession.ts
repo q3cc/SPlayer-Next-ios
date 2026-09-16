@@ -1,6 +1,7 @@
 import type { NowPlayingUpdatePayload } from "@shared/types/nowPlaying";
 import type { Track } from "@shared/types/player";
-import { findLyricIndex } from "@shared/utils/lyric";
+import { findLyricIndex } from "lyric-kit";
+import { getLineText } from "@shared/utils/lyrics";
 import { originalArtwork } from "@shared/utils/artwork";
 import { store } from "./shims/store";
 import { invoke, isTauri } from "@tauri-apps/api/core";
@@ -116,10 +117,7 @@ const refresh = (): void => {
             .map((line) => ({
               start: line.startTime,
               end: line.endTime,
-              text: line.words
-                .map((word) => word.word)
-                .join("")
-                .trim(),
+              text: getLineText(line).trim(),
             }))
             .filter((line) => line.text)
         : [],
@@ -147,10 +145,7 @@ const refresh = (): void => {
       index--;
     const line = lyrics.lyric[index];
     if (line && time >= line.startTime && time < line.endTime + 3000) {
-      lyric = line.words
-        .map((word) => word.word)
-        .join("")
-        .trim();
+      lyric = getLineText(line).trim();
     }
   }
   const next = {

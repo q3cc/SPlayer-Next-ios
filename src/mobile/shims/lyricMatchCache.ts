@@ -1,3 +1,4 @@
+import { clearLyricStorage, readLyricStorage, writeLyricStorage } from "./lyricStorage";
 import { normalize, normalizeTrackArtists } from "@main/apis/common/lyric/utils";
 import type { LyricMatchExtra } from "@shared/types/lyrics";
 import type { Platform } from "@shared/types/platform";
@@ -17,7 +18,7 @@ export const buildFingerprint = (track: Track): string => {
 
 export const getMatchedId = (fingerprint: string, platform: Platform): MatchedRecord | null => {
   try {
-    const raw = localStorage.getItem(`${PREFIX}${platform}.${fingerprint}`);
+    const raw = readLyricStorage(`${PREFIX}${platform}.${fingerprint}`);
     return raw ? (JSON.parse(raw) as MatchedRecord) : null;
   } catch {
     return null;
@@ -30,13 +31,12 @@ export const setMatchedId = (
   platformId: string,
   extra?: LyricMatchExtra,
 ): void => {
-  localStorage.setItem(
+  writeLyricStorage(
     `${PREFIX}${platform}.${fingerprint}`,
     JSON.stringify({ platformId, extra } satisfies MatchedRecord),
   );
 };
 
 export const clearLyricMatchCache = (): void => {
-  for (const key of Object.keys(localStorage))
-    if (key.startsWith(PREFIX)) localStorage.removeItem(key);
+  clearLyricStorage(PREFIX);
 };

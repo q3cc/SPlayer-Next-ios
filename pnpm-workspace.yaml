@@ -8,6 +8,8 @@ allowBuilds:
   esbuild: true
   vue-demi: true
 minimumReleaseAgeExclude:
+  - lyric-kit
+  - lyric-dom
   - app-builder-lib@26.15.3
   - builder-util@26.15.3
   - dmg-builder@26.15.3

@@ -75,6 +75,35 @@ describe("歌词画中画", () => {
     });
   });
 
+  it("保留上游词尾空格和逐词音译到原生画中画", async () => {
+    const { pipContent } = await import("./lyricPip");
+    const snapshot = {
+      ...value,
+      lyric: [
+        {
+          startTime: 1000,
+          endTime: 3000,
+          translatedLyric: "",
+          romanLyric: "",
+          isBG: false,
+          words: [
+            {
+              word: "Hello",
+              romanWord: "hello",
+              endsWithSpace: true,
+              startTime: 1000,
+              endTime: 2000,
+            },
+            { word: "world", romanWord: "world", startTime: 2000, endTime: 3000 },
+          ],
+        },
+      ],
+    } as NowPlayingSnapshot;
+    const line = pipContent(snapshot).lines[0];
+    expect(line.rows).toEqual(["Hello world", "hello world"]);
+    expect(line.words.map((word) => word.text)).toEqual(["Hello ", "world"]);
+  });
+
   it("字号和颜色传给原生绘制，兼容 RGB 和 HEX 配置", async () => {
     const { pipContent } = await import("./lyricPip");
     expect(

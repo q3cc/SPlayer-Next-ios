@@ -116,7 +116,6 @@ export const useSettingsStore = defineStore(
       sidebarKeepEmptyDivider: false,
       sidebarNameWithDivider: false,
       sidebarPlaylistOrder: { myLocal: [], myOnline: [], subscribed: [] },
-      showStatsInSidebar: true,
       showQualitySwitch: false,
       closeAction: "hide",
       rememberCloseChoice: false,
@@ -183,9 +182,11 @@ export const useSettingsStore = defineStore(
       fontFamilyKorean: "",
       fontFamilyChinese: "",
       showTranslation: true,
+      showRuby: true,
       showRomanization: true,
-      amllShowLineRomanization: true,
-      amllShowWordRomanization: true,
+      showWordRomanization: true,
+      enableScale: true,
+      bgAlwaysBelow: false,
       enableWordHighlight: true,
       enableFloatAnimation: false,
       enableEmphasizeEffect: false,
@@ -367,6 +368,21 @@ export const useSettingsStore = defineStore(
           appearance: AppearanceSettings;
         };
         if (player.theme !== "apple-music") player.theme = "original";
+        const legacyLyric = lyric as LyricSettings & {
+          amllShowLineRomanization?: boolean;
+          amllShowWordRomanization?: boolean;
+        };
+        if (
+          typeof legacyLyric.amllShowLineRomanization === "boolean" &&
+          (lyric.engine === "amll" || player.theme === "apple-music")
+        ) {
+          lyric.showRomanization = legacyLyric.amllShowLineRomanization;
+        }
+        if (typeof legacyLyric.amllShowWordRomanization === "boolean") {
+          lyric.showWordRomanization = legacyLyric.amllShowWordRomanization;
+        }
+        delete legacyLyric.amllShowLineRomanization;
+        delete legacyLyric.amllShowWordRomanization;
         if (typeof lyric.detectBackgroundLyrics !== "boolean") {
           lyric.detectBackgroundLyrics = true;
         }

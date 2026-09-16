@@ -7,6 +7,7 @@ import { store } from "./shims/store";
 import type { SystemConfig } from "@shared/types/settings";
 import { hasRealWordTiming } from "@windows/desktop-lyric/utils";
 import { colord } from "colord";
+import { getLineText, getLineRomaji, getWordText } from "@shared/utils/lyrics";
 
 /** 复用已解析的歌词，仅把当前曲目的行文本交给系统画中画。 */
 export const pipContent = (
@@ -39,17 +40,14 @@ export const pipContent = (
     .map((line) => ({
       start: line.startTime,
       end: line.endTime,
-      text: line.words
-        .map((word) => word.word)
-        .join("")
-        .trim(),
+      text: getLineText(line).trim(),
       translation: line.translatedLyric,
-      roman: line.romanLyric ?? "",
+      roman: getLineRomaji(line),
       words: hasRealWordTiming(line)
-        ? line.words.map(({ word, startTime, endTime }) => ({
-            text: word,
-            start: startTime,
-            end: endTime,
+        ? line.words.map((word) => ({
+            text: getWordText(word),
+            start: word.startTime,
+            end: word.endTime,
           }))
         : [],
     }))
