@@ -12,7 +12,9 @@ import { buildDownloadLyric } from "@/utils/lyric/serialize";
 import { toast } from "@/composables/useToast";
 
 /** 解析单个任务的 URL 与歌词 */
-const resolvePayload = async (payload: DownloadResolvePayload): Promise<DownloadResolution> => {
+export const resolveDownloadPayload = async (
+  payload: DownloadResolvePayload,
+): Promise<DownloadResolution> => {
   const source = await resolveDownloadSource(
     payload.track,
     payload.qualityLevel,
@@ -54,7 +56,7 @@ const resolvePayload = async (payload: DownloadResolvePayload): Promise<Download
 /** 注册解析请求监听 */
 export const initDownloadResolver = (): (() => void) =>
   window.api.download.onResolve((payload) => {
-    resolvePayload(payload)
+    resolveDownloadPayload(payload)
       .then((res) => window.api.download.submitResolution(payload.taskId, res))
       .catch(() => {
         toast.error(i18n.global.t("download.resolveFailed", { title: payload.track.title }));

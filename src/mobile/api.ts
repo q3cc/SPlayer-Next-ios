@@ -4,7 +4,7 @@ import { save, open } from "@tauri-apps/plugin-dialog";
 import { readTextFile, writeFile } from "@tauri-apps/plugin-fs";
 import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
 import { defaultHotkeyConfig } from "@shared/defaults/hotkeys";
-import type { DownloadProgress, DownloadRequest, DownloadTask } from "@shared/types/download";
+import { mobileDownload } from "./download";
 import type { HotkeyConfig } from "@shared/types/hotkey";
 import type { NowPlayingSnapshot, NowPlayingUpdatePayload } from "@shared/types/nowPlaying";
 import type { PlayerApi, PlayerEvent, Track } from "@shared/types/player";
@@ -156,68 +156,6 @@ const initializeDeepLinks = (): void => {
   void onOpenUrl(routeIncomingUrls);
 };
 
-const downloadTasks: DownloadTask[] = [];
-const downloadStateListeners = new Set<(task: DownloadTask) => void>();
-const downloadProgressListeners = new Set<(progress: DownloadProgress) => void>();
-const downloadResolveListeners = new Set<(payload: unknown) => void>();
-const notifyDownload = (task: DownloadTask): void =>
-  downloadStateListeners.forEach((listener) => listener(task));
-
-const downloadOne = async (request: DownloadRequest): Promise<void> => {
-  const task = downloadTasks.find((item) => item.taskId === request.taskId);
-  if (!task || !request.url) return;
-  try {
-    task.status = "downloading";
-    notifyDownload({ ...task });
-    const response = await tauriFetch(request.url);
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    const bytes = new Uint8Array(await response.arrayBuffer());
-    const extension = request.declaredFormat || request.url.split("?")[0].split(".").pop() || "mp3";
-    const suggested = `${request.track.title.replace(/[\\/:*?"<>|]/g, "_")}.${extension}`;
-    const path = await save({ defaultPath: suggested });
-    if (!path) {
-      task.status = "canceled";
-      task.finishedAt = Date.now();
-      notifyDownload({ ...task });
-      return;
-    }
-    await writeFile(path, bytes);
-    task.received = bytes.length;
-    task.total = bytes.length;
-    task.filePath = path;
-    task.status = "done";
-    task.finishedAt = Date.now();
-    downloadProgressListeners.forEach((listener) =>
-      listener({ taskId: task.taskId, received: bytes.length, total: bytes.length }),
-    );
-    notifyDownload({ ...task });
-  } catch (error) {
-    task.status = "failed";
-    task.errorCode = error instanceof Error ? error.message : String(error);
-    task.finishedAt = Date.now();
-    notifyDownload({ ...task });
-  }
-};
-
-const enqueue = async (request: DownloadRequest) => {
-  if (downloadTasks.some((task) => task.taskId === request.taskId))
-    return { ok: false, reason: "queued" as const };
-  const task: DownloadTask = {
-    taskId: request.taskId,
-    status: "queued",
-    track: request.track,
-    qualityLevel: request.qualityLevel,
-    received: 0,
-    total: request.declaredSize ?? 0,
-    createdAt: Date.now(),
-  };
-  downloadTasks.unshift(task);
-  notifyDownload({ ...task });
-  if (request.url) void downloadOne(request);
-  else downloadResolveListeners.forEach((listener) => listener(request));
-  return { ok: true };
-};
-
 let nowPlaying: NowPlayingUpdatePayload = { track: null, lyric: [], source: null };
 const lyricOffsets = new Map<string, number>();
 const offsetListeners = new Set<(value: { trackId: string | null; offsetMs: number }) => void>();
@@ -257,6 +195,7 @@ const api = {
     set: async (key: string, value: unknown) => {
       if (key === "system.diagnosticLogging") await setDiagnosticsEnabled(value === true);
       store.set(key, value);
+      if (!store.get("download.enabled")) await mobileDownload.cancelAll();
       if (key === "player.equalizer" || key.startsWith("player.equalizer.")) {
         await syncMobileEqualizer();
       }
@@ -268,12 +207,14 @@ const api = {
     reset: async () => {
       await setDiagnosticsEnabled(false);
       store.clear();
+      await mobileDownload.cancelAll();
       await syncMobileEqualizer();
       mobileMediaSession.refresh();
       await mobileLyricPip.update();
     },
     replaceAll: async (value: unknown) => {
       store.replaceAll(value);
+      if (!store.get("download.enabled")) await mobileDownload.cancelAll();
       await syncMobileEqualizer();
       await setDiagnosticsEnabled(store.get("system.diagnosticLogging") === true);
       mobileMediaSession.refresh();
@@ -437,45 +378,7 @@ const api = {
   lyrics: mobileLyrics,
   opencc: { convert: async (text: string) => text, convertBatch: async (texts: string[]) => texts },
   comments: mobileComments,
-  download: {
-    start: enqueue,
-    startMany: async (items: DownloadRequest[]) => Promise.all(items.map(enqueue)),
-    cancel: async (id: string) => {
-      const task = downloadTasks.find((item) => item.taskId === id);
-      if (task) task.status = "canceled";
-    },
-    retry: enqueue,
-    remove: async (id: string) => {
-      const index = downloadTasks.findIndex((item) => item.taskId === id);
-      if (index >= 0) downloadTasks.splice(index, 1);
-    },
-    clearFinished: async () => {
-      for (let index = downloadTasks.length - 1; index >= 0; index--)
-        if (["done", "failed", "canceled"].includes(downloadTasks[index].status))
-          downloadTasks.splice(index, 1);
-    },
-    list: async () => downloadTasks,
-    pickDir: async () => ({ ok: true, dir: "Files" }),
-    getDir: async () => "Files",
-    resetDir: async () => "Files",
-    submitResolution: async () => undefined,
-    failResolution: async (id: string) => {
-      const task = downloadTasks.find((item) => item.taskId === id);
-      if (task) task.status = "failed";
-    },
-    onProgress: (callback: (value: DownloadProgress) => void) => {
-      downloadProgressListeners.add(callback);
-      return () => downloadProgressListeners.delete(callback);
-    },
-    onState: (callback: (value: DownloadTask) => void) => {
-      downloadStateListeners.add(callback);
-      return () => downloadStateListeners.delete(callback);
-    },
-    onResolve: (callback: (value: unknown) => void) => {
-      downloadResolveListeners.add(callback);
-      return () => downloadResolveListeners.delete(callback);
-    },
-  },
+  download: mobileDownload,
   nowPlaying: {
     update: (value: NowPlayingUpdatePayload) => {
       const changed = value.track?.id !== nowPlaying.track?.id;

@@ -6,6 +6,8 @@
  */
 
 import type { DownloadTask, DownloadProgress, DownloadStatus } from "@shared/types/download";
+import { toast } from "@/composables/useToast";
+import i18n from "@/i18n";
 import { initDownloadResolver } from "@/services/download/resolver";
 
 export const useDownloadStore = defineStore("download", () => {
@@ -54,28 +56,52 @@ export const useDownloadStore = defineStore("download", () => {
   };
 
   /** 拉取全量并订阅增量 */
-  const init = async (): Promise<void> => {
-    if (initialized.value) return;
-    initialized.value = true;
-    unsubscribers.push(initDownloadResolver());
-    const tasks = await window.api.download.list();
-    activeTasks.value = tasks.filter((task) => isActive(task.status)).sort(compareActive);
-    historyTasks.value = tasks.filter((task) => !isActive(task.status)).sort(compareHistory);
-    unsubscribers.push(window.api.download.onState(applyTask));
-    unsubscribers.push(window.api.download.onProgress(applyProgress));
+  let initPromise: Promise<void> | undefined;
+  const init = (): Promise<void> => {
+    if (initialized.value) return Promise.resolve();
+    initPromise ??= (async () => {
+      const changed = new Set<string>();
+      let loading = true;
+      unsubscribers.push(
+        window.api.download.onState((task) => {
+          if (loading) changed.add(task.taskId);
+          applyTask(task);
+        }),
+      );
+      unsubscribers.push(window.api.download.onProgress(applyProgress));
+      unsubscribers.push(initDownloadResolver());
+      const tasks = await window.api.download.list();
+      for (const task of tasks) if (!changed.has(task.taskId)) applyTask(task);
+      loading = false;
+      changed.clear();
+      initialized.value = true;
+    })().catch((error) => {
+      for (const off of unsubscribers.splice(0)) off();
+      initPromise = undefined;
+      throw error;
+    });
+    return initPromise;
   };
 
   const cancel = (taskId: string): void => void window.api.download.cancel(taskId);
 
-  const remove = (taskId: string): void => {
-    activeTasks.value = activeTasks.value.filter((item) => item.taskId !== taskId);
-    historyTasks.value = historyTasks.value.filter((item) => item.taskId !== taskId);
-    void window.api.download.remove(taskId);
+  const remove = async (taskId: string): Promise<void> => {
+    try {
+      await window.api.download.remove(taskId);
+      activeTasks.value = activeTasks.value.filter((item) => item.taskId !== taskId);
+      historyTasks.value = historyTasks.value.filter((item) => item.taskId !== taskId);
+    } catch {
+      toast.error(i18n.global.t("download.operationFailed"));
+    }
   };
 
-  const clearFinished = (): void => {
-    historyTasks.value = [];
-    void window.api.download.clearFinished();
+  const clearFinished = async (): Promise<void> => {
+    try {
+      await window.api.download.clearFinished();
+      historyTasks.value = [];
+    } catch {
+      toast.error(i18n.global.t("download.operationFailed"));
+    }
   };
 
   onScopeDispose(() => {

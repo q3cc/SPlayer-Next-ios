@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { isIOS } from "@/utils/config";
+
 defineOptions({ name: "Download" });
 
 import type { DownloadTask, DownloadStatus } from "@shared/types/download";
@@ -69,7 +71,7 @@ onMounted(() => void downloadStore.init());
           {{ t("common.totalSongs", { count: currentTasks.length }) }}
         </span>
       </div>
-      <div class="flex items-center justify-between gap-4">
+      <div class="flex flex-wrap items-center justify-between gap-4">
         <STabs
           :model-value="tab"
           :tabs="tabs"
@@ -96,6 +98,10 @@ onMounted(() => void downloadStore.init());
         </div>
       </div>
     </div>
+
+    <p v-if="isIOS" class="px-5 pb-2 text-xs text-on-surface-variant">
+      {{ t("settings.downloadDir.mobile") }}
+    </p>
 
     <!-- 列表 -->
     <div class="flex-1 min-h-0">

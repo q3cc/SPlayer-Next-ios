@@ -705,7 +705,15 @@
       "failed": "Failed",
       "canceled": "Canceled",
       "interrupted": "Interrupted"
-    }
+    },
+    "consent": {
+      "title": "Enable song downloads",
+      "content": "Save audio that supports offline caching to this device. Only download music you have the right to use, and follow each platform’s terms and the rights holder’s permissions. Listen personally within your authorization; do not use downloads commercially or redistribute them without permission.",
+      "cancel": "Not now",
+      "confirm": "Enable downloads"
+    },
+    "operationFailed": "Operation failed. Check file access and try again.",
+    "startFailed": "Could not add download. Enable downloads and clear finished records before retrying (up to 200 records)."
   },
   "daily": {
     "title": "Daily Recommend",
@@ -2125,11 +2133,13 @@
       "description": "When the limit is reached, entries are evicted automatically; ∞ means unlimited"
     },
     "downloadEnabled": {
-      "label": "Enable Downloads"
+      "label": "Enable Downloads",
+      "description": "Keep the app open until downloads finish. Turning this off cancels unfinished tasks and keeps downloaded files."
     },
     "downloadDir": {
       "label": "Download Folder",
-      "change": "Change"
+      "change": "Change",
+      "mobile": "Files → On My iPhone / iPad → SPlayer → Downloads"
     },
     "downloadQuality": {
       "label": "Download Quality",

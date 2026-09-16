@@ -18,12 +18,23 @@
     "fs:allow-appdata-write-recursive",
     {
       "identifier": "fs:scope",
-      "allow": ["$DOCUMENT/Imported Music", "$DOCUMENT/Imported Music/**"]
+      "allow": [
+        "$DOCUMENT/Imported Music",
+        "$DOCUMENT/Imported Music/**",
+        "$DOCUMENT/Downloads",
+        "$DOCUMENT/Downloads/**"
+      ]
     },
     {
       "identifier": "http:default",
       "allow": ["http://**", "https://**"]
     },
-    "opener:default"
+    "opener:default",
+    "fs:allow-open",
+    "fs:allow-write",
+    "fs:allow-mkdir",
+    "fs:allow-exists",
+    "fs:allow-rename",
+    "fs:allow-remove"
   ]
 }

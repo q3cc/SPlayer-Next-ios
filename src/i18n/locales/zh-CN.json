@@ -693,7 +693,15 @@
       "failed": "失败",
       "canceled": "已取消",
       "interrupted": "已中断"
-    }
+    },
+    "consent": {
+      "title": "开启歌曲下载",
+      "content": "开启后，你可以将支持离线缓存的音频保存到本地设备。请确保你仅下载拥有合法使用权的音乐内容，并遵守各音乐平台的服务条款与权利人许可。下载的文件仅供个人在授权范围内收听，请勿用于商业目的或进行未经许可的二次传播。",
+      "cancel": "暂不开启",
+      "confirm": "确认开启"
+    },
+    "operationFailed": "操作失败，请检查文件权限后重试",
+    "startFailed": "无法添加下载，请确认已开启下载，并清理已结束的记录后重试（最多保留 200 条）"
   },
   "daily": {
     "title": "每日推荐",
@@ -2104,11 +2112,13 @@
       "description": "缓存达到上限后将自动清理，∞ 表示不限制"
     },
     "downloadEnabled": {
-      "label": "启用下载功能"
+      "label": "启用下载功能",
+      "description": "请保持应用在前台直至下载完成。关闭后停止未完成的任务，已下载文件保留。"
     },
     "downloadDir": {
       "label": "下载目录",
-      "change": "更换"
+      "change": "更换",
+      "mobile": "文件 → 我的 iPhone / iPad → SPlayer → Downloads"
     },
     "downloadQuality": {
       "label": "下载音质",

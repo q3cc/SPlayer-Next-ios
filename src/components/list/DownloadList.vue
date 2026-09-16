@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { isIOS } from "@/utils/config";
 import type { DownloadTask, DownloadStatus } from "@shared/types/download";
 import type { Track } from "@shared/types/player";
 import { useMediaStore } from "@/stores/media";
@@ -133,13 +134,15 @@ defineExpose({ playAll });
     <!-- 固定表头 -->
     <template #header>
       <div class="pr-1.5">
-        <div class="flex items-center gap-3 pl-3 pr-6 mx-3 h-10 text-sm text-on-surface-variant/60">
+        <div
+          class="flex items-center gap-2 sm:gap-3 pl-2 sm:pl-3 pr-2 sm:pr-6 mx-3 h-10 text-sm text-on-surface-variant/60"
+        >
           <div class="w-8 shrink-0 flex items-center justify-center"><span>#</span></div>
           <div class="flex-1 min-w-0 px-1.5">{{ t("songList.title") }}</div>
-          <div class="w-32 shrink-0">{{ t("download.colStatus") }}</div>
-          <div class="w-20 shrink-0 text-center">{{ t("download.colSize") }}</div>
-          <div class="w-16 shrink-0 text-center">{{ t("songList.duration") }}</div>
-          <div class="w-20 shrink-0 text-center">{{ t("songList.actions") }}</div>
+          <div class="w-16 sm:w-32 shrink-0">{{ t("download.colStatus") }}</div>
+          <div class="hidden sm:block w-20 shrink-0 text-center">{{ t("download.colSize") }}</div>
+          <div class="hidden sm:block w-16 shrink-0 text-center">{{ t("songList.duration") }}</div>
+          <div class="hidden sm:block w-20 shrink-0 text-center">{{ t("songList.actions") }}</div>
         </div>
       </div>
     </template>
@@ -147,7 +150,7 @@ defineExpose({ playAll });
     <template #default="{ item, index }: { item: DownloadTask; index: number }">
       <div class="px-3 pb-3">
         <div
-          class="group flex items-center gap-3 pl-3 pr-6 h-19 rounded-xl border-2 border-solid transition-[background-color,border-color] duration-200"
+          class="group flex items-center gap-2 sm:gap-3 pl-2 sm:pl-3 pr-2 sm:pr-6 h-19 rounded-xl border-2 border-solid transition-[background-color,border-color] duration-200"
           :class="rowClass(item)"
           @dblclick="isDone(item) ? playTask(item) : undefined"
         >
@@ -185,7 +188,7 @@ defineExpose({ playAll });
           </div>
           <!-- 信息 -->
           <div class="flex-1 min-w-0 flex items-center gap-3">
-            <SImg :src="item.track.cover" class="size-12 rounded-lg shrink-0" />
+            <SImg :src="item.track.cover" class="hidden sm:block size-12 rounded-lg shrink-0" />
             <div class="flex-1 min-w-0">
               <div class="flex items-baseline gap-1.5 min-w-0">
                 <span
@@ -220,7 +223,7 @@ defineExpose({ playAll });
             </div>
           </div>
           <!-- 进度 / 状态 -->
-          <div class="w-32 shrink-0">
+          <div class="w-16 sm:w-32 shrink-0">
             <div v-if="item.status === 'downloading'" class="flex flex-col gap-1.5">
               <div class="h-1.5 w-full rounded-full bg-on-surface/10 overflow-hidden">
                 <div
@@ -229,20 +232,22 @@ defineExpose({ playAll });
                 />
               </div>
               <span class="text-xs text-on-surface-variant/60 tabular-nums text-left">
-                {{ percent(item) }}%
+                {{ item.total > 0 ? percent(item) + "%" : formatFileSize(item.received) }}
               </span>
             </div>
-            <span v-else class="text-sm text-on-surface-variant/60">
+            <span v-else class="text-sm text-on-surface-variant/60" :title="item.errorCode">
               {{ t(STATUS_KEY[item.status]) }}
             </span>
           </div>
           <!-- 大小 -->
-          <div class="w-20 shrink-0 text-center text-sm tabular-nums text-on-surface-variant">
+          <div
+            class="hidden sm:block w-20 shrink-0 text-center text-sm tabular-nums text-on-surface-variant"
+          >
             {{ sizeText(item) || "—" }}
           </div>
           <!-- 时长 -->
           <div
-            class="w-16 shrink-0 text-center text-sm tabular-nums"
+            class="hidden sm:block w-16 shrink-0 text-center text-sm tabular-nums"
             :class="isPlaying(item) ? 'text-primary/60' : 'text-on-surface-variant'"
           >
             {{ item.track.duration ? formatTime(item.track.duration) : "—" }}
@@ -284,6 +289,7 @@ defineExpose({ playAll });
                 variant="ghost"
                 circle
                 size="small"
+                v-if="!isIOS"
                 :title="t('download.openFolder')"
                 @click="openFolder(item)"
               >

@@ -7,29 +7,32 @@ const downloadCategory: SettingCategory = {
   id: "download",
   icon: IconLucideDownload,
   sections: [
-    ...(isIOS
-      ? []
-      : ([
-          {
-            id: "downloadLocation",
-            items: [
-              {
-                key: "downloadEnabled",
-                type: "switch",
-                binding: { store: "settings", path: "system.download.enabled" },
-                defaultValue: false,
-                hideDescription: true,
-              },
-              {
-                key: "downloadDir",
-                type: "custom",
-                component: DownloadDirConfig,
-                fullWidth: true,
-                keywords: ["downloadDir.label"],
-              },
-            ],
+    {
+      id: "downloadLocation",
+      items: [
+        {
+          key: "downloadEnabled",
+          type: "switch",
+          binding: { store: "settings", path: "system.download.enabled" },
+          defaultValue: false,
+          hideDescription: !isIOS,
+          confirm: {
+            when: (value) => value === true,
+            titleKey: "download.consent.title",
+            contentKey: "download.consent.content",
+            confirmTextKey: "download.consent.confirm",
+            cancelTextKey: "download.consent.cancel",
           },
-        ] satisfies SettingSection[])),
+        },
+        {
+          key: "downloadDir",
+          type: "custom",
+          component: DownloadDirConfig,
+          fullWidth: true,
+          keywords: ["downloadDir.label"],
+        },
+      ],
+    },
     {
       id: "downloadGeneral",
       items: [
