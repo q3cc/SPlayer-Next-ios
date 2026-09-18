@@ -44,12 +44,13 @@ struct NativeNowPlayingView: View {
                                 }
                         }
                     } else {
-                        RoundedRectangle(cornerRadius: 24).fill(.quaternary)
-                            .overlay { Image(systemName: "music.note").font(.system(size: 80)).foregroundStyle(.secondary) }
-                            .frame(height: 280)
+                        NativeLogo().padding(56)
+                            .frame(maxWidth: 320).frame(height: 280)
+                            .background(Color.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 12))
                     }
                     VStack(spacing: 8) {
                         Text(player.title).font(.title2.bold()).multilineTextAlignment(.center)
+                            .accessibilityIdentifier("native.player.title")
                         Text(player.artist).foregroundStyle(.secondary)
                     }
                     VStack {
@@ -84,6 +85,7 @@ struct NativeNowPlayingView: View {
                     #endif
                 }.padding(24).frame(maxWidth: 560).frame(maxWidth: .infinity)
             }
+            .background(LinearGradient(colors: [Color(red: 0.145, green: 0.125, blue: 0.169), Color(red: 0.05, green: 0.04, blue: 0.08)], startPoint: .topLeading, endPoint: .bottomTrailing))
             .navigationTitle("正在播放")
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)
@@ -98,7 +100,7 @@ struct NativeNowPlayingView: View {
                 case .failure(let error): player.error = error.localizedDescription
                 }
             }
-        }
+        }.preferredColorScheme(.dark).tint(.white)
     }
 }
 

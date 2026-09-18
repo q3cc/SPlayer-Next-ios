@@ -6,7 +6,7 @@ let package = Package(
     platforms: [.iOS(.v16), .macOS(.v14)],
     products: [.library(name: "SPlayerNativeUI", targets: ["SPlayerNativeUI"])],
     targets: [
-        .target(name: "SPlayerNativeUI"),
+        .target(name: "SPlayerNativeUI", resources: [.process("Resources")]),
         .testTarget(name: "SPlayerNativeUITests", dependencies: ["SPlayerNativeUI"]),
     ]
 )
