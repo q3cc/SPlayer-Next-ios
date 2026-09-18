@@ -1,0 +1,55 @@
+name: SPlayerNative
+options:
+  deploymentTarget:
+    iOS: "16.0"
+  projectFormat: xcode15_0
+packages:
+  SPlayerNativeUI:
+    path: .
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    TARGETED_DEVICE_FAMILY: "1,2"
+targets:
+  SPlayerNative:
+    type: application
+    platform: iOS
+    sources: [App]
+    dependencies:
+      - package: SPlayerNativeUI
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: top.imsyy.splayer-next.native
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+    info:
+      path: Generated/Info.plist
+      properties:
+        CFBundleDisplayName: SPlayer Native
+        UILaunchScreen: {}
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        UIBackgroundModes: [audio]
+        UIFileSharingEnabled: true
+        LSSupportsOpeningDocumentsInPlace: true
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+  SPlayerNativeUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [AppUITests]
+    dependencies:
+      - target: SPlayerNative
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: top.imsyy.splayer-next.native.uitests
+        GENERATE_INFOPLIST_FILE: YES
+schemes:
+  SPlayerNative:
+    build:
+      targets:
+        SPlayerNative: all
+    test:
+      targets: [SPlayerNativeUITests]

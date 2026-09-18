@@ -1,0 +1,7 @@
+.build/
+.swiftpm/
+Generated/
+*.xcodeproj/
+build/
+*.xcresult/
+*.ipa

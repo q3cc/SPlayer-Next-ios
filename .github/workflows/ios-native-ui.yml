@@ -47,6 +47,41 @@ jobs:
       - name: Run tests
         run: swift test
 
+      - name: Generate native application project
+        run: |
+          brew install xcodegen
+          xcodegen generate
+
+      - name: Build unsigned native application
+        run: >-
+          xcodebuild -project SPlayerNative.xcodeproj -scheme SPlayerNative
+          -destination 'generic/platform=iOS' -configuration Release
+          -derivedDataPath build/device CODE_SIGNING_ALLOWED=NO build
+
+      - name: Test native application on simulator
+        run: >-
+          xcodebuild -project SPlayerNative.xcodeproj -scheme SPlayerNative
+          -destination 'platform=iOS Simulator,name=iPhone 15,OS=17.5'
+          -derivedDataPath build/simulator -resultBundlePath build/NativeUITests.xcresult
+          CODE_SIGNING_ALLOWED=NO test
+
+      - name: Package unsigned IPA
+        run: |
+          mkdir -p build/package/Payload
+          cp -R build/device/Build/Products/Release-iphoneos/SPlayerNative.app build/package/Payload/
+          cd build/package
+          zip -qry ../SPlayerNative-unsigned.ipa Payload
+
+      - name: Upload native application and test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SPlayerNative-build
+          path: |
+            src-tauri/ios-native/build/SPlayerNative-unsigned.ipa
+            src-tauri/ios-native/build/NativeUITests.xcresult
+          if-no-files-found: warn
+
   host-readiness:
     name: Check native host prerequisites
     runs-on: ubuntu-24.04
