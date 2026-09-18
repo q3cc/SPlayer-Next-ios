@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { isIOS } from "@/utils/config";
 import { toast } from "@/composables/useToast";
 import { dialog } from "@/composables/useDialog";
 import { formatFileSize } from "@/utils/format";
@@ -112,7 +113,7 @@ const requestClearAll = async (): Promise<void> => {
           {{ cacheDir || "—" }}
         </div>
       </div>
-      <div class="shrink-0 flex items-center gap-2">
+      <div v-if="!isIOS" class="shrink-0 flex items-center gap-2">
         <SButton variant="ghost" circle :title="t('settings.cacheDir.open')" @click="handleOpenDir">
           <template #icon><IconLucideFolderOpen /></template>
         </SButton>
@@ -129,6 +130,10 @@ const requestClearAll = async (): Promise<void> => {
         </SButton>
       </div>
     </div>
+
+    <p v-if="isIOS" class="text-sm text-on-surface-variant">
+      {{ t("settings.cacheDir.mobileHint") }}
+    </p>
 
     <!-- 占用情况 -->
     <div

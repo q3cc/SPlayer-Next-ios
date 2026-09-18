@@ -48,6 +48,7 @@ private struct PlaybackCompletion {
 
 final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
   static let shared = NativeAudioPlugin()
+  let cloudUploader = CloudUploader()
   private var player: AudioPlayer?
   private var audioEffects = AudioEffects()
   private var effects: EffectRequest = {

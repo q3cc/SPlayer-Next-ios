@@ -20,6 +20,7 @@ useExternalFileHandler();
 /** 有歌曲信息时显示播放栏 */
 const showPlayerBar = computed(() => !!useMediaStore().track);
 const { isPlayerExpanded } = storeToRefs(status);
+const appleTheme = computed(() => settings.player.theme === "apple-music");
 const { appearance } = settings;
 
 /** 路由切换动效 */
@@ -126,8 +127,9 @@ const playerBarInnerClass = computed(() => {
     class="app-viewport h-screen flex overflow-hidden bg-app text-on-surface transition-[transform,opacity] duration-500 ease-[cubic-bezier(0.7,0,0.3,1)] origin-center"
     :class="[
       isIOS ? 'ios-app-viewport' : '',
-      isPlayerExpanded ? 'scale-95 opacity-0 pointer-events-none' : '',
+      isPlayerExpanded && !appleTheme ? 'scale-95 opacity-0 pointer-events-none' : '',
     ]"
+    :inert="isPlayerExpanded"
   >
     <!-- 侧边栏 -->
     <aside
@@ -177,6 +179,7 @@ const playerBarInnerClass = computed(() => {
   >
     <div
       v-if="showPlayerBar"
+      :inert="isPlayerExpanded"
       :class="playerBarWrapperClass"
       :style="
         isIOS && !isCompactLayout && appearance.layoutMode === 'floating'
@@ -190,7 +193,10 @@ const playerBarInnerClass = computed(() => {
     </div>
   </Transition>
 
-  <MobileNav v-if="isCompactLayout && !isPlayerExpanded" />
+  <MobileNav
+    v-if="isCompactLayout && (appleTheme || !isPlayerExpanded)"
+    :inert="isPlayerExpanded"
+  />
 
   <!-- Toast -->
   <SToast :max="1" />

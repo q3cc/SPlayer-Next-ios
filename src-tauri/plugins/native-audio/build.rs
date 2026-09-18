@@ -10,6 +10,8 @@ fn main() {
         "visibility",
         "siri",
         "read_metadata",
+        "prepare_cloud_upload",
+        "upload_cloud_file",
         "register_listener",
         "remove_listener",
     ])

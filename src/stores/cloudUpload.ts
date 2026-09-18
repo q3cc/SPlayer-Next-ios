@@ -1,3 +1,4 @@
+import { toast } from "@/composables/useToast";
 import i18n from "@/i18n";
 import { useUserStore } from "@/stores/user";
 import type { CloudUploadProgress, CloudUploadResult, PickedSong } from "@shared/types/cloudUpload";
@@ -21,14 +22,15 @@ export interface UploadItem {
 /** 队列保留项硬上限,溢出淘汰最旧的已结束项(成功/秒传/失败) */
 const MAX_RETAINED = 200;
 
-/** 进度订阅只绑一次 */
-let progressBound = false;
 /** 队列项 id 自增 */
 let idSeq = 0;
 
 export const useCloudUploadStore = defineStore("cloudUpload", () => {
   const items = ref<UploadItem[]>([]);
   const running = ref(false);
+  const picking = ref(false);
+  let unsubscribeProgress: (() => void) | undefined;
+  onScopeDispose(() => unsubscribeProgress?.());
 
   /** 进行中(待传/读取/上传)的数量 */
   const activeCount = computed(
@@ -39,9 +41,8 @@ export const useCloudUploadStore = defineStore("cloudUpload", () => {
 
   /** 绑定主进程进度推送(按 uploadId 原地更新) */
   const bindProgress = (): void => {
-    if (progressBound) return;
-    progressBound = true;
-    window.api.cloud.onUploadProgress((progress: CloudUploadProgress) => {
+    if (unsubscribeProgress) return;
+    unsubscribeProgress = window.api.cloud.onUploadProgress((progress: CloudUploadProgress) => {
       const item = items.value.find((it) => it.id === progress.uploadId);
       if (!item) return;
       if (progress.stage === "uploading") {
@@ -54,24 +55,6 @@ export const useCloudUploadStore = defineStore("cloudUpload", () => {
         item.progress = 99;
       }
     });
-  };
-
-  /** 队列超上限时,从最旧开始淘汰已结束项(成功/秒传/失败) */
-  const evictOldFinished = (): void => {
-    if (items.value.length <= MAX_RETAINED) return;
-    let removable = items.value.length - MAX_RETAINED;
-    const kept: UploadItem[] = [];
-    for (const item of items.value) {
-      if (
-        removable > 0 &&
-        (item.status === "success" || item.status === "instant" || item.status === "error")
-      ) {
-        removable--;
-        continue;
-      }
-      kept.push(item);
-    }
-    items.value = kept;
   };
 
   /** 顺序逐首执行(并发=1) */
@@ -106,7 +89,6 @@ export const useCloudUploadStore = defineStore("cloudUpload", () => {
       }
     } finally {
       running.value = false;
-      evictOldFinished();
       if (anySuccess) void useUserStore().refreshCloud();
     }
   };
@@ -120,6 +102,16 @@ export const useCloudUploadStore = defineStore("cloudUpload", () => {
       .filter((item) => ["pending", "reading", "uploading"].includes(item.status))
       .reduce((sum, item) => sum + item.size, 0);
     for (const song of songs) {
+      if (items.value.length >= MAX_RETAINED) {
+        const finished = items.value.findIndex((item) =>
+          ["success", "instant", "error"].includes(item.status),
+        );
+        if (finished < 0) {
+          toast.warning(i18n.global.t("cloud.upload.queueFull"));
+          break;
+        }
+        items.value.splice(finished, 1);
+      }
       const overCapacity = user.cloudMaxSize > 0 && queuedBytes + song.size > remainingBytes;
       if (!overCapacity) queuedBytes += song.size;
       items.value.push({
@@ -137,8 +129,16 @@ export const useCloudUploadStore = defineStore("cloudUpload", () => {
 
   /** 文件选择器入队 */
   const pickAndEnqueue = async (): Promise<void> => {
-    const songs = await window.api.cloud.pickSongs();
-    if (songs.length > 0) enqueue(songs);
+    if (picking.value) return;
+    picking.value = true;
+    try {
+      const songs = await window.api.cloud.pickSongs();
+      if (songs.length > 0) enqueue(songs);
+    } catch {
+      toast.error(i18n.global.t("cloud.upload.pickFailed"));
+    } finally {
+      picking.value = false;
+    }
   };
 
   /** 重试单首失败项 */
@@ -165,6 +165,7 @@ export const useCloudUploadStore = defineStore("cloudUpload", () => {
 
   return {
     items,
+    picking,
     activeCount,
     enqueue,
     pickAndEnqueue,

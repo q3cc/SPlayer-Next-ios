@@ -25,10 +25,22 @@
       "subtitle": "一个现代化的桌面音乐播放器，完成几步设置即可开始享用",
       "start": "开始设置",
       "features": {
-        "local": { "title": "本地音乐库", "desc": "扫描本地目录，自动整理音乐库" },
-        "quality": { "title": "无损音质", "desc": "原生音频引擎，支持多种无损格式" },
-        "streaming": { "title": "流媒体服务器", "desc": "Subsonic / Jellyfin / Emby 等" },
-        "lyrics": { "title": "丰富歌词体验", "desc": "AMLL 逐字歌词，桌面歌词、灵动岛、任务栏歌词" }
+        "local": {
+          "title": "本地音乐库",
+          "desc": "扫描本地目录，自动整理音乐库"
+        },
+        "quality": {
+          "title": "无损音质",
+          "desc": "原生音频引擎，支持多种无损格式"
+        },
+        "streaming": {
+          "title": "流媒体服务器",
+          "desc": "Subsonic / Jellyfin / Emby 等"
+        },
+        "lyrics": {
+          "title": "丰富歌词体验",
+          "desc": "AMLL 逐字歌词，桌面歌词、灵动岛、任务栏歌词"
+        }
       }
     },
     "agreement": {
@@ -639,6 +651,9 @@
       "button": "上传",
       "title": "上传到云盘",
       "selectFile": "选择文件",
+      "pickFailed": "无法选取或读取文件，请确认文件已下载到设备后重试",
+      "mobileHint": "请保持应用在前台直至上传完成；失败后可重试。",
+      "queueFull": "最多同时保留 200 首待上传歌曲，请等待部分上传完成后再添加",
       "emptyHint": "点击「选择文件」添加要上传的歌曲",
       "clearFinished": "清除已完成",
       "instant": "秒传",
@@ -1285,13 +1300,22 @@
       "label": "开启桌面歌词",
       "description": "先播放歌曲。小窗可拖动、缩放，关闭不影响播放。"
     },
-    "lyricPipFontSize": { "label": "字号", "description": "长句随歌词时间横向滚动。" },
+    "lyricPipFontSize": {
+      "label": "字号",
+      "description": "长句随歌词时间横向滚动。"
+    },
     "lyricPipFrameRate": {
       "label": "歌词帧率",
       "description": "控制小窗歌词和唱片动画的帧率。越高越流畅，也更耗电；默认 20 FPS。"
     },
-    "lyricPipPlayedColor": { "label": "高亮颜色", "description": "当前句或已唱部分。" },
-    "lyricPipUnplayedColor": { "label": "普通颜色", "description": "未唱部分和附加歌词。" },
+    "lyricPipPlayedColor": {
+      "label": "高亮颜色",
+      "description": "当前句或已唱部分。"
+    },
+    "lyricPipUnplayedColor": {
+      "label": "普通颜色",
+      "description": "未唱部分和附加歌词。"
+    },
     "lyricPipPreview": {
       "label": "效果预览",
       "description": "随当前歌曲更新。",
@@ -2043,9 +2067,18 @@
         "homepage": "主页"
       },
       "grant": {
-        "network": { "label": "联网", "desc": "插件可发起网络请求" },
-        "control": { "label": "控制", "desc": "插件可控制播放器" },
-        "ui": { "label": "界面", "desc": "插件可扩展或修改应用界面" }
+        "network": {
+          "label": "联网",
+          "desc": "插件可发起网络请求"
+        },
+        "control": {
+          "label": "控制",
+          "desc": "插件可控制播放器"
+        },
+        "ui": {
+          "label": "界面",
+          "desc": "插件可扩展或修改应用界面"
+        }
       }
     },
     "pluginManager": {
@@ -2083,7 +2116,8 @@
       "switchConfirmDesc": "切换前会清空当前的封面、歌手头像、背景图缓存，新位置必须是空文件夹。歌词等数据库缓存不受影响。",
       "switchConfirmOk": "选择文件夹",
       "resetConfirmTitle": "还原默认缓存目录？",
-      "resetConfirmDesc": "还原前同样会清空当前的文件类缓存"
+      "resetConfirmDesc": "还原前同样会清空当前的文件类缓存",
+      "mobileHint": "开启歌曲缓存后，完整缓存的歌曲可从原歌单或播放队列离线播放。更换音质需重新缓存。系统可能在空间不足时清理缓存；长期保留请使用歌曲下载。清理缓存不会删除已下载的歌曲，但可能中断正在播放的缓存歌曲。"
     },
     "cacheUsage": {
       "label": "占用情况",

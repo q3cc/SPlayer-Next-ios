@@ -155,12 +155,17 @@ const close = (): void => {
 };
 const dragOffset = ref(0);
 const dragging = ref(false);
+const drawerHeight = ref(1);
+const backdropOpacity = computed(
+  () => 0.32 * (1 - Math.min(1, dragOffset.value / drawerHeight.value)),
+);
 let dismissGesture: { id: number; x: number; y: number; time: number } | undefined;
 let suppressHandleClick = false;
 
 /** 手势仅从顶部栏开始，方向锁定后才接管指针。 */
 const startDismiss = (event: PointerEvent): void => {
   if (!event.isPrimary || event.button !== 0) return;
+  drawerHeight.value = Math.max(1, root.value?.clientHeight ?? window.innerHeight);
   dismissGesture = {
     id: event.pointerId,
     x: event.clientX,
@@ -216,7 +221,16 @@ const togglePanel = (value: "lyrics" | "queue"): void => {
 
 <template>
   <Teleport to="body">
-    <Transition name="am-player" @after-leave="cancelDismiss">
+    <Transition name="am-backdrop" appear>
+      <div
+        v-if="status.isPlayerExpanded"
+        class="am-drawer-backdrop"
+        :class="{ 'am-dragging': dragging }"
+        :style="{ opacity: backdropOpacity }"
+        aria-hidden="true"
+      />
+    </Transition>
+    <Transition name="am-player" appear @after-leave="cancelDismiss">
       <section
         v-if="status.isPlayerExpanded"
         ref="root"
@@ -227,7 +241,10 @@ const togglePanel = (value: "lyrics" | "queue"): void => {
           'am-immersive': immersive,
           'am-dragging': dragging,
         }"
-        :style="{ '--am-drag-offset': `${dragOffset}px` }"
+        :style="{
+          '--am-drag-offset': `${dragOffset}px`,
+          '--am-drag-radius': `${Math.min(24, dragOffset / 4)}px`,
+        }"
         role="dialog"
         data-fullscreen
         aria-modal="true"

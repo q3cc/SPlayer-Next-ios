@@ -78,7 +78,8 @@ export const settingsSchema: SettingCategory[] = [
   ...(isIOS ? [] : [aiIntegrationCategory]),
   mediaSourceCategory,
   downloadCategory,
-  ...(isIOS ? [] : [localCacheCategory, pluginsCategory]),
+  localCacheCategory,
+  ...(isIOS ? [] : [pluginsCategory]),
   otherCategory,
   { id: "about", icon: IconLucideInfo, component: AboutSettings },
 ];

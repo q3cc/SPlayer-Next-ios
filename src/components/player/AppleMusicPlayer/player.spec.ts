@@ -271,12 +271,15 @@ it("顶部横条是唯一的收起按钮，点击只收起界面而不中断播�
 });
 it("顶部整行下拉跟手并关闭，不改变播放状态", async () => {
   const wrapper = create();
+  Object.defineProperty(wrapper.get(".apple-music-player").element, "clientHeight", { value: 800 });
   const header = wrapper.get(".am-header");
   Object.defineProperty(header.element, "setPointerCapture", { value: vi.fn() });
   const pointer = { pointerId: 1, isPrimary: true, button: 0, clientX: 20 };
   await header.trigger("pointerdown", { ...pointer, clientY: 4 });
   await header.trigger("pointermove", { ...pointer, clientY: 104 });
   expect(wrapper.get(".apple-music-player").attributes("style")).toContain("100px");
+  expect(wrapper.get(".am-drawer-backdrop").attributes("style")).toContain("0.28");
+  expect(wrapper.get(".apple-music-player").attributes("style")).toContain("24px");
   await header.trigger("pointerup", { ...pointer, clientY: 104 });
   expect(mocks.status.isPlayerExpanded).toBe(false);
   expect(mocks.toggle).not.toHaveBeenCalled();

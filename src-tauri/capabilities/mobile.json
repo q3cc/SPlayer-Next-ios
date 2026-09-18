@@ -31,6 +31,8 @@
     },
     "opener:default",
     "fs:allow-open",
+    "fs:allow-stat",
+    "fs:allow-read-dir",
     "fs:allow-write",
     "fs:allow-mkdir",
     "fs:allow-exists",

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { isIOS } from "@/utils/config";
 import { useCloudUploadStore } from "@/stores/cloudUpload";
 import { formatFileSize } from "@/utils/format";
 
@@ -19,10 +20,17 @@ const store = useCloudUploadStore();
     <div class="flex flex-col gap-3">
       <!-- 风险提示 -->
       <SAlert>{{ t("cloud.upload.riskTip") }}</SAlert>
+      <p v-if="isIOS" class="text-xs text-on-surface-variant">{{ t("cloud.upload.mobileHint") }}</p>
 
       <!-- 操作行 -->
       <div class="flex items-center justify-between gap-2">
-        <SButton type="primary" variant="secondary" round @click="store.pickAndEnqueue()">
+        <SButton
+          type="primary"
+          variant="secondary"
+          round
+          :loading="store.picking"
+          @click="store.pickAndEnqueue()"
+        >
           <template #icon>
             <IconLucideFilePlus2 />
           </template>

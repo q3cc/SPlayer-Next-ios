@@ -1,3 +1,4 @@
+import { mobileCache } from "./cache";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { getCurrent, onOpenUrl } from "@tauri-apps/plugin-deep-link";
 import { save, open } from "@tauri-apps/plugin-dialog";
@@ -5,6 +6,7 @@ import { readTextFile, writeFile } from "@tauri-apps/plugin-fs";
 import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
 import { defaultHotkeyConfig } from "@shared/defaults/hotkeys";
 import { mobileDownload } from "./download";
+import { mobileCloud } from "./cloud";
 import type { HotkeyConfig } from "@shared/types/hotkey";
 import type { NowPlayingSnapshot, NowPlayingUpdatePayload } from "@shared/types/nowPlaying";
 import type { PlayerApi, PlayerEvent, Track } from "@shared/types/player";
@@ -370,11 +372,7 @@ const api = {
     onStatus: unsubscribe,
   },
   apis: mobileProviders,
-  cloud: {
-    pickSongs: async () => [],
-    uploadSong: async () => ({ success: false, instant: false, errorCode: -1 }),
-    onUploadProgress: unsubscribe,
-  },
+  cloud: mobileCloud,
   lyrics: mobileLyrics,
   opencc: { convert: async (text: string) => text, convertBatch: async (texts: string[]) => texts },
   comments: mobileComments,
@@ -433,15 +431,7 @@ const api = {
     },
     clearBackgroundImages: async () => undefined,
   },
-  cache: {
-    getStats: async () => [],
-    clear: async () => undefined,
-    clearAllByKind: async () => undefined,
-    getDir: async () => "Application Cache",
-    pickDir: async () => ({ ok: true, dir: "Application Cache" }),
-    resetDir: async () => "Application Cache",
-    song: { lookup: async () => null, fetch: async () => null, cancel: async () => undefined },
-  },
+  cache: mobileCache,
   streaming: mobileStreaming,
   recognition: {
     isSupported: async () => false,

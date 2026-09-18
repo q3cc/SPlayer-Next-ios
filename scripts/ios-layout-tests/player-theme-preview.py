@@ -63,6 +63,38 @@ with sync_playwright() as playwright:
     page.get_by_role("button", name="更多歌曲操作", exact=True).click()
     page.get_by_role("menu").wait_for(state="visible")
     page.keyboard.press("Escape")
+    for width, height in [(390, 844), (1180, 820)]:
+        page.set_viewport_size({"width": width, "height": height})
+        page.wait_for_timeout(700)
+        viewport = page.locator(".app-viewport")
+        assert viewport.evaluate("e => getComputedStyle(e).opacity") == "1"
+        assert viewport.evaluate("e => e.inert")
+        before = page.locator(".app-viewport main").evaluate("e => e.scrollTop")
+        header = page.locator(".am-header").bounding_box()
+        x, y = header["x"] + 24, header["y"] + 12
+        page.mouse.move(x, y)
+        page.mouse.down()
+        page.mouse.move(x, y + 40, steps=8)
+        page.wait_for_timeout(300)
+        assert abs(page.locator(".apple-music-player").bounding_box()["y"] - 40) < 2
+        opacity = float(page.locator(".am-drawer-backdrop").evaluate("e => getComputedStyle(e).opacity"))
+        assert 0 < opacity < 0.32
+        page.screenshot(path=str(output / f"drawer-{width}-drag.png"))
+        page.mouse.up()
+        page.wait_for_timeout(400)
+        assert abs(page.locator(".apple-music-player").bounding_box()["y"]) < 1
+        page.mouse.move(x, y)
+        page.mouse.down()
+        page.mouse.move(x, y + height * 0.45, steps=12)
+        page.screenshot(path=str(output / f"drawer-{width}-reveal.png"))
+        page.mouse.up()
+        page.wait_for_timeout(450)
+        assert page.locator(".apple-music-player").count() == 0
+        assert page.locator(".am-drawer-backdrop").count() == 0
+        assert not viewport.evaluate("e => e.inert")
+        assert page.locator(".app-viewport main").evaluate("e => e.scrollTop") == before
+        page.evaluate("window.themePreview.status.isPlayerExpanded = true")
+        page.wait_for_timeout(1100)
     for name, width, height, panel in [
         ("ipad-user-ratio", 1180, 820, "歌词"),
         ("ipad-landscape-lyrics", 1280, 800, "歌词"),

@@ -60,3 +60,17 @@ describe("酷狗试听进入播放器", () => {
     expect(resolve).toHaveBeenCalledWith(track, "hq", false);
   });
 });
+
+describe("离线缓存音源", () => {
+  it("缓存命中时不请求在线解析接口", async () => {
+    lookup.mockResolvedValue("/cache/offline-songs/song.flac");
+    resolve.mockRejectedValue(new Error("offline"));
+    expect(await resolveTrackSource(track)).toEqual({
+      source: "/cache/offline-songs/song.flac",
+      fromCache: true,
+      provider: "cache",
+    });
+    expect(resolve).not.toHaveBeenCalled();
+    expect(lookup).toHaveBeenCalledWith("o:kugou:hash::hq");
+  });
+});

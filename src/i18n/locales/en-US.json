@@ -651,6 +651,9 @@
       "button": "Upload",
       "title": "Upload to Cloud",
       "selectFile": "Select files",
+      "pickFailed": "Could not select or read files. Make sure they are downloaded to this device and try again.",
+      "mobileHint": "Keep the app open until uploads finish. Failed uploads can be retried.",
+      "queueFull": "Up to 200 songs can be queued. Wait for some uploads to finish before adding more.",
       "emptyHint": "Click Select files to add songs",
       "clearFinished": "Clear finished",
       "instant": "Instant",
@@ -2064,9 +2067,18 @@
         "homepage": "Homepage"
       },
       "grant": {
-        "network": { "label": "Network", "desc": "Can make network requests" },
-        "control": { "label": "Control", "desc": "Can control the player" },
-        "ui": { "label": "Interface", "desc": "Can extend or modify the app interface" }
+        "network": {
+          "label": "Network",
+          "desc": "Can make network requests"
+        },
+        "control": {
+          "label": "Control",
+          "desc": "Can control the player"
+        },
+        "ui": {
+          "label": "Interface",
+          "desc": "Can extend or modify the app interface"
+        }
       }
     },
     "pluginManager": {
@@ -2104,7 +2116,8 @@
       "switchConfirmDesc": "Current cover / artist / background caches will be cleared before the switch, and the new location must be an empty folder. Database-backed lyric caches are unaffected.",
       "switchConfirmOk": "Pick Folder",
       "resetConfirmTitle": "Reset to default cache directory?",
-      "resetConfirmDesc": "Current file caches will be cleared before resetting."
+      "resetConfirmDesc": "Current file caches will be cleared before resetting.",
+      "mobileHint": "Fully cached songs can play offline from their playlists or queue. A different quality requires a new cache. iOS may reclaim cache space; use downloads to keep songs. Clearing cache does not delete downloads, but may interrupt cached playback."
     },
     "cacheUsage": {
       "label": "Usage",
