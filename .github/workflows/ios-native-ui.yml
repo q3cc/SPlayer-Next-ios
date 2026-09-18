@@ -72,6 +72,9 @@ jobs:
           cd build/package
           zip -qry ../SPlayerNative-unsigned.ipa Payload
 
+      - name: Test iPad layout and capture screenshot
+        run: python3 scripts/test-ipad.py
+
       - name: Upload native application and test results
         if: always()
         uses: actions/upload-artifact@v4
@@ -80,6 +83,8 @@ jobs:
           path: |
             src-tauri/ios-native/build/SPlayerNative-unsigned.ipa
             src-tauri/ios-native/build/NativeUITests.xcresult
+            src-tauri/ios-native/build/NativeIPadTests.xcresult
+            src-tauri/ios-native/build/native-ipad.png
           if-no-files-found: warn
 
   host-readiness:

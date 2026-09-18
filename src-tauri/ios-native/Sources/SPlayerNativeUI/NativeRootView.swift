@@ -29,6 +29,56 @@ public struct NativeRootView: View {
     }
 
     public var body: some View {
+        GeometryReader { geometry in
+            if geometry.size.width > 900 {
+                NativeWideShell(player: player, favorites: $favoriteIDs, appearance: $appearance,
+                                importMusic: startImport, showPlayer: { presentation = .player }, showQueue: { presentation = .queue })
+            } else {
+                compactContent
+            }
+        }
+        .tint(.splayerAccent)
+        .preferredColorScheme(appearance == "dark" ? .dark : appearance == "light" ? .light : nil)
+        .task { await player.loadLibrary() }
+        .onChange(of: scenePhase) { player.setInterfaceActive($0 == .active) }
+        .overlay {
+            if player.importing { ProgressView("正在导入音乐…").padding(24).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16)).accessibilityIdentifier("native.import.progress") }
+        }
+        #if os(macOS)
+        .fileImporter(isPresented: $showMacImporter, allowedContentTypes: [.audio], allowsMultipleSelection: true) { result in
+            switch result {
+            case .success(let urls): Task { await player.importFiles(urls) }
+            case .failure(let error): player.error = error.localizedDescription
+            }
+        }
+        #endif
+        .sheet(item: $presentation) { page in
+            switch page {
+            case .music:
+                #if os(iOS)
+                NativeDocumentPicker { urls in
+                    presentation = nil
+                    if !urls.isEmpty { Task { await player.importFiles(urls) } }
+                }
+                #else
+                EmptyView()
+                #endif
+            case .player: NativeNowPlayingView(player: player)
+            case .queue: queueView
+            }
+        }
+        .alert("操作失败", isPresented: Binding(get: { player.error != nil }, set: { if !$0 { player.error = nil } })) {
+            Button("好") { player.error = nil }
+        } message: { Text(player.error ?? "") }
+        .confirmationDialog("删除这首歌曲？", isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }), titleVisibility: .visible) {
+            Button("删除应用内副本", role: .destructive) {
+                if let track = pendingDelete { Task { await player.remove(track) } }
+                pendingDelete = nil
+            }
+        }
+    }
+
+    private var compactContent: some View {
         TabView(selection: $tab) {
             NavigationStack {
                 ScrollView {
@@ -135,46 +185,6 @@ public struct NativeRootView: View {
                     }
                 }.navigationTitle("全局设置")
             }.tabItem { Label("设置", systemImage: "gearshape") }.tag(NativeTab.settings)
-        }
-        .tint(.splayerAccent)
-        .preferredColorScheme(appearance == "dark" ? .dark : appearance == "light" ? .light : nil)
-        .task { await player.loadLibrary() }
-        .onChange(of: scenePhase) { player.setInterfaceActive($0 == .active) }
-        .overlay {
-            if player.importing { ProgressView("正在导入音乐…").padding(24).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16)).accessibilityIdentifier("native.import.progress") }
-        }
-        #if os(macOS)
-        .fileImporter(isPresented: $showMacImporter, allowedContentTypes: [.audio], allowsMultipleSelection: true) { result in
-            switch result {
-            case .success(let urls): Task { await player.importFiles(urls) }
-            case .failure(let error): player.error = error.localizedDescription
-            }
-        }
-        #endif
-        .sheet(item: $presentation) { page in
-            switch page {
-            case .music:
-                #if os(iOS)
-                NativeDocumentPicker { urls in
-                    presentation = nil
-                    // 系统选择器会自行关闭；不能依赖 SwiftUI 的 onDismiss 才启动导入。
-                    if !urls.isEmpty { Task { await player.importFiles(urls) } }
-                }
-                #else
-                EmptyView()
-                #endif
-            case .player: NativeNowPlayingView(player: player)
-            case .queue: queueView
-            }
-        }
-        .alert("操作失败", isPresented: Binding(get: { player.error != nil }, set: { if !$0 { player.error = nil } })) {
-            Button("好") { player.error = nil }
-        } message: { Text(player.error ?? "") }
-        .confirmationDialog("删除这首歌曲？", isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }), titleVisibility: .visible) {
-            Button("删除应用内副本", role: .destructive) {
-                if let track = pendingDelete { Task { await player.remove(track) } }
-                pendingDelete = nil
-            }
         }
     }
 

@@ -1,6 +1,37 @@
 import XCTest
+import UIKit
 
 final class NativeAppTests: XCTestCase {
+    func testWideLayoutMatchesOriginalStructure() throws {
+        guard UIDevice.current.userInterfaceIdiom == .pad else { throw XCTSkip("仅验证 iPad 宽屏布局") }
+        XCUIDevice.shared.orientation = .landscapeLeft
+        defer { XCUIDevice.shared.orientation = .portrait }
+        let app = XCUIApplication()
+        app.launchArguments = ["--uitest-light"]
+        app.launch()
+        XCTAssertTrue(app.buttons["native.wide.nav.首页"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.textFields["native.wide.search"].exists)
+        XCTAssertTrue(app.buttons["native.import.wide"].exists)
+        XCTAssertFalse(app.tabBars.firstMatch.exists)
+        let sidebar = app.descendants(matching: .any)["native.wide.sidebar"].firstMatch
+        let bar = app.descendants(matching: .any)["native.wide.playerbar"].firstMatch
+        XCTAssertTrue(sidebar.exists)
+        XCTAssertTrue(bar.exists)
+        XCTAssertLessThan(sidebar.frame.width, app.frame.width / 3)
+        XCTAssertGreaterThan(bar.frame.width, app.frame.width * 0.9)
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "SPlayer-iPad-home"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+        app.buttons["native.wide.nav.音乐库"].tap()
+        XCTAssertEqual(app.staticTexts["native.wide.pageTitle"].label, "音乐库")
+        app.buttons["native.wide.settings"].tap()
+        XCTAssertTrue(app.buttons["native.import.wide.settings"].exists)
+        app.buttons["native.import.wide.settings"].tap()
+        XCTAssertTrue(app.descendants(matching: .any)["native.audioPicker"].firstMatch.waitForExistence(timeout: 10))
+        app.buttons.matching(NSPredicate(format: "label == 'Cancel' OR label == '取消'")).firstMatch.tap()
+        app.buttons["native.wide.nav.首页"].tap()
+    }
     func testNativeNavigationWithoutWebView() {
         let app = XCUIApplication()
         app.launch()
