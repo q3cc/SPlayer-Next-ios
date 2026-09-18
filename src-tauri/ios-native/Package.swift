@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
     name: "SPlayerNativeUI",
-    platforms: [.iOS(.v16)],
+    platforms: [.iOS(.v16), .macOS(.v14)],
     products: [.library(name: "SPlayerNativeUI", targets: ["SPlayerNativeUI"])],
     targets: [
         .target(name: "SPlayerNativeUI"),
