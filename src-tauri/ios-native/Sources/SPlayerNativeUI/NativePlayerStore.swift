@@ -31,6 +31,7 @@ public final class NativePlayerStore: ObservableObject {
     private var interruptionObserver: NSObjectProtocol?
     private var routeObserver: NSObjectProtocol?
     private var resumeAfterInterruption = false
+    private var interfaceActive = true
     #if os(iOS)
     private var commands: [(MPRemoteCommand, Any)] = []
     #endif
@@ -39,15 +40,15 @@ public final class NativePlayerStore: ObservableObject {
         self.root = root
         library = NativeLibrary(root: root)
         stateObserver = engine.observe(\.timeControlStatus, options: [.new]) { [weak self] _, _ in
-            Task { @MainActor in
+            Task { @MainActor [weak self] in
                 guard let self else { return }
                 self.isPlaying = self.engine.timeControlStatus == .playing
                 self.publishNowPlaying()
             }
         }
         timeObserver = engine.addPeriodicTimeObserver(forInterval: CMTime(seconds: 0.25, preferredTimescale: 600), queue: .main) { [weak self] time in
-            Task { @MainActor in
-                guard let self else { return }
+            Task { @MainActor [weak self] in
+                guard let self, self.interfaceActive else { return }
                 self.positionMs = time.seconds.isFinite ? max(0, time.seconds * 1000) : 0
                 let duration = self.engine.currentItem?.duration.seconds ?? 0
                 if duration.isFinite { self.durationMs = max(0, duration * 1000) }
@@ -71,6 +72,15 @@ public final class NativePlayerStore: ObservableObject {
     public func loadLibrary() async {
         do { tracks = try await library.load() }
         catch { self.error = "无法读取曲库：" + error.localizedDescription }
+    }
+
+    public func setInterfaceActive(_ active: Bool) {
+        interfaceActive = active
+        if active {
+            let seconds = engine.currentTime().seconds
+            positionMs = seconds.isFinite ? max(0, seconds * 1000) : 0
+            isPlaying = engine.timeControlStatus == .playing
+        }
     }
 
     public func importFiles(_ urls: [URL]) async {
@@ -107,14 +117,14 @@ public final class NativePlayerStore: ObservableObject {
             if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
             let item = AVPlayerItem(url: url)
             itemObserver = item.observe(\.status, options: [.new]) { [weak self] item, _ in
-                Task { @MainActor in
+                Task { @MainActor [weak self] in
                     guard let self, self.engine.currentItem === item, item.status == .failed else { return }
                     self.error = item.error?.localizedDescription ?? "无法播放此文件"
                     self.engine.pause()
                 }
             }
             endObserver = NotificationCenter.default.addObserver(forName: .AVPlayerItemDidPlayToEndTime, object: item, queue: .main) { [weak self] _ in
-                Task { @MainActor in
+                Task { @MainActor [weak self] in
                     guard let self else { return }
                     if self.repeatOne { self.seek(to: 0); self.engine.play() }
                     else { self.next() }
@@ -212,12 +222,12 @@ public final class NativePlayerStore: ObservableObject {
         }
         let target = center.changePlaybackPositionCommand.addTarget { [weak self] event in
             guard let event = event as? MPChangePlaybackPositionCommandEvent else { return .commandFailed }
-            Task { @MainActor in self?.seek(to: event.positionTime * 1000) }
+            Task { @MainActor [weak self] in self?.seek(to: event.positionTime * 1000) }
             return .success
         }
         commands.append((center.changePlaybackPositionCommand, target))
         interruptionObserver = NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] note in
-            Task { @MainActor in
+            Task { @MainActor [weak self] in
                 guard let self, let type = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt else { return }
                 if type == AVAudioSession.InterruptionType.began.rawValue {
                     self.resumeAfterInterruption = self.isPlaying
@@ -231,7 +241,7 @@ public final class NativePlayerStore: ObservableObject {
         }
         routeObserver = NotificationCenter.default.addObserver(forName: AVAudioSession.routeChangeNotification, object: nil, queue: .main) { [weak self] note in
             guard note.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt == AVAudioSession.RouteChangeReason.oldDeviceUnavailable.rawValue else { return }
-            Task { @MainActor in self?.engine.pause() }
+            Task { @MainActor [weak self] in self?.engine.pause() }
         }
     }
     #endif

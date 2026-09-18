@@ -9,6 +9,7 @@ public struct NativeRootView: View {
     @State private var search = ""
     @State private var pendingDelete: NativeTrack?
     @AppStorage("native.appearance") private var appearance = "system"
+    @Environment(\.scenePhase) private var scenePhase
 
     public init() { _player = StateObject(wrappedValue: NativePlayerStore()) }
     public init(player: NativePlayerStore) { _player = StateObject(wrappedValue: player) }
@@ -97,6 +98,7 @@ public struct NativeRootView: View {
         }
         .preferredColorScheme(appearance == "dark" ? .dark : appearance == "light" ? .light : nil)
         .task { await player.loadLibrary() }
+        .onChange(of: scenePhase) { player.setInterfaceActive($0 == .active) }
         .fileImporter(isPresented: $showImporter, allowedContentTypes: [.audio], allowsMultipleSelection: true) { result in
             switch result {
             case .success(let urls): Task { await player.importFiles(urls) }
