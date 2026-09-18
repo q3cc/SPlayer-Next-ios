@@ -12,7 +12,6 @@ public struct NativeRootView: View {
     @StateObject private var player: NativePlayerStore
     @State private var tab: NativeTab = .home
     @State private var presentation: NativePresentation?
-    @State private var pendingImports: [URL] = []
     @State private var showMacImporter = false
     @State private var search = ""
     @State private var pendingDelete: NativeTrack?
@@ -152,11 +151,15 @@ public struct NativeRootView: View {
             }
         }
         #endif
-        .sheet(item: $presentation, onDismiss: finishImport) { page in
+        .sheet(item: $presentation) { page in
             switch page {
             case .music:
                 #if os(iOS)
-                NativeDocumentPicker { urls in pendingImports = urls; presentation = nil }
+                NativeDocumentPicker { urls in
+                    presentation = nil
+                    // 系统选择器会自行关闭；不能依赖 SwiftUI 的 onDismiss 才启动导入。
+                    if !urls.isEmpty { Task { await player.importFiles(urls) } }
+                }
                 #else
                 EmptyView()
                 #endif
@@ -182,12 +185,6 @@ public struct NativeRootView: View {
         #else
         showMacImporter = true
         #endif
-    }
-
-    private func finishImport() {
-        let urls = pendingImports
-        pendingImports = []
-        if !urls.isEmpty { Task { await player.importFiles(urls) } }
     }
 
     private func shortcut(_ title: String, count: Int, icon: String) -> some View {
