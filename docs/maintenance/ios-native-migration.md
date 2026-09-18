@@ -10,6 +10,10 @@ iOS 版本最终使用 SwiftUI/UIKit 渲染所有可见页面，Vue/WKWebView �
 
 ## 迁移顺序
 
+### 第一阶段（已开始）
+
+`src-tauri/ios-native` 已加入独立的 Swift Package，包含 SwiftUI 根导航、曲库空状态、播放队列空状态、设置入口、迷你播放器和原生播放器展示状态。该模块先独立验证状态与界面结构，等宿主 App target 建立后再接入音频桥接、文件导入和真实数据源。
+
 1. 建立 `SPlayerNative` iOS App target、Swift Package 依赖和 App 生命周期；先保留现有 Tauri target 作为回滚入口。
 2. 抽出原生 `PlaybackStore`、`LibraryStore`、`LyricsStore`、`DownloadStore`、`CacheStore` 和 `CloudStore`，所有状态通过 `ObservableObject`/`actor` 暴露给 SwiftUI。
 3. 用 SwiftUI 重写 Tab 根导航、迷你播放器、全屏播放器、播放队列和媒体库；播放状态接入现有 `NativeAudioPlugin` 的 AVAudioSession/MPNowPlaying 能力。

@@ -1,0 +1,55 @@
+name: iOS Native UI
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "src-tauri/ios-native/**"
+      - ".github/workflows/ios-native-ui.yml"
+  push:
+    branches: [main, dev, "feat/**"]
+    paths:
+      - "src-tauri/ios-native/**"
+      - ".github/workflows/ios-native-ui.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  swift-package:
+    name: SwiftUI package tests
+    runs-on: macos-14
+    defaults:
+      run:
+        working-directory: src-tauri/ios-native
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: "15.4"
+
+      - name: Resolve package
+        run: swift package resolve
+
+      - name: Build package
+        run: swift build -c release
+
+      - name: Run tests
+        run: swift test
+
+  host-readiness:
+    name: Check native host prerequisites
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify native package and migration boundary
+        run: |
+          test -f src-tauri/ios-native/Package.swift
+          test -f src-tauri/ios-native/Sources/SPlayerNativeUI/NativeRootView.swift
+          test -f docs/maintenance/ios-native-migration.md
+          grep -q 'WKWebView' src-tauri/tauri.conf.json || true
