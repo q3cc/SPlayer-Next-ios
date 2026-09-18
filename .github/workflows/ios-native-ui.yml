@@ -37,6 +37,13 @@ jobs:
       - name: Build package
         run: swift build -c release
 
+      - name: Build for iOS Simulator
+        run: >-
+          xcodebuild -scheme SPlayerNativeUI
+          -destination 'generic/platform=iOS Simulator'
+          -configuration Release
+          CODE_SIGNING_ALLOWED=NO build
+
       - name: Run tests
         run: swift test
 
@@ -52,4 +59,3 @@ jobs:
           test -f src-tauri/ios-native/Package.swift
           test -f src-tauri/ios-native/Sources/SPlayerNativeUI/NativeRootView.swift
           test -f docs/maintenance/ios-native-migration.md
-          grep -q 'WKWebView' src-tauri/tauri.conf.json || true

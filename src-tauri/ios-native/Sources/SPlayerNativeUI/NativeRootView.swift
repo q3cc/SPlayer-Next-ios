@@ -6,7 +6,11 @@ public struct NativeRootView: View {
     @StateObject private var player: NativePlayerStore
     @State private var selectedTab: Tab = .library
 
-    public init(player: NativePlayerStore = NativePlayerStore()) {
+    public init() {
+        _player = StateObject(wrappedValue: NativePlayerStore())
+    }
+
+    public init(player: NativePlayerStore) {
         _player = StateObject(wrappedValue: player)
     }
 
@@ -33,9 +37,9 @@ private struct LibraryView: View {
     @ObservedObject var player: NativePlayerStore
     var body: some View {
         NavigationStack {
-            ContentUnavailableView("曲库为空", systemImage: "music.note.house", description: Text("导入本地音乐后，它们会显示在这里。"))
+            NativeEmptyView("曲库为空", systemImage: "music.note.house", description: Text("导入本地音乐后，它们会显示在这里。"))
                 .navigationTitle("曲库")
-                .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("导入", systemImage: "plus") {} } }
+                .toolbar { ToolbarItem(placement: .primaryAction) { Button {} label: { Label("导入", systemImage: "plus") } } }
         }
     }
 }
@@ -44,7 +48,7 @@ private struct QueueView: View {
     @ObservedObject var player: NativePlayerStore
     var body: some View {
         NavigationStack {
-            ContentUnavailableView("播放队列为空", systemImage: "text.line.first.and.arrowtriangle.forward", description: Text("从曲库选择歌曲后，播放队列会显示在这里。"))
+            NativeEmptyView("播放队列为空", systemImage: "text.line.first.and.arrowtriangle.forward", description: Text("从曲库选择歌曲后，播放队列会显示在这里。"))
                 .navigationTitle("队列")
         }
     }
@@ -90,4 +94,24 @@ private struct MiniPlayerView: View {
     }
 }
 
-#Preview { NativeRootView() }
+private struct NativeEmptyView: View {
+    let title: String
+    let systemImage: String
+    let description: Text
+
+    init(_ title: String, systemImage: String, description: Text) {
+        self.title = title
+        self.systemImage = systemImage
+        self.description = description
+    }
+
+    var body: some View {
+        VStack(spacing: 12) {
+            Image(systemName: systemImage).font(.largeTitle).foregroundStyle(.secondary)
+            Text(title).font(.headline)
+            description.foregroundStyle(.secondary).multilineTextAlignment(.center)
+        }
+        .padding()
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
