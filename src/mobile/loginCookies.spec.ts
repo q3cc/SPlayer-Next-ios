@@ -4,6 +4,7 @@ import loginQrCheck from "../../electron/main/apis/netease/modules/login_qr_chec
 
 const { fetchMock } = vi.hoisted(() => ({ fetchMock: vi.fn() }));
 vi.mock("@main/utils/proxy", () => ({ fetchWithProxy: fetchMock }));
+vi.mock("@main/utils/logger", () => ({ neteaseLog: { warn: vi.fn() } }));
 
 describe("WebKit 扫码授权 Cookie", () => {
   it.each([undefined, () => []])("保留合并响应头中的登录凭据和 CSRF", async (getSetCookie) => {

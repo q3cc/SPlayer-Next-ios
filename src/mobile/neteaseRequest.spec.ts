@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const { fetchMock } = vi.hoisted(() => ({ fetchMock: vi.fn() }));
 vi.mock("@main/utils/proxy", () => ({ fetchWithProxy: fetchMock }));
+vi.mock("@main/utils/logger", () => ({ neteaseLog: { warn: vi.fn() } }));
 
 beforeEach(() => {
   vi.resetModules();
@@ -10,6 +11,23 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 describe("移动端网易请求", () => {
+  it("为需要风控校验的请求获取并附加易盾 v3 token", async () => {
+    const { createRequest } = await import("@main/apis/netease/core/request");
+    fetchMock
+      .mockResolvedValueOnce(new Response('null([200,0,"test-anti-cheat-token"])'))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ code: 200 })));
+    await createRequest(
+      "/api/v1/radio/like",
+      { trackId: "1", like: true },
+      {
+        crypto: "eapi",
+        checkToken: "v3",
+      },
+    );
+    expect(fetchMock.mock.calls[0][0]).toBe("https://ac.dun.163yun.com/v3/b?pn=YD00000558929251");
+    expect(fetchMock.mock.calls[1][1].headers["X-antiCheatToken"]).toBe("test-anti-cheat-token");
+  });
+
   it("使用上游 eapi 域名并复用 WebKit 合并响应头中的 NMTID", async () => {
     const { createRequest } = await import("@main/apis/netease/core/request");
     const response = new Response(JSON.stringify({ code: 200 }));

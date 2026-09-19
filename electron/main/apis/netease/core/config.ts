@@ -25,6 +25,8 @@ export const API_DOMAIN = "https://interface.music.163.com";
 export const EAPI_DOMAIN = "https://interfacepc.music.163.com";
 /** xeapi 域名（反爬加密接口，如游客注册） */
 export const XEAPI_DOMAIN = "https://interface3.music.163.com";
+/** 易盾反作弊 v3 域名 */
+export const DUN_DOMAIN_V3 = "https://ac.dun.163yun.com";
 /** 客户端日志域名 */
 export const CLIENT_LOG_DOMAIN = "https://clientlog.music.163.com";
 /** NCBL 加密日志域名 */

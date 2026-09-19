@@ -187,6 +187,9 @@ export interface XeapiOptions {
   sessionId?: string;
   sessionKey?: string;
   os?: string;
+  appver?: string;
+  deviceId?: string;
+  uid?: string;
   method?: string;
   contentType?: string;
 }
