@@ -4,7 +4,7 @@ defineOptions({ name: "Stats" });
 import type {
   DailyPlayStats,
   HourlyPlayStats,
-  LibraryStats,
+  PlayStatsSummary,
   TopAlbum,
   TopArtist,
   TopTrack,
@@ -13,7 +13,7 @@ import { useFloatingPlayerBar } from "@/composables/useFloatingPlayerBar";
 
 const { isFloatingBar } = useFloatingPlayerBar();
 
-const libraryStats = ref<LibraryStats | null>(null);
+const summary = ref<PlayStatsSummary | null>(null);
 const daily = ref<DailyPlayStats[]>([]);
 const hourly = ref<HourlyPlayStats[]>([]);
 const topSongs = shallowRef<TopTrack[]>([]);
@@ -23,15 +23,15 @@ const loading = ref(true);
 
 onMounted(async () => {
   try {
-    const [library, history, hourlyHistory, songs, albums, artists] = await Promise.all([
-      window.api.stats.getLibraryStats(),
+    const [overview, history, hourlyHistory, songs, albums, artists] = await Promise.all([
+      window.api.stats.getStatsSummary(),
       window.api.stats.getPlayHistoryDaily(90),
       window.api.stats.getPlayHistoryHourly(),
       window.api.stats.getTopTracks(10),
       window.api.stats.getTopAlbums(10),
       window.api.stats.getTopArtists(10),
     ]);
-    libraryStats.value = library;
+    summary.value = overview;
     daily.value = history;
     hourly.value = hourlyHistory;
     topSongs.value = songs;
@@ -49,10 +49,10 @@ onMounted(async () => {
       class="mx-auto flex max-w-[1400px] flex-col gap-5 px-5 pt-2"
       :class="isFloatingBar ? 'pb-28' : 'pb-10'"
     >
-      <!-- 曲库概览 -->
-      <StatsOverview :stats="libraryStats" />
+      <!-- 全来源收听概览 -->
+      <StatsOverview :stats="summary" />
       <!-- 聆听足迹、播放时段与音质构成 -->
-      <StatsHeatmap :daily="daily" :hourly="hourly" :stats="libraryStats" :loading="loading" />
+      <StatsHeatmap :daily="daily" :hourly="hourly" :stats="summary" :loading="loading" />
       <!-- 最常听榜单 -->
       <StatsTopList
         :songs="topSongs"

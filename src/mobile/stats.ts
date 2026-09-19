@@ -117,6 +117,13 @@ const topTracks = (limit: number) => {
   return [...groups.values()].sort((a, b) => b.playCount - a.playCount).slice(0, limit);
 };
 
+/** 按来源与 ID 去重，保留最后一次播放时的完整元数据。 */
+const uniquePlayedTracks = (): Track[] => {
+  const tracks = new Map<string, Track>();
+  plays.forEach((item) => tracks.set(`${item.track.source}:${item.track.id}`, item.track));
+  return [...tracks.values()];
+};
+
 export const mobileStats: StatsApi = {
   recordPlay: (event) => {
     if (!initialized) {
@@ -150,6 +157,20 @@ export const mobileStats: StatsApi = {
       (item) => item.startedAt >= previousWeek && item.startedAt < currentWeek,
     );
     const uniqueDays = [...new Set(plays.map((item) => day(item.startedAt)))].sort().reverse();
+    const tracks = uniquePlayedTracks();
+    const albums = new Set<string>();
+    const artists = new Set<string>();
+    const codecs = new Map<string, number>();
+    tracks.forEach((track) => {
+      if (track.album?.name) {
+        albums.add(`${track.source}:${track.album.id ?? track.album.name.toLocaleLowerCase()}`);
+      }
+      track.artists.forEach((artist) =>
+        artists.add(`${track.source}:${artist.id ?? artist.name.toLocaleLowerCase()}`),
+      );
+      const codec = track.quality?.codec.trim().toLocaleLowerCase();
+      if (codec) codecs.set(codec, (codecs.get(codec) ?? 0) + 1);
+    });
     let streakDays = 0;
     let cursor = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
     const daySet = new Set(uniqueDays);
@@ -158,6 +179,12 @@ export const mobileStats: StatsApi = {
       cursor -= 86400000;
     }
     return {
+      uniqueTrackCount: tracks.length,
+      uniqueAlbumCount: albums.size,
+      uniqueArtistCount: artists.size,
+      codecs: [...codecs]
+        .map(([codec, count]) => ({ codec, count }))
+        .sort((a, b) => b.count - a.count || a.codec.localeCompare(b.codec)),
       todayListenedMs: plays
         .filter((item) => day(item.startedAt) === today)
         .reduce((sum, item) => sum + item.listenedMs, 0),

@@ -1,19 +1,18 @@
 <script setup lang="ts">
 import type { Component } from "vue";
-import type { LibraryStats } from "@shared/types/stats";
+import type { PlayStatsSummary } from "@shared/types/stats";
 import IconLucideMusic from "~icons/lucide/music";
 import IconLucideDisc3 from "~icons/lucide/disc-3";
 import IconLucideUser from "~icons/lucide/user";
 import IconLucideClock from "~icons/lucide/clock";
-import IconLucideHardDrive from "~icons/lucide/hard-drive";
+import IconLucideListRestart from "~icons/lucide/list-restart";
 
 const props = defineProps<{
-  /** 曲库统计概览 */
-  stats: LibraryStats | null;
+  /** 全来源收听统计概览 */
+  stats: PlayStatsSummary | null;
 }>();
 
 const { t } = useI18n();
-const router = useRouter();
 
 /** 概览卡片 */
 interface OverviewCard {
@@ -27,17 +26,7 @@ interface OverviewCard {
   value2?: string;
   /** 第二段数字单位 */
   unit2?: string;
-  /** 点击跳转路由 */
-  to?: string;
 }
-
-/**
- * 点击卡片跳转对应页面
- * @param card - 卡片数据
- */
-const navigateCard = (card: OverviewCard): void => {
-  if (card.to) router.push(card.to);
-};
 
 /**
  * 总时长拆分为小时和分钟
@@ -49,53 +38,41 @@ const formatDurationParts = (ms: number): { hours: number; minutes: number } => 
   return { hours: Math.floor(totalMin / 60), minutes: totalMin % 60 };
 };
 
-/**
- * 字节数拆分为数值与单位（MB / GB）
- * @param bytes - 字节数
- * @returns 数值与单位
- */
-const formatSizeParts = (bytes: number): { value: string; unit: string } => {
-  if (bytes < 1024 * 1024 * 1024) return { value: (bytes / (1024 * 1024)).toFixed(1), unit: "MB" };
-  return { value: (bytes / (1024 * 1024 * 1024)).toFixed(1), unit: "GB" };
-};
-
 /** 顶部概览卡片 */
 const overviewCards = computed<OverviewCard[]>(() => {
   const stats = props.stats;
-  const duration = stats ? formatDurationParts(stats.totalDurationMs) : null;
-  const size = stats ? formatSizeParts(stats.totalFileSize) : null;
+  const duration = stats ? formatDurationParts(stats.totalListenedMs) : null;
   return [
     {
-      key: "songs",
+      key: "listenedSongs",
       icon: IconLucideMusic,
-      value: stats ? String(stats.trackCount) : "--",
-      to: "/library",
+      value: stats ? String(stats.uniqueTrackCount) : "--",
     },
     {
-      key: "albums",
+      key: "listenedAlbums",
       icon: IconLucideDisc3,
-      value: stats ? String(stats.albumCount) : "--",
-      to: "/albums/local",
+      value: stats ? String(stats.uniqueAlbumCount) : "--",
     },
     {
-      key: "artists",
+      key: "listenedArtists",
       icon: IconLucideUser,
-      value: stats ? String(stats.artistCount) : "--",
-      to: "/artists/local",
+      value: stats ? String(stats.uniqueArtistCount) : "--",
     },
     duration
       ? {
-          key: "totalDuration",
+          key: "totalListened",
           icon: IconLucideClock,
           value: String(duration.hours),
           unit: "h",
           value2: String(duration.minutes),
           unit2: "m",
         }
-      : { key: "totalDuration", icon: IconLucideClock, value: "--" },
-    size
-      ? { key: "totalSize", icon: IconLucideHardDrive, value: size.value, unit: size.unit }
-      : { key: "totalSize", icon: IconLucideHardDrive, value: "--" },
+      : { key: "totalListened", icon: IconLucideClock, value: "--" },
+    {
+      key: "playCount",
+      icon: IconLucideListRestart,
+      value: stats ? String(stats.totalPlayCount) : "--",
+    },
   ];
 });
 </script>
@@ -106,9 +83,7 @@ const overviewCards = computed<OverviewCard[]>(() => {
       v-for="card in overviewCards"
       :key="card.key"
       radius="xl"
-      :hoverable="!!card.to"
       class="relative overflow-hidden"
-      @click="navigateCard(card)"
     >
       <!-- 衬底图标 -->
       <component

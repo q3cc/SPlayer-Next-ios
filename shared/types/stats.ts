@@ -26,6 +26,14 @@ export interface FavoriteEventInput {
 
 /** 播放统计汇总 */
 export interface PlayStatsSummary {
+  /** 听过的不同歌曲数 */
+  uniqueTrackCount: number;
+  /** 听过的不同专辑数 */
+  uniqueAlbumCount: number;
+  /** 听过的不同歌手数 */
+  uniqueArtistCount: number;
+  /** 听过歌曲的音频格式分布 */
+  codecs: { codec: string; count: number }[];
   /** 今日收听时长（毫秒） */
   todayListenedMs: number;
   /** 本周收听时长（毫秒） */

@@ -99,6 +99,10 @@ const computeStreak = (descDays: string[]): number => {
 
 /** 读盘失败时的兜底空统计 */
 const EMPTY_SUMMARY: PlayStatsSummary = {
+  uniqueTrackCount: 0,
+  uniqueAlbumCount: 0,
+  uniqueArtistCount: 0,
+  codecs: [],
   todayListenedMs: 0,
   weekListenedMs: 0,
   lastWeekListenedMs: 0,
@@ -135,7 +139,56 @@ export const getStatsSummary = (): PlayStatsSummary => {
       )
       .all() as { day: string }[];
 
+    const uniqueTrackCount = scalar(
+      "SELECT COUNT(*) AS value FROM (SELECT 1 FROM play_history GROUP BY source, track_id)",
+    );
+    const uniqueAlbumCount = scalar(
+      `SELECT COUNT(*) AS value
+       FROM (
+         SELECT 1
+         FROM play_history
+         WHERE TRIM(COALESCE(json_extract(track_json, '$.album.name'), '')) != ''
+         GROUP BY source,
+                  COALESCE(
+                    json_extract(track_json, '$.album.id'),
+                    LOWER(json_extract(track_json, '$.album.name'))
+                  )
+       )`,
+    );
+    const uniqueArtistCount = scalar(
+      `SELECT COUNT(*) AS value
+       FROM (
+         SELECT 1
+         FROM play_history, json_each(play_history.track_json, '$.artists') artist
+         WHERE TRIM(COALESCE(json_extract(artist.value, '$.name'), '')) != ''
+         GROUP BY play_history.source,
+                  COALESCE(
+                    json_extract(artist.value, '$.id'),
+                    LOWER(json_extract(artist.value, '$.name'))
+                  )
+       )`,
+    );
+    const codecs = db
+      .prepare(
+        `SELECT codec, COUNT(*) AS count
+         FROM (
+           SELECT source,
+                  track_id,
+                  MAX(LOWER(TRIM(COALESCE(json_extract(track_json, '$.quality.codec'), '')))) AS codec
+           FROM play_history
+           GROUP BY source, track_id
+         )
+         WHERE codec != ''
+         GROUP BY codec
+         ORDER BY count DESC, codec ASC`,
+      )
+      .all() as { codec: string; count: number }[];
+
     return {
+      uniqueTrackCount,
+      uniqueAlbumCount,
+      uniqueArtistCount,
+      codecs,
       todayListenedMs: scalar(listenedSince, dayStart),
       weekListenedMs: scalar(listenedSince, weekStart),
       lastWeekListenedMs: scalar(

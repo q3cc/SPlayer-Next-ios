@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { DailyPlayStats, HourlyPlayStats, LibraryStats } from "@shared/types/stats";
+import type { DailyPlayStats, HourlyPlayStats, PlayStatsSummary } from "@shared/types/stats";
 import { isLosslessCodec } from "@/utils/quality";
 import StatsDonutChart from "./StatsDonutChart.vue";
 import IconLucideMusic from "~icons/lucide/music";
@@ -9,8 +9,8 @@ const props = defineProps<{
   daily: DailyPlayStats[];
   /** 各小时累计播放统计 */
   hourly: HourlyPlayStats[];
-  /** 曲库统计概览（取格式分布） */
-  stats: LibraryStats | null;
+  /** 全来源收听统计概览（取格式分布） */
+  stats: PlayStatsSummary | null;
   /** 数据是否仍在加载 */
   loading: boolean;
 }>();

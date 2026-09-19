@@ -17,7 +17,15 @@ vi.mock("localforage", () => ({
   default: { createInstance: () => indexedStorage },
 }));
 vi.mock("./library", () => ({ mobileLibrary: {} }));
-const track: Track = { id: "1", source: "netease", title: "红豆", artists: [], duration: 240000 };
+const track: Track = {
+  id: "1",
+  source: "netease",
+  title: "红豆",
+  artists: [{ id: "artist-1", name: "方大同" }],
+  album: { id: "album-1", name: "15" },
+  duration: 240000,
+  quality: { codec: "flac", sampleRate: 44100, channels: 2, bitsPerSample: 16, bitRate: 0 },
+};
 
 beforeEach(() => {
   const values = new Map<string, string>();
@@ -54,6 +62,10 @@ describe("移动端统计存储", () => {
     ).not.toThrow();
     expect(() => mobileStats.recordFavorite({ track, action: "add" })).not.toThrow();
     expect(await mobileStats.getStatsSummary()).toMatchObject({
+      uniqueTrackCount: 1,
+      uniqueAlbumCount: 1,
+      uniqueArtistCount: 1,
+      codecs: [{ codec: "flac", count: 1 }],
       totalPlayCount: 1,
       totalListenedMs: 1000,
       weekFavoriteAdds: 1,
