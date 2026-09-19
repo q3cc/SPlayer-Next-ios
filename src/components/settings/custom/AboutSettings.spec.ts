@@ -10,7 +10,11 @@ const mocks = vi.hoisted(() => ({
   check: vi.fn(),
   contributors: vi.fn(async () => []),
 }));
-vi.mock("@/apis/github", () => ({ getContributors: mocks.contributors }));
+vi.mock("@/apis/github", () => ({
+  getContributors: mocks.contributors,
+  IOS_REPO_SLUG: "q3cc/SPlayer-Next-ios",
+  ORIGINAL_REPO_SLUG: "SPlayer-Dev/SPlayer-Next",
+}));
 vi.mock("@/composables/useCopyText", () => ({ useCopyText: () => ({ copy: mocks.copy }) }));
 vi.mock("@/stores/update", () => ({
   useUpdateStore: () => ({ phase: "idle", hasUpdate: false, checkManually: mocks.check }),
@@ -22,7 +26,7 @@ vi.mock("@/utils/config", () => ({
   },
   APP_VERSION: "2.0.0",
   REPO_URL: "https://github.com/q3cc/SPlayer-Next-ios",
-  REPO_NAME: "SPlayer-Next",
+  REPO_NAME: "SPlayer-Next-ios",
   HOMEPAGE_URL: "https://github.com/q3cc/SPlayer-Next-ios",
   COPYRIGHT_HOLDER: "imsyy",
   IS_APPX: false,

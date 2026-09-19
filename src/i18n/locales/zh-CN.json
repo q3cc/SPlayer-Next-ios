@@ -830,6 +830,8 @@
       "newVersion": "发现新版本",
       "openLogs": "打开日志",
       "officialSite": "官方网站",
+      "iosContributors": "iOS 版本贡献者",
+      "originalContributors": "原版项目贡献者",
       "showMore": "更多贡献者",
       "collapse": "收起",
       "commit": "提交",

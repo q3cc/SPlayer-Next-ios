@@ -12,14 +12,16 @@ export interface Contributor {
   avatar: string;
 }
 
-/* 仓库标识 */
-const repoSlug = "SPlayer-Dev/SPlayer-Next";
+/** iOS 版本仓库 */
+export const IOS_REPO_SLUG = "q3cc/SPlayer-Next-ios";
+/** 原版仓库 */
+export const ORIGINAL_REPO_SLUG = "SPlayer-Dev/SPlayer-Next";
 
 /**
  * 获取仓库贡献者列表
  * @returns 贡献者数组
  */
-export const getContributors = async (): Promise<Contributor[]> => {
+export const getContributors = async (repoSlug = IOS_REPO_SLUG): Promise<Contributor[]> => {
   const res = await fetch(
     `https://api.github.com/repos/${repoSlug}/contributors?per_page=100&anon=true`,
   );

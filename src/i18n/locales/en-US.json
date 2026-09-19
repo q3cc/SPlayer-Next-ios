@@ -842,6 +842,8 @@
       "newVersion": "Update Available",
       "openLogs": "Open Logs",
       "officialSite": "Official Site",
+      "iosContributors": "iOS Version Contributors",
+      "originalContributors": "Original Project Contributors",
       "showMore": "More Contributors",
       "collapse": "Collapse",
       "commit": "Commit",
