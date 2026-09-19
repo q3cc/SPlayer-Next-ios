@@ -17,6 +17,7 @@ on:
       - "auto-imports.d.ts"
       - "scripts/ios-audio-tests/**"
       - "scripts/ios-lyric-tests/**"
+      - "scripts/ios-seek-tests/**"
       - "scripts/verify-mobile-bundle.ts"
       - "src/**"
       - "electron/main/**"
