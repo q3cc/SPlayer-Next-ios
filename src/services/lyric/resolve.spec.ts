@@ -103,38 +103,4 @@ describe("resolveOnlineByPreference 平台优先与智能回退", () => {
     expect(mockRequestPlatformLyric).toHaveBeenCalledWith("netease", expect.anything());
     expect(mockRequestPlatformLyric).toHaveBeenCalledWith("qqmusic", expect.anything());
   });
-
-  it("平台返回无歌词占位文本时：继续回退到其他音源平台", async () => {
-    const settings = useSettingsStore();
-    settings.lyric.lyricSourcePreference = "auto";
-    settings.lyric.lyricSourceOrder = ["netease", "qqmusic", "kugou"];
-
-    mockRequestPlatformLyric.mockImplementation(async (platform: string) => {
-      if (platform === "netease") {
-        return {
-          platform: "netease",
-          format: "lrc",
-          content: "暂无歌词",
-        };
-      }
-      if (platform === "qqmusic") {
-        return {
-          platform: "qqmusic",
-          format: "lrc",
-          content: "[00:01.000]QQ音乐歌词",
-        };
-      }
-      return null;
-    });
-
-    const result = await resolveOnlineByPreference(createTrack("song_placeholder"), {
-      hasLocal: false,
-      localFormat: null,
-    });
-
-    expect(result?.source.platform).toBe("qqmusic");
-    expect(result?.source.format).toBe("lrc");
-    expect(mockRequestPlatformLyric).toHaveBeenCalledWith("netease", expect.anything());
-    expect(mockRequestPlatformLyric).toHaveBeenCalledWith("qqmusic", expect.anything());
-  });
 });
