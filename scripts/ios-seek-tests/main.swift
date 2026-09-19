@@ -17,7 +17,8 @@ func fixture(points: [(UInt64, UInt64)], padding: Int = 0) -> Data {
                 metadata(3, seekTable) + metadata(6, [UInt8](repeating: 0, count: padding), last: true))
 }
 
-let data = fixture(points: [(0, 0), (44100 * 60, 5000000), (44100 * 120, 12000000)])
+let points: [(UInt64, UInt64)] = [(0, 0), (UInt64(44100) * 60, 5000000), (UInt64(44100) * 120, 12000000)]
+let data = fixture(points: points)
 for chunkSize in [1, 2, 3, 17, 18, 34, 4096] {
     var table = FlacSeekTable()
     for start in stride(from: 0, to: data.count, by: chunkSize) {
@@ -49,7 +50,8 @@ precondition(fromStart.byteOffset == noTableData.count)
 precondition(fromStart.framesToDiscard == 65 * 44100)
 
 var placeholder = FlacSeekTable()
-let placeholders = fixture(points: [(.max, .max), (44100 * 60, 5000000), (44100 * 30, 2000000)])
+let placeholderPoints: [(UInt64, UInt64)] = [(.max, .max), (UInt64(44100) * 60, 5000000), (UInt64(44100) * 30, 2000000)]
+let placeholders = fixture(points: placeholderPoints)
 placeholder.consume(placeholders)
 precondition(placeholder.plan(time: 65, outputSampleRate: 44100, fileLength: 28000000)!.byteOffset == placeholders.count + 5000000)
 
