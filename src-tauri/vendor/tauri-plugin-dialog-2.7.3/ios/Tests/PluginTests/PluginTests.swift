@@ -43,7 +43,8 @@ final class DialogPluginTests: XCTestCase {
     plugin.filePickerController.documentPickerWasCancelled(picker)
 
     XCTAssertEqual(selectedCount, 1)
-    XCTAssertEqual(picker.dismissCount, 1)
+    XCTAssertEqual(picker.dismissCount, 3)
+    XCTAssertFalse(picker.view.isUserInteractionEnabled)
   }
 
   func testCancellationDismissesPickerAndAllowsAnotherSelection() {
@@ -67,6 +68,26 @@ final class DialogPluginTests: XCTestCase {
     plugin.filePickerController.documentPicker(picker, didPickDocumentsAt: [])
     XCTAssertTrue(selected)
     XCTAssertEqual(picker.dismissCount, 2)
+  }
+
+  func testImportKeepsRequestLockedAfterPickerCallbackIsConsumed() {
+    let plugin = DialogPlugin()
+    XCTAssertTrue(plugin.beginFilePicker())
+    plugin.onFilePickerResult = { _ in }
+    plugin.onFilePickerEvent(.selected([]))
+    XCTAssertNil(plugin.onFilePickerResult)
+    XCTAssertFalse(plugin.beginFilePicker())
+    plugin.finishFilePicker()
+    XCTAssertTrue(plugin.beginFilePicker())
+    plugin.finishFilePicker()
+  }
+
+  func testPickerWithoutPendingCallbackStillDismisses() {
+    let plugin = DialogPlugin()
+    let picker = TestDocumentPicker()
+    plugin.filePickerController.documentPicker(picker, didPickDocumentsAt: [])
+    XCTAssertEqual(picker.dismissCount, 1)
+    XCTAssertFalse(picker.view.isUserInteractionEnabled)
   }
 
   func testErrorOnlyCompletesPendingRequestOnce() {

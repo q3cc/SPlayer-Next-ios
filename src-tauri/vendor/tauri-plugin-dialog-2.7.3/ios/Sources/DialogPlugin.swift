@@ -59,6 +59,18 @@ class DialogPlugin: Plugin {
 
   var filePickerController: FilePickerController!
   var onFilePickerResult: ((FilePickerEvent) -> Void)? = nil
+  private var filePickerActive = false
+
+  /** 选择和目录复制共用一个请求锁，不能让后来的调用覆盖正在等待的回调。 */
+  func beginFilePicker() -> Bool {
+    guard !filePickerActive else { return false }
+    filePickerActive = true
+    return true
+  }
+
+  func finishFilePicker() {
+    filePickerActive = false
+  }
 
   override init() {
     super.init()
@@ -69,6 +81,16 @@ class DialogPlugin: Plugin {
   @objc public func showFilePicker(_ invoke: Invoke) throws {
     let args = try invoke.parseArgs(FilePickerOptions.self)
 
+    DispatchQueue.main.async {
+      guard self.beginFilePicker() else {
+        invoke.reject("文件选择或导入正在进行中")
+        return
+      }
+      self.showFilePicker(invoke, args: args)
+    }
+  }
+
+  private func showFilePicker(_ invoke: Invoke, args: FilePickerOptions) {
     onFilePickerResult = { (event: FilePickerEvent) -> Void in
       switch event {
       case .selected(let urls):
@@ -76,17 +98,26 @@ class DialogPlugin: Plugin {
           DispatchQueue.global(qos: .userInitiated).async {
             do {
               let imported = try urls.map { try self.importDirectory($0) }
-              invoke.resolve(["files": imported])
+              DispatchQueue.main.async {
+                self.finishFilePicker()
+                invoke.resolve(["files": imported])
+              }
             } catch {
-              invoke.reject(error.localizedDescription)
+              DispatchQueue.main.async {
+                self.finishFilePicker()
+                invoke.reject(error.localizedDescription)
+              }
             }
           }
         } else {
+          self.finishFilePicker()
           invoke.resolve(["files": urls])
         }
       case .cancelled:
+        self.finishFilePicker()
         invoke.resolve(["files": nil])
       case .error(let error):
+        self.finishFilePicker()
         invoke.reject(error)
       }
     }
@@ -102,10 +133,10 @@ class DialogPlugin: Plugin {
 
       // If the picker mode is media, images, or videos, we always want to show the media picker regardless of what's in the filters.
       // Otherwise, if the filters A) do not include non-media types and B) include either image or video, we want to show the media picker.
-      if args.pickerMode == .media
+      if args.directory != true && (args.pickerMode == .media
         || args.pickerMode == .image
         || args.pickerMode == .video
-        || (!filtersIncludeNonMedia && (filtersIncludeImage || filtersIncludeVideo))
+        || (!filtersIncludeNonMedia && (filtersIncludeImage || filtersIncludeVideo)))
       {
         DispatchQueue.main.async {
           var configuration = PHPickerConfiguration(photoLibrary: PHPhotoLibrary.shared())
@@ -138,6 +169,7 @@ class DialogPlugin: Plugin {
           }
 
           picker.delegate = self.filePickerController
+          picker.presentationController?.delegate = self.filePickerController
           picker.allowsMultipleSelection = args.multiple ?? false
           picker.modalPresentationStyle = .fullScreen
           self.presentViewController(picker)
@@ -153,6 +185,10 @@ class DialogPlugin: Plugin {
     let accessed = source.startAccessingSecurityScopedResource()
     defer {
       if accessed { source.stopAccessingSecurityScopedResource() }
+    }
+    guard try source.resourceValues(forKeys: [.isDirectoryKey]).isDirectory == true else {
+      throw NSError(domain: "SPlayerDirectoryImport", code: 1,
+                    userInfo: [NSLocalizedDescriptionKey: "请选择文件夹，而不是音频文件"])
     }
     let manager = FileManager.default
     let root = try manager.url(for: .documentDirectory, in: .userDomainMask,
@@ -193,10 +229,21 @@ class DialogPlugin: Plugin {
       try "".write(to: srcPath, atomically: true, encoding: .utf8)
     }
 
+    DispatchQueue.main.async {
+      guard self.beginFilePicker() else {
+        invoke.reject("文件选择或导入正在进行中")
+        return
+      }
+      self.saveFileDialog(invoke, args: args, srcPath: srcPath)
+    }
+  }
+
+  private func saveFileDialog(_ invoke: Invoke, args: SaveFileDialogOptions, srcPath: URL) {
     onFilePickerResult = { (event: FilePickerEvent) -> Void in
+      self.finishFilePicker()
       switch event {
       case .selected(let urls):
-        invoke.resolve(["file": urls.first!])
+        invoke.resolve(["file": urls.first])
       case .cancelled:
         invoke.resolve(["file": nil])
       case .error(let error):
@@ -210,13 +257,19 @@ class DialogPlugin: Plugin {
         picker.directoryURL = URL(string: defaultPath)
       }
       picker.delegate = self.filePickerController
+      picker.presentationController?.delegate = self.filePickerController
       picker.modalPresentationStyle = .fullScreen
       self.presentViewController(picker)
     }
   }
 
   private func presentViewController(_ viewControllerToPresent: UIViewController) {
-    self.manager.viewController?.present(viewControllerToPresent, animated: true, completion: nil)
+    guard let presenter = self.manager.viewController,
+          presenter.presentedViewController == nil else {
+      onFilePickerEvent(.error("无法打开文件选择器，请关闭当前弹窗后重试"))
+      return
+    }
+    presenter.present(viewControllerToPresent, animated: true, completion: nil)
   }
 
   @available(iOS 14, *)

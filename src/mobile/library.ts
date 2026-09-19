@@ -20,6 +20,7 @@ const readJson = <T>(key: string, fallback: T): T => {
 
 let tracks = readJson<Track[]>(TRACKS_STORAGE_KEY, []);
 let scanDirs = readJson<string[]>(DIRECTORIES_STORAGE_KEY, []);
+let addingDirectory = false;
 
 const persist = (): void => {
   localStorage.setItem(TRACKS_STORAGE_KEY, JSON.stringify(tracks));
@@ -197,6 +198,8 @@ export const mobileLibrary: LibraryApi = {
     success([...tracks].sort(() => Math.random() - 0.5).slice(0, limit)),
   isScanning: async () => success(false),
   addScanDir: async () => {
+    if (addingDirectory) return { success: false, error: "文件夹选择或导入正在进行中" };
+    addingDirectory = true;
     try {
       const selected = await open({
         directory: true,
@@ -205,6 +208,9 @@ export const mobileLibrary: LibraryApi = {
         fileAccessMode: "copy",
       });
       if (!selected) return { success: false, error: "canceled" };
+      if (!(await stat(selected)).isDirectory) {
+        return { success: false, error: "请选择文件夹，而不是音频文件" };
+      }
       if (!scanDirs.includes(selected)) {
         scanDirs = [...scanDirs, selected];
         persist();
@@ -212,6 +218,8 @@ export const mobileLibrary: LibraryApi = {
       return success(selected);
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : String(error) };
+    } finally {
+      addingDirectory = false;
     }
   },
   removeScanDir: async (directory) => {

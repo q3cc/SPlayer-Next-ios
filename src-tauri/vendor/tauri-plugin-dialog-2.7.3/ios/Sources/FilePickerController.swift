@@ -135,14 +135,14 @@ public class FilePickerController: NSObject {
 
 extension FilePickerController: UIDocumentPickerDelegate {
   public func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
-    guard plugin.onFilePickerResult != nil else { return }
-    // 目录选择后主动关闭面板，避免导入期间仍可重复点击系统“打开”按钮。
+    // 即使结果已经消费，也关闭仍可交互的系统面板，避免“使用文件夹”反复触发。
+    controller.view.isUserInteractionEnabled = false
     dismissViewController(controller)
     plugin.onFilePickerEvent(.selected(urls))
   }
 
   public func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
-    guard plugin.onFilePickerResult != nil else { return }
+    controller.view.isUserInteractionEnabled = false
     dismissViewController(controller)
     plugin.onFilePickerEvent(.cancelled)
   }
