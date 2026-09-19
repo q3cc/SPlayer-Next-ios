@@ -131,9 +131,17 @@ const visibleOriginalDevelopers = computed(() =>
 const hasMoreIosDevelopers = computed(() => iosDevelopers.value.length > 6);
 const hasMoreOriginalDevelopers = computed(() => originalDevelopers.value.length > 6);
 
+/** iOS 版本的署名作者，原版贡献者列表不应改变这组署名。 */
+const iosAuthorLogins = new Set(["q3cc", "imsyy"]);
+const contributorRole = (login: string, iosVersion: boolean): "Author" | "Contributor" =>
+  (iosVersion && iosAuthorLogins.has(login)) || (!iosVersion && login === COPYRIGHT_HOLDER)
+    ? "Author"
+    : "Contributor";
+
 onMounted(async () => {
   const [iosResult, originalResult] = await Promise.allSettled([
-    getContributors(IOS_REPO_SLUG),
+    // 从 iOS 项目建立后的提交开始统计，避免把继承的原版历史算作 iOS 贡献。
+    getContributors(IOS_REPO_SLUG, { since: "2026-09-10T00:00:00.000Z" }),
     getContributors(ORIGINAL_REPO_SLUG),
   ]);
   if (iosResult.status === "fulfilled") iosDevelopers.value = iosResult.value;
@@ -240,7 +248,7 @@ onMounted(async () => {
           <div class="min-w-0">
             <div class="text-sm font-medium text-on-surface truncate">{{ dev.login }}</div>
             <div class="text-xs text-on-surface-variant/60 truncate">
-              {{ dev.login === COPYRIGHT_HOLDER ? "Author" : "Contributor" }}
+              {{ contributorRole(dev.login, true) }}
             </div>
           </div>
         </SCard>
@@ -285,7 +293,7 @@ onMounted(async () => {
           <div class="min-w-0">
             <div class="text-sm font-medium text-on-surface truncate">{{ dev.login }}</div>
             <div class="text-xs text-on-surface-variant/60 truncate">
-              {{ dev.login === COPYRIGHT_HOLDER ? "Author" : "Contributor" }}
+              {{ contributorRole(dev.login, false) }}
             </div>
           </div>
         </SCard>

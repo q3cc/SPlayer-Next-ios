@@ -8,7 +8,7 @@ const mocks = vi.hoisted(() => ({
   isIOS: true,
   copy: vi.fn(),
   check: vi.fn(),
-  contributors: vi.fn(async () => []),
+  contributors: vi.fn(async (_repo?: string, _options?: { since?: string }) => []),
 }));
 vi.mock("@/apis/github", () => ({
   getContributors: mocks.contributors,
@@ -71,5 +71,45 @@ it.each([true, false])("关于页在移动端=%s 时可以渲染、复制环境�
   expect(mocks.check).toHaveBeenCalled();
   await wrapper.findAll("button").at(-1)!.trigger("click");
   expect(mocks.copy).toHaveBeenCalledWith(expect.stringContaining(mobile ? "iOS" : "Windows"));
+  wrapper.unmount();
+});
+
+it("iOS 贡献者不重复展示原版继承历史，并将两个版本作者标为 Author", async () => {
+  mocks.contributors.mockImplementation(async (_repo: string, options?: { since?: string }) =>
+    options?.since
+      ? [
+          { login: "q3cc", htmlUrl: "https://github.com/q3cc", avatar: "" },
+          { login: "imsyy", htmlUrl: "https://github.com/imsyy", avatar: "" },
+          { login: "ios-contributor", htmlUrl: "https://github.com/ios-contributor", avatar: "" },
+        ]
+      : [
+          { login: "imsyy", htmlUrl: "https://github.com/imsyy", avatar: "" },
+          { login: "upstream-user", htmlUrl: "https://github.com/upstream-user", avatar: "" },
+        ],
+  );
+  vi.stubGlobal("api", {
+    system: { osInfo: { type: "iOS", arch: "arm64", release: "" } },
+  });
+  vi.stubGlobal("electron", undefined);
+  const wrapper = mount(AboutSettings, {
+    global: {
+      plugins: [createI18n({ legacy: false, locale: "zh-CN", messages: { "zh-CN": zhCN } })],
+      stubs: {
+        SCard: { template: "<div><slot /></div>" },
+        SButton: { template: "<button><slot /></button>" },
+        STag: { template: "<span><slot /></span>" },
+        SLogo: true,
+        SImg: true,
+        IconLucideCopy: true,
+      },
+    },
+  });
+  await flushPromises();
+  const text = wrapper.text();
+  expect(text).toContain("q3cc");
+  expect(text).toContain("ios-contributor");
+  expect(text).not.toContain("upstream-user");
+  expect(text).toMatch(/q3cc\s+Author/);
+  expect(text).toMatch(/imsyy\s+Author/);
   wrapper.unmount();
 });
