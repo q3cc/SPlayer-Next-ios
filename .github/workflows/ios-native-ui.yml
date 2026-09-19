@@ -84,7 +84,8 @@ jobs:
             src-tauri/ios-native/build/SPlayerNative-unsigned.ipa
             src-tauri/ios-native/build/NativeUITests.xcresult
             src-tauri/ios-native/build/NativeIPadTests.xcresult
-            src-tauri/ios-native/build/native-ipad.png
+            src-tauri/ios-native/build/native-ipad*.png
+            src-tauri/ios-native/build/native-ipad-accessibility.txt
           if-no-files-found: warn
 
   host-readiness:
@@ -99,3 +100,6 @@ jobs:
           test -f src-tauri/ios-native/Package.swift
           test -f src-tauri/ios-native/Sources/SPlayerNativeUI/NativeRootView.swift
           test -f docs/maintenance/ios-native-migration.md
+
+      - name: Test simulator evidence export
+        run: python3 -B -m unittest discover -s src-tauri/ios-native/scripts -p 'test_*.py' -v

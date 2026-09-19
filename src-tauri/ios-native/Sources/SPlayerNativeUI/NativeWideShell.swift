@@ -71,6 +71,7 @@ struct NativeWideShell: View {
             playbackBar
         }
         .foregroundStyle(.primary).tint(.primary)
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("native.wide.shell")
         .confirmationDialog("删除这首歌曲？", isPresented: Binding(get: { removeTrack != nil }, set: { if !$0 { removeTrack = nil } }), titleVisibility: .visible) {
             Button("删除应用内副本", role: .destructive) {
@@ -100,7 +101,9 @@ struct NativeWideShell: View {
                     Text("暂无歌单").font(.caption).foregroundStyle(.tertiary).frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 16)
                 }.padding(.horizontal, 10)
             }
-        }.accessibilityIdentifier("native.wide.sidebar")
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("native.wide.sidebar")
     }
 
     private func nav(_ item: WidePage) -> some View {
@@ -314,6 +317,7 @@ struct NativeWideShell: View {
                     Spacer(minLength: 0)
                 }.frame(width: 240)
             }.buttonStyle(.plain).disabled(player.current == nil)
+                .accessibilityIdentifier("native.wide.nowPlaying")
             Spacer(minLength: 8)
             HStack(spacing: 8) {
                 Button(action: showQueue) { Image(systemName: "list.bullet").frame(width: 44, height: 44) }.accessibilityLabel("播放队列")
@@ -321,6 +325,7 @@ struct NativeWideShell: View {
                 Button(action: player.togglePlayback) {
                     Image(systemName: player.isPlaying ? "pause.fill" : "play.fill").frame(width: 44, height: 44).background(Color.primary.opacity(0.08), in: Circle())
                 }.accessibilityLabel(player.isPlaying ? "暂停" : "播放")
+                    .accessibilityIdentifier("native.wide.playPause")
                 Button(action: player.next) { Image(systemName: "forward.end").frame(width: 44, height: 44) }.accessibilityLabel("下一首")
                 Button { player.repeatOne.toggle() } label: { Image(systemName: player.repeatOne ? "repeat.1" : "repeat").frame(width: 44, height: 44) }.accessibilityLabel("单曲循环")
             }.buttonStyle(.plain).disabled(player.current == nil)
@@ -330,7 +335,9 @@ struct NativeWideShell: View {
                 Slider(value: Binding(get: { player.positionMs }, set: { player.seek(to: $0) }), in: 0...max(1, player.durationMs))
                     .disabled(player.current == nil).accessibilityLabel("播放进度")
             }.frame(width: 140)
-        }.padding(.horizontal, 20).frame(height: 78).background(panel).accessibilityIdentifier("native.wide.playerbar")
+        }.padding(.horizontal, 20).frame(height: 78).background(panel)
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("native.wide.playerbar")
     }
 
     private func metric(_ value: String, _ unit: String, _ label: String) -> some View {
