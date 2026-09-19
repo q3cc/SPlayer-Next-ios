@@ -116,7 +116,13 @@ const community = computed(() => [
   { name: t("settings.about.officialSite"), url: HOMEPAGE_URL, icon: IconLucideRss },
 ]);
 
-const iosDevelopers = ref<Contributor[]>([]);
+/** 即使 GitHub 限流，iOS 作者署名也应保留。 */
+const iosAuthor: Contributor = {
+  login: "q3cc",
+  htmlUrl: "https://github.com/q3cc",
+  avatar: "https://avatars.githubusercontent.com/u/106431792?v=4",
+};
+const iosDevelopers = ref<Contributor[]>([iosAuthor]);
 const originalDevelopers = ref<Contributor[]>([]);
 const showAllIosDevelopers = ref(false);
 const showAllOriginalDevelopers = ref(false);
@@ -134,18 +140,24 @@ const hasMoreOriginalDevelopers = computed(() => originalDevelopers.value.length
 /** iOS 版本的署名作者，原版贡献者列表不应改变这组署名。 */
 const iosAuthorLogins = new Set(["q3cc", "imsyy"]);
 const contributorRole = (login: string, iosVersion: boolean): "Author" | "Contributor" =>
-  (iosVersion && iosAuthorLogins.has(login)) || (!iosVersion && login === COPYRIGHT_HOLDER)
+  (iosVersion && iosAuthorLogins.has(login.toLowerCase())) ||
+  (!iosVersion && login.toLowerCase() === COPYRIGHT_HOLDER.toLowerCase())
     ? "Author"
     : "Contributor";
 
 onMounted(async () => {
   const [iosResult, originalResult] = await Promise.allSettled([
-    // 从 iOS 项目建立后的提交开始统计，避免把继承的原版历史算作 iOS 贡献。
-    getContributors(IOS_REPO_SLUG, { since: "2026-09-10T00:00:00.000Z" }),
+    // 只统计相对原版新增的提交，避免将继承历史或合并的原版贡献计入 iOS。
+    getContributors(IOS_REPO_SLUG, { compareBase: `${ORIGINAL_REPO_SLUG.split("/")[0]}:main` }),
     getContributors(ORIGINAL_REPO_SLUG),
   ]);
-  if (iosResult.status === "fulfilled") iosDevelopers.value = iosResult.value;
-  else console.error("获取 iOS 版本贡献者失败:", iosResult.reason);
+  if (iosResult.status === "fulfilled") {
+    const author = iosResult.value.find((dev) => dev.login.toLowerCase() === iosAuthor.login);
+    iosDevelopers.value = [
+      author ?? iosAuthor,
+      ...iosResult.value.filter((dev) => dev.login.toLowerCase() !== iosAuthor.login),
+    ];
+  } else console.error("获取 iOS 版本贡献者失败:", iosResult.reason);
   if (originalResult.status === "fulfilled") originalDevelopers.value = originalResult.value;
   else console.error("获取原版项目贡献者失败:", originalResult.reason);
 });
@@ -229,7 +241,11 @@ onMounted(async () => {
       <h4 v-if="iosDevelopers.length" class="mb-2 px-1 text-sm font-medium text-on-surface-variant">
         {{ t("settings.about.iosContributors") }}
       </h4>
-      <div v-if="iosDevelopers.length" class="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+      <div
+        v-if="iosDevelopers.length"
+        data-testid="ios-contributors"
+        class="grid grid-cols-2 sm:grid-cols-3 gap-2.5"
+      >
         <SCard
           v-for="dev in visibleIosDevelopers"
           :key="dev.login"
@@ -274,7 +290,11 @@ onMounted(async () => {
       >
         {{ t("settings.about.originalContributors") }}
       </h4>
-      <div v-if="originalDevelopers.length" class="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+      <div
+        v-if="originalDevelopers.length"
+        data-testid="original-contributors"
+        class="grid grid-cols-2 sm:grid-cols-3 gap-2.5"
+      >
         <SCard
           v-for="dev in visibleOriginalDevelopers"
           :key="`original-${dev.login}`"

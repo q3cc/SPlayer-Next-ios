@@ -1,6 +1,6 @@
 import { flushPromises, mount } from "@vue/test-utils";
 import { createI18n } from "vue-i18n";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import type { Contributor } from "@/apis/github";
 import AboutSettings from "./AboutSettings.vue";
 import zhCN from "@/i18n/locales/zh-CN.json";
@@ -9,7 +9,9 @@ const mocks = vi.hoisted(() => ({
   isIOS: true,
   copy: vi.fn(),
   check: vi.fn(),
-  contributors: vi.fn(async (_repo?: string, _options?: { since?: string }) => [] as Contributor[]),
+  contributors: vi.fn(
+    async (_repo?: string, _options?: { compareBase: string }) => [] as Contributor[],
+  ),
 }));
 vi.mock("@/apis/github", () => ({
   getContributors: mocks.contributors,
@@ -35,6 +37,7 @@ vi.mock("@/utils/config", () => ({
   COMMIT_DATE: "2026-09-01",
 }));
 
+beforeEach(() => mocks.contributors.mockReset());
 afterEach(() => vi.unstubAllGlobals());
 
 it.each([true, false])("关于页在移动端=%s 时可以渲染、复制环境和检查更新", async (mobile) => {
@@ -75,19 +78,28 @@ it.each([true, false])("关于页在移动端=%s 时可以渲染、复制环境�
   wrapper.unmount();
 });
 
-it("iOS 贡献者不重复展示原版继承历史，并将两个版本作者标为 Author", async () => {
+it.each(["success", "empty", "error"])("iOS 贡献者隔离及作者署名：%s", async (result) => {
   mocks.isIOS = true;
-  mocks.contributors.mockImplementation(async (_repo?: string, options?: { since?: string }) =>
-    options?.since
-      ? [
-          { login: "q3cc", htmlUrl: "https://github.com/q3cc", avatar: "" },
-          { login: "imsyy", htmlUrl: "https://github.com/imsyy", avatar: "" },
-          { login: "ios-contributor", htmlUrl: "https://github.com/ios-contributor", avatar: "" },
-        ]
-      : [
-          { login: "imsyy", htmlUrl: "https://github.com/imsyy", avatar: "" },
-          { login: "upstream-user", htmlUrl: "https://github.com/upstream-user", avatar: "" },
-        ],
+  mocks.contributors.mockImplementation(
+    async (_repo?: string, options?: { compareBase: string }) =>
+      options?.compareBase
+        ? result === "error"
+          ? Promise.reject(new Error("GitHub API 403"))
+          : result === "empty"
+            ? []
+            : [
+                { login: "q3cc", htmlUrl: "https://github.com/q3cc", avatar: "" },
+                { login: "imsyy", htmlUrl: "https://github.com/imsyy", avatar: "" },
+                {
+                  login: "ios-contributor",
+                  htmlUrl: "https://github.com/ios-contributor",
+                  avatar: "",
+                },
+              ]
+        : [
+            { login: "imsyy", htmlUrl: "https://github.com/imsyy", avatar: "" },
+            { login: "upstream-user", htmlUrl: "https://github.com/upstream-user", avatar: "" },
+          ],
   );
   vi.stubGlobal("api", {
     system: { osInfo: { type: "iOS", arch: "arm64", release: "" } },
@@ -107,12 +119,19 @@ it("iOS 贡献者不重复展示原版继承历史，并将两个版本作者标
     },
   });
   await flushPromises();
-  const text = wrapper.text();
-  expect(text).toContain("q3cc");
-  expect(text).toContain("ios-contributor");
-  // 原版贡献者仍应在原版列表展示，但不应重复进入 iOS 列表。
-  expect(text.match(/upstream-user/g)).toHaveLength(1);
-  expect(text).toMatch(/q3cc\s+Author/);
-  expect(text).toMatch(/imsyy\s+Author/);
+  const ios = wrapper.get('[data-testid="ios-contributors"]');
+  const original = wrapper.get('[data-testid="original-contributors"]');
+  const cards = ios.findAll(".min-w-0");
+  expect(cards.map((card) => card.get(".font-medium").text())).toEqual(
+    result === "success" ? ["q3cc", "imsyy", "ios-contributor"] : ["q3cc"],
+  );
+  expect(cards.map((card) => card.get(".text-xs").text())).toEqual(
+    result === "success" ? ["Author", "Author", "Contributor"] : ["Author"],
+  );
+  expect(ios.text()).not.toContain("upstream-user");
+  expect(original.text()).toContain("upstream-user");
+  expect(mocks.contributors).toHaveBeenCalledWith("q3cc/SPlayer-Next-ios", {
+    compareBase: "SPlayer-Dev:main",
+  });
   wrapper.unmount();
 });
