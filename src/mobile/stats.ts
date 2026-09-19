@@ -1,35 +1,105 @@
 import type { Track } from "@shared/types/player";
 import type { FavoriteEventInput, PlayEventInput, StatsApi } from "@shared/types/stats";
+import localforage from "localforage";
 import { mobileLibrary } from "./library";
 
 const MAX_EVENTS = 5000;
 const PLAY_KEY = "splayer.mobile.stats.plays";
 const FAVORITE_KEY = "splayer.mobile.stats.favorites";
+const storage = localforage.createInstance({ name: "splayer", storeName: "stats" });
 
-const read = <T>(key: string): T[] => {
+const readLegacy = <T>(key: string): T[] => {
   try {
-    return (JSON.parse(localStorage.getItem(key) ?? "[]") as T[]).slice(-MAX_EVENTS);
+    const value = JSON.parse(localStorage.getItem(key) ?? "[]") as unknown;
+    return Array.isArray(value) ? (value as T[]).slice(-MAX_EVENTS) : [];
   } catch {
     return [];
   }
 };
 
-const plays = read<PlayEventInput>(PLAY_KEY);
-const favorites = read<FavoriteEventInput & { at: number }>(FAVORITE_KEY);
-const save = (): void => {
-  plays.splice(0, Math.max(0, plays.length - MAX_EVENTS));
-  favorites.splice(0, Math.max(0, favorites.length - MAX_EVENTS));
-  for (const [key, events] of [
-    [PLAY_KEY, plays],
-    [FAVORITE_KEY, favorites],
-  ] as const) {
-    try {
-      localStorage.setItem(key, JSON.stringify(events));
-    } catch {
-      // 统计落盘失败不能打断播放或收藏，本次会话仍可查看有界记录。
-    }
-  }
+type StoredFavorite = FavoriteEventInput & { at: number };
+
+let plays: PlayEventInput[] = [];
+let favorites: StoredFavorite[] = [];
+let pendingPlays: PlayEventInput[] = [];
+let pendingFavorites: StoredFavorite[] = [];
+let initialized = false;
+let initialization: Promise<void> | undefined;
+let persistence = Promise.resolve();
+
+/** 原地限制事件数量，避免统计历史无限占用内存。 */
+const trim = <T>(events: T[]): T[] => {
+  events.splice(0, Math.max(0, events.length - MAX_EVENTS));
+  return events;
 };
+
+/** 串行保存快照，避免较早的异步写入覆盖新记录。 */
+const persist = (): void => {
+  const playSnapshot = structuredClone(plays);
+  const favoriteSnapshot = structuredClone(favorites);
+  persistence = persistence
+    .then(async () => {
+      await Promise.all([
+        storage.setItem("plays", playSnapshot),
+        storage.setItem("favorites", favoriteSnapshot),
+      ]);
+    })
+    .catch((error) => console.warn("[stats] 移动端统计保存失败", error));
+};
+
+/**
+ * 从 IndexedDB 恢复统计，并迁移旧 localStorage 数据。
+ * 初始化期间产生的新事件会在恢复后追加，避免冷启动竞态丢记录。
+ */
+const initialize = (): Promise<void> => {
+  initialization ??= (async () => {
+    const legacyPlays = readLegacy<PlayEventInput>(PLAY_KEY);
+    const legacyFavorites = readLegacy<StoredFavorite>(FAVORITE_KEY);
+    try {
+      const [storedPlays, storedFavorites] = await Promise.all([
+        storage.getItem<PlayEventInput[]>("plays"),
+        storage.getItem<StoredFavorite[]>("favorites"),
+      ]);
+      const startupPlays = pendingPlays;
+      const startupFavorites = pendingFavorites;
+      pendingPlays = [];
+      pendingFavorites = [];
+      plays = trim([...(storedPlays ?? legacyPlays), ...startupPlays]);
+      favorites = trim([...(storedFavorites ?? legacyFavorites), ...startupFavorites]);
+      const shouldMigrate =
+        (!storedPlays && legacyPlays.length > 0) ||
+        (!storedFavorites && legacyFavorites.length > 0);
+      if (shouldMigrate || plays.length > 0 || favorites.length > 0) {
+        await Promise.all([
+          storage.setItem("plays", structuredClone(plays)),
+          storage.setItem("favorites", structuredClone(favorites)),
+        ]);
+      }
+      if (shouldMigrate) {
+        localStorage.removeItem(PLAY_KEY);
+        localStorage.removeItem(FAVORITE_KEY);
+      }
+      plays = trim([...plays, ...pendingPlays]);
+      favorites = trim([...favorites, ...pendingFavorites]);
+      const hasLateEvents = pendingPlays.length > 0 || pendingFavorites.length > 0;
+      pendingPlays = [];
+      pendingFavorites = [];
+      initialized = true;
+      if (hasLateEvents) persist();
+    } catch (error) {
+      plays = trim([...(plays.length ? plays : legacyPlays), ...pendingPlays]);
+      favorites = trim([...(favorites.length ? favorites : legacyFavorites), ...pendingFavorites]);
+      initialized = true;
+      pendingPlays = [];
+      pendingFavorites = [];
+      console.warn("[stats] 移动端统计恢复失败，改用本次会话数据", error);
+    }
+  })();
+  return initialization;
+};
+
+void initialize();
+
 const day = (time: number): string => new Date(time).toLocaleDateString("en-CA");
 const weekStart = (date: Date): number => {
   const value = new Date(date.getFullYear(), date.getMonth(), date.getDate());
@@ -49,14 +119,28 @@ const topTracks = (limit: number) => {
 
 export const mobileStats: StatsApi = {
   recordPlay: (event) => {
+    if (!initialized) {
+      pendingPlays.push(event);
+      trim(pendingPlays);
+      return;
+    }
     plays.push(event);
-    save();
+    trim(plays);
+    persist();
   },
   recordFavorite: (event) => {
-    favorites.push({ ...event, at: Date.now() });
-    save();
+    const stored = { ...event, at: Date.now() };
+    if (!initialized) {
+      pendingFavorites.push(stored);
+      trim(pendingFavorites);
+      return;
+    }
+    favorites.push(stored);
+    trim(favorites);
+    persist();
   },
   getStatsSummary: async () => {
+    await initialize();
     const now = new Date();
     const today = day(now.getTime());
     const currentWeek = weekStart(now);
@@ -87,7 +171,10 @@ export const mobileStats: StatsApi = {
       streakDays,
     };
   },
-  getTopTracks: async (limit) => topTracks(limit),
+  getTopTracks: async (limit) => {
+    await initialize();
+    return topTracks(limit);
+  },
   getLibraryStats: async () => {
     const result = await mobileLibrary.getTracks();
     const tracks = result.data ?? [];
@@ -111,6 +198,7 @@ export const mobileStats: StatsApi = {
     };
   },
   getPlayHistoryDaily: async (days) => {
+    await initialize();
     const output = new Map<string, number>();
     for (let index = days - 1; index >= 0; index--)
       output.set(day(Date.now() - index * 86400000), 0);
@@ -120,12 +208,15 @@ export const mobileStats: StatsApi = {
     });
     return [...output].map(([date, playCount]) => ({ day: date, playCount }));
   },
-  getPlayHistoryHourly: async () =>
-    Array.from({ length: 24 }, (_, hour) => ({
+  getPlayHistoryHourly: async () => {
+    await initialize();
+    return Array.from({ length: 24 }, (_, hour) => ({
       hour,
       playCount: plays.filter((item) => new Date(item.startedAt).getHours() === hour).length,
-    })),
+    }));
+  },
   getTopAlbums: async (limit) => {
+    await initialize();
     const groups = new Map<string, { track: Track; playCount: number }>();
     plays.forEach((item) => {
       const key = item.track.album?.name ?? "Unknown Album";
@@ -136,6 +227,7 @@ export const mobileStats: StatsApi = {
     return [...groups.values()].sort((a, b) => b.playCount - a.playCount).slice(0, limit);
   },
   getTopArtists: async (limit) => {
+    await initialize();
     const groups = new Map<
       string,
       { artist: Track["artists"][number]; track: Track; playCount: number }
