@@ -38,8 +38,7 @@ final class NativeAppTests: XCTestCase {
         app.buttons["native.wide.settings"].tap()
         XCTAssertTrue(app.buttons["native.import.wide.settings"].exists)
         app.buttons["native.import.wide.settings"].tap()
-        XCTAssertTrue(app.descendants(matching: .any)["native.audioPicker"].firstMatch.waitForExistence(timeout: 10))
-        app.buttons.matching(NSPredicate(format: "label == 'Cancel' OR label == '取消'")).firstMatch.tap()
+        cancelAudioPicker(in: app)
         app.buttons["native.wide.nav.首页"].tap()
 
         app.buttons["native.import.wide"].tap()
@@ -90,19 +89,27 @@ final class NativeAppTests: XCTestCase {
         let app = XCUIApplication()
         app.launch()
         app.buttons["native.import.home"].tap()
-        let picker = app.descendants(matching: .any)["native.audioPicker"].firstMatch
-        XCTAssertTrue(picker.waitForExistence(timeout: 10))
-        let cancel = app.buttons.matching(NSPredicate(format: "label == 'Cancel' OR label == '取消'")).firstMatch
-        XCTAssertTrue(cancel.waitForExistence(timeout: 5))
-        cancel.tap()
+        cancelAudioPicker(in: app)
         app.tabBars.buttons["音乐库"].tap()
         app.buttons["native.import.library"].tap()
-        XCTAssertTrue(picker.waitForExistence(timeout: 10))
-        cancel.tap()
+        cancelAudioPicker(in: app)
         app.tabBars.buttons["设置"].tap()
         app.buttons["native.import.settings"].tap()
+        cancelAudioPicker(in: app)
+    }
+
+    /// 每次重新定位当前弹层，关闭完成后才操作底层页面。
+    private func cancelAudioPicker(in app: XCUIApplication) {
+        let picker = app.descendants(matching: .any)["native.audioPicker"].firstMatch
         XCTAssertTrue(picker.waitForExistence(timeout: 10))
+        let cancel = picker.buttons
+            .matching(NSPredicate(format: "label == 'Cancel' OR label == '取消'")).firstMatch
+        XCTAssertTrue(cancel.waitForExistence(timeout: 5), app.debugDescription)
         cancel.tap()
+        let dismissed = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "exists == false"), object: picker
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [dismissed], timeout: 10), .completed, app.debugDescription)
     }
 
     func testSelectAudioFileImportsAndCanPlay() {

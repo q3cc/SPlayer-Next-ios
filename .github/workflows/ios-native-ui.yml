@@ -53,6 +53,7 @@ jobs:
           xcodegen generate
 
       - name: Build unsigned native application
+        id: native_app
         run: >-
           xcodebuild -project SPlayerNative.xcodeproj -scheme SPlayerNative
           -destination 'generic/platform=iOS' -configuration Release
@@ -65,15 +66,16 @@ jobs:
           -derivedDataPath build/simulator -resultBundlePath build/NativeUITests.xcresult
           CODE_SIGNING_ALLOWED=NO test
 
+      - name: Test iPad layout and capture screenshot
+        if: ${{ !cancelled() && steps.native_app.outcome == 'success' }}
+        run: python3 scripts/test-ipad.py
+
       - name: Package unsigned IPA
         run: |
           mkdir -p build/package/Payload
           cp -R build/device/Build/Products/Release-iphoneos/SPlayerNative.app build/package/Payload/
           cd build/package
           zip -qry ../SPlayerNative-unsigned.ipa Payload
-
-      - name: Test iPad layout and capture screenshot
-        run: python3 scripts/test-ipad.py
 
       - name: Upload native application and test results
         if: always()

@@ -64,15 +64,13 @@ struct NativeWideShell: View {
                             if page == .home { dashboard }
                             else { pageContent }
                         }.padding(24).frame(maxWidth: 1400, alignment: .leading).frame(maxWidth: .infinity)
-                    }.accessibilityIdentifier("native.wide.content")
+                    }
                 }.background(canvas)
             }
             Rectangle().fill(border).frame(height: 1)
             playbackBar
         }
         .foregroundStyle(.primary).tint(.primary)
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("native.wide.shell")
         .confirmationDialog("删除这首歌曲？", isPresented: Binding(get: { removeTrack != nil }, set: { if !$0 { removeTrack = nil } }), titleVisibility: .visible) {
             Button("删除应用内副本", role: .destructive) {
                 if let track = removeTrack { Task { await player.remove(track) } }
