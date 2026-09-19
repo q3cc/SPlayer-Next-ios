@@ -1,9 +1,16 @@
 <script setup lang="ts">
 import IconFolder from "~icons/lucide/folder";
 import IconChevronLeft from "~icons/lucide/chevron-left";
+import { useLibraryStore } from "@/stores/library";
 
 const { t } = useI18n();
+const libraryStore = useLibraryStore();
 defineEmits<{ (e: "next"): void; (e: "back"): void }>();
+
+/** 目录导入完成后立即扫描，避免引导页只保存目录而不更新曲库。 */
+const handleFolderAdded = (): void => {
+  void libraryStore.startScan(false);
+};
 </script>
 
 <template>
@@ -17,7 +24,7 @@ defineEmits<{ (e: "next"): void; (e: "back"): void }>();
     </p>
 
     <div class="bg-on-surface/4 border border-solid border-primary/10 rounded-xl p-4 mb-6">
-      <FolderManager />
+      <FolderManager @added="handleFolderAdded" />
     </div>
 
     <div class="flex items-center gap-3">

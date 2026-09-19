@@ -16,6 +16,8 @@
     "fs:allow-appcache-write-recursive",
     "fs:allow-appdata-read-recursive",
     "fs:allow-appdata-write-recursive",
+    "fs:allow-read-dir",
+    "fs:allow-stat",
     {
       "identifier": "fs:scope",
       "allow": [
