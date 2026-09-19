@@ -1,6 +1,7 @@
 import { flushPromises, mount } from "@vue/test-utils";
 import { createI18n } from "vue-i18n";
 import { afterEach, expect, it, vi } from "vitest";
+import type { Contributor } from "@/apis/github";
 import AboutSettings from "./AboutSettings.vue";
 import zhCN from "@/i18n/locales/zh-CN.json";
 
@@ -8,7 +9,7 @@ const mocks = vi.hoisted(() => ({
   isIOS: true,
   copy: vi.fn(),
   check: vi.fn(),
-  contributors: vi.fn(async (_repo?: string, _options?: { since?: string }) => []),
+  contributors: vi.fn(async (_repo?: string, _options?: { since?: string }) => [] as Contributor[]),
 }));
 vi.mock("@/apis/github", () => ({
   getContributors: mocks.contributors,
@@ -75,7 +76,7 @@ it.each([true, false])("关于页在移动端=%s 时可以渲染、复制环境�
 });
 
 it("iOS 贡献者不重复展示原版继承历史，并将两个版本作者标为 Author", async () => {
-  mocks.contributors.mockImplementation(async (_repo: string, options?: { since?: string }) =>
+  mocks.contributors.mockImplementation(async (_repo?: string, options?: { since?: string }) =>
     options?.since
       ? [
           { login: "q3cc", htmlUrl: "https://github.com/q3cc", avatar: "" },
