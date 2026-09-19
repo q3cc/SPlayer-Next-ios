@@ -1,4 +1,3 @@
-import { isIOS } from "@/utils/config";
 import type { SettingCategory } from "@/types/settings-schema";
 import { useSettingsStore } from "@/stores/settings";
 import FileCacheManager from "@/components/settings/custom/FileCacheManager.vue";
@@ -70,11 +69,5 @@ const localCacheCategory: SettingCategory = {
     },
   ],
 };
-
-if (isIOS) {
-  localCacheCategory.sections = localCacheCategory.sections?.filter(
-    (section) => section.id === "database",
-  );
-}
 
 export default localCacheCategory;
