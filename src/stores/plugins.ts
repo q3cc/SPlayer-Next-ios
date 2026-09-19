@@ -34,8 +34,6 @@ export const usePluginsStore = defineStore("plugins", () => {
 
   /** 拉取列表并建立状态订阅 */
   const load = async (): Promise<void> => {
-    list.value = await window.api.plugins.list();
-    loaded.value = true;
     if (!unsubscribe) {
       unsubscribe = window.api.plugins.onStatus((info) => {
         const next = list.value.slice();
@@ -45,6 +43,8 @@ export const usePluginsStore = defineStore("plugins", () => {
         list.value = next;
       });
     }
+    list.value = await window.api.plugins.list();
+    loaded.value = true;
   };
 
   /** 通过原生文件选择框导入插件 */

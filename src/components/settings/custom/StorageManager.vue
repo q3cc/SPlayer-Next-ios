@@ -5,6 +5,7 @@ import { dialog } from "@/composables/useDialog";
 import { usePlaylistStore } from "@/stores/playlist";
 import { useSettingsStore } from "@/stores/settings";
 import { APP_VERSION } from "@/utils/config";
+import { isIOS } from "@/utils/config";
 
 defineOptions({ inheritAttrs: false });
 
@@ -31,7 +32,7 @@ const running = ref<ActionKey | null>(null);
 /** 备份文件标识：恢复时用以辨识是否本应用导出的 JSON */
 const BACKUP_TYPE = "splayer-settings";
 /** 渲染端 settings store 持久化到 localStorage 的 key（与 pinia store id 同名） */
-const SETTINGS_STORE_KEY = "settings";
+const SETTINGS_STORE_KEY = isIOS ? "splayer.mobile.settings" : "settings";
 
 interface BackupPayload {
   type: typeof BACKUP_TYPE;

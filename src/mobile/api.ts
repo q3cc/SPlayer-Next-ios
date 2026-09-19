@@ -21,6 +21,35 @@ import { mobileStats } from "./stats";
 import { mobileMediaSession } from "./mediaSession";
 import { mobileLyricPip } from "./lyricPip";
 import { mobileUpdate } from "./update";
+import { mobileCache } from "./cache";
+import type { PluginsApi, PluginInfo, PlaybackEventKind } from "@shared/types/plugin";
+
+let pluginsPromise: Promise<typeof import("./plugins")> | undefined;
+const pluginListeners = new Set<(info: PluginInfo) => void>();
+const loadPlugins = () =>
+  (pluginsPromise ??= import("./plugins").then((module) => {
+    module.mobilePlugins.onStatus((info) => pluginListeners.forEach((listener) => listener(info)));
+    return module;
+  }));
+const emitPluginPlayback = (event: PlaybackEventKind, data: unknown): void => {
+  if (pluginsPromise) void pluginsPromise.then((module) => module.emitPluginPlayback(event, data));
+};
+const mobilePlugins = new Proxy(
+  {},
+  {
+    get: (_, property: keyof PluginsApi) => {
+      if (property === "onStatus")
+        return (listener: (info: PluginInfo) => void) => {
+          pluginListeners.add(listener);
+          return () => pluginListeners.delete(listener);
+        };
+      return (...args: unknown[]) =>
+        loadPlugins().then(({ mobilePlugins }) =>
+          Reflect.apply(mobilePlugins[property], mobilePlugins, args),
+        );
+    },
+  },
+) as PluginsApi;
 
 let playerPromise: Promise<PlayerApi> | undefined;
 const playerEventListeners = new Set<(event: PlayerEvent) => void>();
@@ -31,7 +60,20 @@ const loadPlayer = async (): Promise<PlayerApi> => {
   const player = await playerPromise;
   if (!playerEventsInstalled) {
     playerEventsInstalled = true;
-    player.onEvent((event) => playerEventListeners.forEach((listener) => listener(event)));
+    player.onEvent((event) => {
+      playerEventListeners.forEach((listener) => listener(event));
+      if (event.type === "status") {
+        emitPluginPlayback("playStateChange", {
+          state:
+            event.data.state === "playing"
+              ? "playing"
+              : event.data.state === "paused"
+                ? "paused"
+                : "stopped",
+          position: event.data.position,
+        });
+      }
+    });
   }
   return player;
 };
@@ -346,29 +388,7 @@ const api = {
     onCursorInside: unsubscribe,
   },
   taskbarLyric: { setContentWidth: noop, onLayout: unsubscribe, onConfigChange: unsubscribe },
-  plugins: {
-    list: async () => [],
-    install: unsupported,
-    pickAndInstall: async () => ({
-      ok: false,
-      error: "plugins are disabled on iOS",
-      cancelled: true,
-    }),
-    installFromUrl: unsupported,
-    uninstall: unsupported,
-    setEnabled: async () => undefined,
-    setSetting: async () => undefined,
-    checkUpdate: async () => ({ ok: false, hasUpdate: false, error: "unsupported on iOS" }),
-    applyUpdate: unsupported,
-    resolveUrl: async () => {
-      throw new Error("plugins are disabled on iOS");
-    },
-    invokeMenu: unsupported,
-    matchLyric: unsupported,
-    matchCover: unsupported,
-    market: async () => ({ ok: true, plugins: [] }),
-    onStatus: unsubscribe,
-  },
+  plugins: mobilePlugins,
   apis: mobileProviders,
   cloud: {
     pickSongs: async () => [],
@@ -391,6 +411,8 @@ const api = {
         value.track ? (lyricOffsets.get(value.track.id) ?? 0) : 0,
       );
       if (changed) trackListeners.forEach((listener) => listener({ track: value.track }));
+      if (changed) emitPluginPlayback("trackChange", { track: value.track });
+      emitPluginPlayback("lyricChange", { lines: value.lyric });
       void snapshot().then((value) => lyricListeners.forEach((listener) => listener(value)));
     },
     requestSnapshot: snapshot,
@@ -433,15 +455,7 @@ const api = {
     },
     clearBackgroundImages: async () => undefined,
   },
-  cache: {
-    getStats: async () => [],
-    clear: async () => undefined,
-    clearAllByKind: async () => undefined,
-    getDir: async () => "Application Cache",
-    pickDir: async () => ({ ok: true, dir: "Application Cache" }),
-    resetDir: async () => "Application Cache",
-    song: { lookup: async () => null, fetch: async () => null, cancel: async () => undefined },
-  },
+  cache: mobileCache,
   streaming: mobileStreaming,
   recognition: {
     isSupported: async () => false,

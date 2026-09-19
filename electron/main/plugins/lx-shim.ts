@@ -7,7 +7,7 @@
  * 被 host.worker.ts 导入，运行在 utilityProcess + vm.Context 外层（注入前）。
  */
 
-import crypto from "node:crypto";
+import * as crypto from "node:crypto";
 import zlib from "node:zlib";
 import type {
   HostApi,

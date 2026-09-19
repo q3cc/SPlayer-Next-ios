@@ -44,6 +44,16 @@ export default defineConfig(({ mode }) => ({
     emptyOutDir: true,
     rollupOptions: { input: resolve(__dirname, "index.html") },
   },
+  worker: {
+    plugins: () => [
+      nodePolyfills({
+        include: ["buffer", "crypto", "stream", "util", "events", "process", "zlib"],
+        globals: { Buffer: true, global: true, process: true },
+        protocolImports: true,
+        overrides: { crypto: resolve(__dirname, "src/mobile/shims/crypto.ts") },
+      }),
+    ],
+  },
   resolve: {
     alias: [
       { find: "/fonts", replacement: resolve(__dirname, "public/fonts") },
