@@ -298,7 +298,10 @@ class DialogPlugin: Plugin {
   }
 
   public func onFilePickerEvent(_ event: FilePickerEvent) {
-    self.onFilePickerResult?(event)
+    // 先释放回调，重复选择或关闭通知不得再次复制目录、结算同一次请求。
+    let result = onFilePickerResult
+    onFilePickerResult = nil
+    result?(event)
   }
 
   @objc public func showMessageDialog(_ invoke: Invoke) throws {

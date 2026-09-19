@@ -29,6 +29,10 @@ let package = Package(
       dependencies: [
         .byName(name: "Tauri")
       ],
-      path: "Sources")
+      path: "Sources"),
+    .testTarget(
+      name: "DialogPluginTests",
+      dependencies: [.byName(name: "tauri-plugin-dialog")],
+      path: "Tests/PluginTests")
   ]
 )

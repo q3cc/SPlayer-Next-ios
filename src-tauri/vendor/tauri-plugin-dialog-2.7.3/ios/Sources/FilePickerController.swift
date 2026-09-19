@@ -134,17 +134,18 @@ public class FilePickerController: NSObject {
 }
 
 extension FilePickerController: UIDocumentPickerDelegate {
-	public func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
-		do {
-			self.plugin.onFilePickerEvent(.selected(urls))
-		} catch {
-			self.plugin.onFilePickerEvent(.error("Failed to create a temporary copy of the file"))
-		}
-	}
+  public func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+    guard plugin.onFilePickerResult != nil else { return }
+    // 目录选择后主动关闭面板，避免导入期间仍可重复点击系统“打开”按钮。
+    dismissViewController(controller)
+    plugin.onFilePickerEvent(.selected(urls))
+  }
 
-	public func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
-		self.plugin.onFilePickerEvent(.cancelled)
-	}
+  public func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+    guard plugin.onFilePickerResult != nil else { return }
+    dismissViewController(controller)
+    plugin.onFilePickerEvent(.cancelled)
+  }
 }
 
 extension FilePickerController: UIImagePickerControllerDelegate, UINavigationControllerDelegate, UIPopoverPresentationControllerDelegate {

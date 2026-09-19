@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { ErrorCode } from "@shared/types/errors";
 import { useLibraryStore } from "@/stores/library";
 import { toast } from "@/composables/useToast";
 import IconLucideFolder from "~icons/lucide/folder";
@@ -32,9 +33,15 @@ const handleAdd = async (): Promise<void> => {
       emit("added");
     } else if (res.error === "nested") {
       toast.warning(t("library.nestedHint"));
-    } else if (res.error) {
+    } else if (
+      res.error &&
+      res.error !== "canceled" &&
+      res.error !== ErrorCode.SCAN_DIR_NOT_SELECTED
+    ) {
       toast.error(res.error);
     }
+  } catch (error) {
+    toast.error(error instanceof Error ? error.message : String(error));
   } finally {
     adding.value = false;
   }

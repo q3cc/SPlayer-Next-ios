@@ -2,6 +2,8 @@
 defineOptions({ name: "Library" });
 
 import type { PlaybackContext } from "@shared/types/player";
+import { ErrorCode } from "@shared/types/errors";
+import { toast } from "@/composables/useToast";
 import type { DropdownMenuItem } from "@/components/ui/SDropdownMenu.vue";
 import { useLibraryStore } from "@/stores/library";
 import SongList from "@/components/list/SongList.vue";
@@ -38,9 +40,29 @@ const handleFolderAdded = (): void => {
   libraryStore.startScan(false);
 };
 
+const addingFolder = ref(false);
+
 const handleQuickAddFolder = async (): Promise<void> => {
-  const res = await libraryStore.addScanDir();
-  if (res.success) libraryStore.startScan(false);
+  if (addingFolder.value) return;
+  addingFolder.value = true;
+  try {
+    const res = await libraryStore.addScanDir();
+    if (res.success) {
+      libraryStore.startScan(false);
+    } else if (res.error === "nested") {
+      toast.warning(t("library.nestedHint"));
+    } else if (
+      res.error &&
+      res.error !== "canceled" &&
+      res.error !== ErrorCode.SCAN_DIR_NOT_SELECTED
+    ) {
+      toast.error(res.error);
+    }
+  } catch (error) {
+    toast.error(error instanceof Error ? error.message : String(error));
+  } finally {
+    addingFolder.value = false;
+  }
 };
 
 // 播放全部
@@ -211,7 +233,12 @@ onUnmounted(() => {
         <IconLucideMusic class="size-12 mx-auto mb-3 opacity-30" />
         <div class="text-sm mb-1">{{ t("library.empty") }}</div>
         <div class="text-xs mb-4 opacity-70">{{ t("library.emptyHint") }}</div>
-        <SButton type="primary" variant="secondary" @click="handleQuickAddFolder">
+        <SButton
+          type="primary"
+          variant="secondary"
+          :loading="addingFolder"
+          @click="handleQuickAddFolder"
+        >
           <template #icon><IconLucideFolderPlus /></template>
           {{ t("library.addFolder") }}
         </SButton>
