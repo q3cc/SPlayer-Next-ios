@@ -2,7 +2,7 @@ import type { Track, TrackDetail } from "@shared/types/player";
 import type { LyricData, LyricFormat, LyricInput, LyricMatchResult } from "@shared/types/lyrics";
 import type { Platform } from "@shared/types/platform";
 import { isPlatform } from "@shared/types/platform";
-import { detectFormat } from "lyric-kit";
+import { detectFormat, parseLyric } from "lyric-kit";
 import { useSettingsStore } from "@/stores/settings";
 import { usePluginsStore } from "@/stores/plugins";
 import { DEFAULT_LYRIC_FORMAT_ORDER, DEFAULT_LYRIC_SOURCE_ORDER } from "@/types/settings";
@@ -38,13 +38,32 @@ const toOnlineResult = (data: LyricMatchResult): OnlineResult => ({
   },
 });
 
+/** 网易云等平台在无歌词时返回的占位文本 */
+const LYRIC_PLACEHOLDER_RE = /^(?:暂无歌词|该歌曲暂无歌词|歌词暂缺)$/i;
+
+/** 判断平台返回内容是否包含可展示的歌词行 */
+const hasUsableLyric = (data: LyricMatchResult): boolean => {
+  if (!data.content?.trim()) return false;
+  try {
+    const { lines } = parseLyric({ content: data.content, format: data.format });
+    return lines.some((line) =>
+      line.words.some((word) => {
+        const text = word.word.trim();
+        return text.length > 0 && !LYRIC_PLACEHOLDER_RE.test(text);
+      }),
+    );
+  } catch {
+    return false;
+  }
+};
+
 /** 请求并转换指定平台歌词 */
 const resolvePlatformLyric = async (
   platform: Platform,
   track: Track,
 ): Promise<OnlineResult | null> => {
   const result = await requestPlatformLyric(platform, track);
-  return result ? toOnlineResult(result) : null;
+  return result && hasUsableLyric(result) ? toOnlineResult(result) : null;
 };
 
 /**

@@ -1,5 +1,4 @@
 import { useSettingsStore } from "@/stores/settings";
-import { useStatusStore } from "@/stores/status";
 import { useMediaStore } from "@/stores/media";
 import { findLyricIndex } from "lyric-kit";
 import { formatTime } from "@/utils/time";
@@ -13,7 +12,6 @@ import { getLineText } from "@shared/utils/lyrics";
 export const useProgressLyric = () => {
   const settingsStore = useSettingsStore();
   const mediaStore = useMediaStore();
-  const status = useStatusStore();
 
   /**
    * 获取指定时间对应的歌词文本
@@ -24,7 +22,7 @@ export const useProgressLyric = () => {
     const lyrics = mediaStore.parsedLyric;
     if (!lyrics.length) return null;
 
-    const index = findLyricIndex(lyrics, time + status.lyricOffsetMs);
+    const index = findLyricIndex(lyrics, time);
     if (index === -1) return null;
 
     const line = lyrics[index];
@@ -59,25 +57,25 @@ export const useProgressLyric = () => {
     const lyrics = mediaStore.parsedLyric;
     if (!lyrics.length) return time;
 
-    const currentIdx = findLyricIndex(lyrics, time + status.lyricOffsetMs);
+    const currentIdx = findLyricIndex(lyrics, time);
 
     // 优先检查下一行（预备开始）
     const nextIdx = currentIdx + 1;
     if (nextIdx < lyrics.length) {
       const nextLine = lyrics[nextIdx];
       // 距离下一行开头 2.5 秒内，吸附到下一行
-      if (nextLine.startTime - (time + status.lyricOffsetMs) <= 2500) {
-        return Math.max(0, nextLine.startTime - status.lyricOffsetMs);
+      if (nextLine.startTime - time <= 2500) {
+        return nextLine.startTime;
       }
     }
 
     // 检查当前行（重新开始）
     if (currentIdx !== -1) {
       const currentLine = lyrics[currentIdx];
-      const offset = time + status.lyricOffsetMs - currentLine.startTime;
+      const offset = time - currentLine.startTime;
       // 距离当前行开头 10 秒内，吸附到当前行
       if (offset <= 10000) {
-        return Math.max(0, currentLine.startTime - status.lyricOffsetMs);
+        return currentLine.startTime;
       }
     }
 
