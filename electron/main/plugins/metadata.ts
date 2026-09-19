@@ -5,15 +5,17 @@
  */
 
 import type { Track } from "@shared/types/player";
+import type { MusicCommentPage } from "@shared/types/comment";
 import type {
   MusicLyricRes,
   MusicPicRes,
   MusicSearchCandidate,
   PluginMatchCoverArgs,
   PluginMatchLyricArgs,
+  PluginMatchCommentArgs,
 } from "@shared/types/plugin";
 import { pluginRegistry, type PluginRuntime } from "./registry";
-import { callMusicLyric, callMusicPic, callMusicSearch } from "./router";
+import { callMusicComment, callMusicLyric, callMusicPic, callMusicSearch } from "./router";
 import { pickBestCandidate, type LyricCandidate } from "@main/apis/common/lyric/utils";
 import { pluginLog } from "@main/utils/logger";
 
@@ -92,6 +94,29 @@ export const matchCover = async (args: PluginMatchCoverArgs): Promise<MusicPicRe
     return pic?.url ? pic : null;
   } catch (err) {
     pluginLog.warn("matchCover failed", args.pluginId, args.source, (err as Error)?.message);
+    return null;
+  }
+};
+
+/** 经某插件源兜底取评论，复用与歌词/封面相同的曲目匹配流程。 */
+export const matchComment = async (
+  args: PluginMatchCommentArgs,
+): Promise<MusicCommentPage | null> => {
+  const rt = pluginRegistry.getRuntime(args.pluginId);
+  if (!rt || rt.status.state !== "ready") return null;
+  try {
+    const musicInfo = await findMatch(rt, args.source, args.track);
+    if (!musicInfo) return null;
+    return await callMusicComment(rt, {
+      source: args.source,
+      musicInfo,
+      type: args.type,
+      page: args.page,
+      limit: args.limit,
+      cursor: args.cursor,
+    });
+  } catch (err) {
+    pluginLog.warn("matchComment failed", args.pluginId, args.source, (err as Error)?.message);
     return null;
   }
 };

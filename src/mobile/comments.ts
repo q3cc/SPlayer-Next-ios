@@ -17,6 +17,14 @@ const EMPTY = (query: MusicCommentQuery): MusicCommentPage => ({
   limit: query.limit,
 });
 
+const parsePluginSource = (sourceId: string): { pluginId: string; source: string } | null => {
+  if (!sourceId.startsWith("plugin:")) return null;
+  const rest = sourceId.slice("plugin:".length);
+  const separator = rest.indexOf(":");
+  if (separator <= 0) return null;
+  return { pluginId: rest.slice(0, separator), source: rest.slice(separator + 1) };
+};
+
 const callNetease = async (name: string, params: Record<string, unknown>) =>
   (await import("@main/apis/netease")).callNetease(name, params);
 const callQQMusic = async (name: string, params: Record<string, unknown>) =>
@@ -142,19 +150,55 @@ const get = async (
         data: normalizeKugouCommentPage(body, query.page, query.limit),
       };
     }
+    const plugin = parsePluginSource(query.sourceId);
+    if (plugin) {
+      const { mobilePlugins } = await import("./plugins");
+      const result = await mobilePlugins.matchComment({
+        ...plugin,
+        track: query.track,
+        type: query.type,
+        page: query.page,
+        limit: query.limit,
+        cursor: query.cursor,
+      });
+      if (!result.ok) return { ok: false, error: result.error ?? "插件评论请求失败" };
+      return { ok: true, data: result.data ?? EMPTY(query) };
+    }
     return { ok: false, error: `unknown comment source: ${query.sourceId}` };
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : String(error) };
   }
 };
 
-const sources: CommentSource[] = [
+const builtinSources: CommentSource[] = [
   { id: "builtin:netease", name: "网易云", kind: "builtin", platform: "netease" },
   { id: "builtin:qqmusic", name: "QQ音乐", kind: "builtin", platform: "qqmusic" },
-  { id: "builtin:kugou", name: "酷狗", kind: "builtin", platform: "kugou" },
+  { id: "builtin:kugou", name: "酷狗", kind: "builtin", platform: "kugou", tabs: ["hot"] },
 ];
 
 export const mobileComments = {
-  sources: async (): Promise<CommentSource[]> => sources,
+  sources: async (): Promise<CommentSource[]> => {
+    const { mobilePlugins } = await import("./plugins");
+    const plugins = await mobilePlugins.list();
+    const sources = [...builtinSources];
+    for (const info of plugins) {
+      if (!info.enabled || info.status.state !== "ready") continue;
+      for (const [source, capability] of Object.entries(info.status.sources)) {
+        if (
+          !capability.actions.includes("musicSearch") ||
+          !capability.actions.includes("musicComment")
+        )
+          continue;
+        sources.push({
+          id: `plugin:${info.manifest.id}:${source}`,
+          name: capability.name,
+          kind: "plugin",
+          pluginId: info.manifest.id,
+          pluginSource: source,
+        });
+      }
+    }
+    return sources;
+  },
   get,
 };

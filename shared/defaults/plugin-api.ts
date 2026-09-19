@@ -25,6 +25,12 @@ export const PLUGIN_LOAD_TIMEOUT = 10_000;
 /** 在线导入脚本大小上限（字节） */
 export const INSTALL_URL_MAX_SIZE = 9_000_000;
 
+/** 插件单次网络响应大小上限（字节），避免移动端把大响应整体读入内存 */
+export const REQUEST_MAX_RESPONSE_SIZE = 32 * 1024 * 1024;
+
+/** 单个插件持久化数据总大小上限（字节） */
+export const PLUGIN_STORAGE_MAX_SIZE = 16 * 1024 * 1024;
+
 /** 在线导入请求超时（毫秒） */
 export const INSTALL_URL_TIMEOUT = 15_000;
 

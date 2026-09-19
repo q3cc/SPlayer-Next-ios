@@ -93,6 +93,18 @@ export const resolveByPlugin = async (
       info.status.sources[pluginSource]?.actions.includes("musicUrl"),
   );
   if (candidates.length === 0) return fail(ErrorCode.NO_PLUGIN_AVAILABLE);
+  const priorityValue =
+    candidates.length > 1 && window.api.config?.get
+      ? await window.api.config.get("plugins.priority.musicUrl")
+      : [];
+  const priority = Array.isArray(priorityValue)
+    ? priorityValue.filter((id): id is string => typeof id === "string")
+    : [];
+  candidates.sort((a, b) => {
+    const ai = priority.indexOf(a.manifest.id);
+    const bi = priority.indexOf(b.manifest.id);
+    return (ai < 0 ? Number.MAX_SAFE_INTEGER : ai) - (bi < 0 ? Number.MAX_SAFE_INTEGER : bi);
+  });
   // 补齐 id / songmid / songId / hash / albumId 等字段
   const totalSec = track.duration > 0 ? Math.round(track.duration / 1000) : 0;
   const interval =

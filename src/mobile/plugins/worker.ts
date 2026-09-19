@@ -9,6 +9,11 @@ createPluginRuntime({
   evaluate: (source, globals) => {
     globals.window ??= globals;
     globals.self = globals;
+    globals.globalThis = globals;
+    globals.importScripts = undefined;
+    globals.navigator = undefined;
+    globals.location = undefined;
+    globals.document = undefined;
     globals.setImmediate = (callback: () => void) => setTimeout(callback, 0);
     globals.clearImmediate = clearTimeout;
     const evaluate = new Function(...Object.keys(globals), source);

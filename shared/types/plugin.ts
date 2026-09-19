@@ -5,7 +5,7 @@
 
 import type { LyricLine } from "./lyrics";
 import type { Track } from "./player";
-import type { CommentTab, MusicCommentItem } from "./comment";
+import type { CommentTab, MusicCommentItem, MusicCommentPage } from "./comment";
 
 /**
  * 支持的插件动作
@@ -292,6 +292,8 @@ export interface MusicCommentReq {
   page: number;
   /** 每页数量 */
   limit: number;
+  /** 分页游标（可选） */
+  cursor?: string;
 }
 export interface MusicCommentRes {
   list: MusicCommentItem[];
@@ -517,6 +519,21 @@ export interface PluginMatchCoverResult {
   error?: string;
 }
 
+export interface PluginMatchCommentArgs {
+  pluginId: string;
+  source: string;
+  track: Track;
+  type: CommentTab;
+  page: number;
+  limit: number;
+  cursor?: string;
+}
+export interface PluginMatchCommentResult {
+  ok: boolean;
+  data?: MusicCommentPage;
+  error?: string;
+}
+
 /** 插件市场条目 */
 export interface MarketPlugin {
   id: string;
@@ -579,6 +596,8 @@ export interface PluginsApi {
   matchLyric: (args: PluginMatchLyricArgs) => Promise<PluginMatchLyricResult>;
   /** 经插件兜底匹配封面：host 复用同一次匹配，再 musicPic */
   matchCover: (args: PluginMatchCoverArgs) => Promise<PluginMatchCoverResult>;
+  /** 经插件兜底获取评论：host 先匹配曲目，再调用 musicComment */
+  matchComment: (args: PluginMatchCommentArgs) => Promise<PluginMatchCommentResult>;
   /** 拉取插件市场列表 */
   market: () => Promise<{ ok: boolean; plugins: MarketPlugin[]; error?: string }>;
   /** 订阅插件状态变化 */

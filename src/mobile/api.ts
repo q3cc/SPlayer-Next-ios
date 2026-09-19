@@ -28,6 +28,7 @@ let pluginsPromise: Promise<typeof import("./plugins")> | undefined;
 const pluginListeners = new Set<(info: PluginInfo) => void>();
 const loadPlugins = () =>
   (pluginsPromise ??= import("./plugins").then((module) => {
+    module.setPluginPlaybackSnapshotProvider(snapshot);
     module.mobilePlugins.onStatus((info) => pluginListeners.forEach((listener) => listener(info)));
     return module;
   }));
@@ -54,6 +55,30 @@ const mobilePlugins = new Proxy(
 let playerPromise: Promise<PlayerApi> | undefined;
 const playerEventListeners = new Set<(event: PlayerEvent) => void>();
 let playerEventsInstalled = false;
+let lastPluginState: "playing" | "paused" | "stopped" = "paused";
+let lastPluginLine = -1;
+
+const pluginStateOf = (state: string): "playing" | "paused" | "stopped" =>
+  state === "playing" ? "playing" : state === "stopped" ? "stopped" : "paused";
+
+const emitPluginState = (state: string, position: number): void => {
+  const next = pluginStateOf(state);
+  if (next === lastPluginState) return;
+  lastPluginState = next;
+  emitPluginPlayback("playStateChange", { state: next, position });
+};
+
+const emitPluginLine = (value: NowPlayingSnapshot): void => {
+  const offset = value.lyricOffsetMs;
+  let next = -1;
+  for (let index = 0; index < value.lyric.length; index++) {
+    if (value.lyric[index].startTime <= value.position + offset) next = index;
+    else break;
+  }
+  if (next === lastPluginLine) return;
+  lastPluginLine = next;
+  emitPluginPlayback("lineChange", { index: next, position: value.position });
+};
 
 const loadPlayer = async (): Promise<PlayerApi> => {
   playerPromise ??= import("./player").then(({ mobilePlayer }) => mobilePlayer);
@@ -63,15 +88,11 @@ const loadPlayer = async (): Promise<PlayerApi> => {
     player.onEvent((event) => {
       playerEventListeners.forEach((listener) => listener(event));
       if (event.type === "status") {
-        emitPluginPlayback("playStateChange", {
-          state:
-            event.data.state === "playing"
-              ? "playing"
-              : event.data.state === "paused"
-                ? "paused"
-                : "stopped",
-          position: event.data.position,
-        });
+        emitPluginState(event.data.state, event.data.position);
+      } else if (event.type === "ended") {
+        void snapshot().then((value) => emitPluginState("stopped", value.position));
+      } else if (event.type === "position") {
+        void snapshot().then(emitPluginLine);
       }
     });
   }
@@ -413,7 +434,11 @@ const api = {
       if (changed) trackListeners.forEach((listener) => listener({ track: value.track }));
       if (changed) emitPluginPlayback("trackChange", { track: value.track });
       emitPluginPlayback("lyricChange", { lines: value.lyric });
-      void snapshot().then((value) => lyricListeners.forEach((listener) => listener(value)));
+      lastPluginLine = -1;
+      void snapshot().then((snapshotValue) => {
+        emitPluginLine(snapshotValue);
+        lyricListeners.forEach((listener) => listener(snapshotValue));
+      });
     },
     requestSnapshot: snapshot,
     setLyricOffset: (id: string, offset: number) => {
@@ -423,6 +448,7 @@ const api = {
         .catch((error) => console.warn("[lyric-pip] 偏移同步失败", error));
       mobileMediaSession.setOffset(id, offset);
       offsetListeners.forEach((listener) => listener({ trackId: id, offsetMs: offset }));
+      void snapshot().then(emitPluginLine);
     },
     onTrackChange: (callback: (value: { track: Track | null }) => void) => {
       trackListeners.add(callback);

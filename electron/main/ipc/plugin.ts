@@ -11,7 +11,7 @@ import { ipcMain, dialog } from "electron";
 import type { PluginInfo } from "@shared/types/plugin";
 import { pluginRegistry } from "@main/plugins/registry";
 import { resolveUrl, invokeMenu } from "@main/plugins/router";
-import { matchLyric, matchCover } from "@main/plugins/metadata";
+import { matchLyric, matchCover, matchComment } from "@main/plugins/metadata";
 import { fetchScript, fetchMarket } from "@main/plugins/net";
 import { broadcast } from "@main/utils/broadcast";
 import { coreLog } from "@main/utils/logger";
@@ -153,6 +153,11 @@ export const registerPluginIpc = (): void => {
   // 插件兜底匹配封面：曲目无封面时由渲染端逐个插件源调用
   ipcMain.handle("plugin:matchCover", async (_evt, args) => {
     const data = await matchCover(args);
+    return data ? { ok: true, data } : { ok: false };
+  });
+
+  ipcMain.handle("plugin:matchComment", async (_evt, args) => {
+    const data = await matchComment(args);
     return data ? { ok: true, data } : { ok: false };
   });
 

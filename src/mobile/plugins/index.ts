@@ -6,6 +6,7 @@ import {
   ACTION_TIMEOUTS,
   HOST_API_LEVEL,
   INSTALL_URL_MAX_SIZE,
+  PLUGIN_STORAGE_MAX_SIZE,
   PLUGIN_LOAD_TIMEOUT,
   PLUGIN_REGISTRY_URL,
   REQUEST_DEFAULT_TIMEOUT,
@@ -24,9 +25,13 @@ import type {
   SandboxIn,
   SandboxOut,
   MusicSearchCandidate,
+  PluginMatchCommentArgs,
 } from "@shared/types/plugin";
+import type { NowPlayingSnapshot } from "@shared/types/nowPlaying";
 import { pickBestCandidate } from "@main/apis/common/lyric/utils";
 import { fetchPluginScript, requestPlugin } from "./network";
+import { store } from "../shims/store";
+import { pluginLog } from "../shims/logger";
 
 interface SavedPlugin {
   info: PluginInfo;
@@ -39,10 +44,12 @@ interface Pending {
 }
 interface Runtime {
   worker: Worker;
+  source: string;
   ready: Promise<void>;
   registration: Partial<PluginRegistration>;
   pending: Map<string, Pending>;
   requests: Set<AbortController>;
+  restartAttempts: number;
 }
 
 const storage = localforage.createInstance({ name: "splayer", storeName: "plugins" });
@@ -51,8 +58,11 @@ const records = new Map<string, PluginInfo>();
 const runtimes = new Map<string, Runtime>();
 const listeners = new Set<(info: PluginInfo) => void>();
 const MAX_PLUGINS = 16;
+const MAX_RESTART_ATTEMPTS = 3;
+const RESTART_DELAYS = [2_000, 8_000, 30_000] as const;
 let initialization: Promise<void> | undefined;
 let sequence = 0;
+let playbackSnapshotProvider: (() => Promise<NowPlayingSnapshot>) | undefined;
 
 const errorText = (error: unknown): string =>
   error instanceof Error ? error.message : String(error);
@@ -87,10 +97,11 @@ const hostCall = async (
       if (runtime.requests.size >= 16) throw new Error("插件请求过多");
       const controller = new AbortController();
       const options = (args[1] ?? {}) as HostRequestOptions;
-      const timer = setTimeout(
-        () => controller.abort(),
-        Math.min(options.timeout ?? REQUEST_DEFAULT_TIMEOUT, REQUEST_MAX_TIMEOUT),
+      const timeout = Math.min(
+        Math.max(options.timeout ?? REQUEST_DEFAULT_TIMEOUT, 1_000),
+        REQUEST_MAX_TIMEOUT,
       );
+      const timer = setTimeout(() => controller.abort(), timeout);
       runtime.requests.add(controller);
       try {
         result = await requestPlugin(String(args[0]), options, controller.signal);
@@ -108,9 +119,25 @@ const hostCall = async (
           .filter((key) => key.startsWith(prefix))
           .map((key) => key.slice(prefix.length));
       else if (method === "storage.set") {
-        if (JSON.stringify(args[1]).length > 512 * 1024) throw new Error("插件数据超过大小限制");
+        const encoded = JSON.stringify(args[1]);
+        if (new TextEncoder().encode(encoded).length > 4 * 1024 * 1024)
+          throw new Error("插件数据超过大小限制");
         const keys = (await data.keys()).filter((key) => key.startsWith(prefix));
         if (keys.length >= 128 && !keys.includes(key)) throw new Error("插件数据条目过多");
+        const values = await Promise.all(keys.map((item) => data.getItem<unknown>(item)));
+        const existingSize = values.reduce<number>(
+          (size, value) =>
+            size + (value == null ? 0 : new TextEncoder().encode(JSON.stringify(value)).length),
+          0,
+        );
+        const oldValue = await data.getItem<unknown>(key);
+        const oldSize =
+          oldValue == null ? 0 : new TextEncoder().encode(JSON.stringify(oldValue)).length;
+        if (
+          existingSize - oldSize + new TextEncoder().encode(encoded).length >
+          PLUGIN_STORAGE_MAX_SIZE
+        )
+          throw new Error("插件数据总量超过大小限制");
         await data.setItem(key, args[1]);
       }
     } else if (method.startsWith("player.")) {
@@ -150,10 +177,12 @@ const start = (info: PluginInfo, source: string): Runtime => {
   const worker = new Worker(new URL("./worker.ts", import.meta.url), { type: "module" });
   const runtime: Runtime = {
     worker,
+    source,
     ready: Promise.resolve(),
     registration: {},
     pending: new Map(),
     requests: new Set(),
+    restartAttempts: 0,
   };
   runtimes.set(id, runtime);
   runtime.ready = new Promise<void>((resolve, reject) => {
@@ -170,7 +199,19 @@ const start = (info: PluginInfo, source: string): Runtime => {
   };
   worker.onerror = (event) => {
     event.preventDefault();
-    fail(new Error(event.message || "插件运行失败"));
+    const error = new Error(event.message || "插件运行失败");
+    if (info.enabled && runtime.restartAttempts < MAX_RESTART_ATTEMPTS) {
+      runtime.restartAttempts += 1;
+      stop(id, error);
+      info.status = { state: "loading" };
+      announce(info);
+      const delay = RESTART_DELAYS[runtime.restartAttempts - 1] ?? RESTART_DELAYS[2];
+      setTimeout(() => {
+        if (records.get(id) === info && info.enabled) start(info, runtime.source);
+      }, delay);
+      return;
+    }
+    fail(error);
   };
   worker.onmessage = ({ data: message }: MessageEvent<SandboxOut>) => {
     if (runtimes.get(id) !== runtime) return;
@@ -198,6 +239,7 @@ const start = (info: PluginInfo, source: string): Runtime => {
         break;
       }
       case "ready": {
+        runtime.restartAttempts = 0;
         info.status = { state: "ready", sources: message.sources, ...runtime.registration };
         const pending = runtime.pending.get("load");
         if (pending) {
@@ -206,6 +248,7 @@ const start = (info: PluginInfo, source: string): Runtime => {
           pending.resolve(undefined);
         }
         announce(info);
+        if (info.manifest.type === "control") void primePluginPlayback(id);
         break;
       }
       case "sourcesUpdate":
@@ -246,6 +289,9 @@ const start = (info: PluginInfo, source: string): Runtime => {
         info.updateInfo = message.info;
         announce(info);
         break;
+      case "log":
+        pluginLog[message.level](`[${id}]`, ...message.args);
+        break;
     }
   };
   void runtime.ready.catch(() => {});
@@ -259,10 +305,20 @@ const initialize = (): Promise<void> => {
     for (const id of ids.slice(0, MAX_PLUGINS)) {
       const saved = await storage.getItem<SavedPlugin>(id);
       if (!saved) continue;
+      const enabledMap = store.get("plugins.enabled");
+      if (Object.prototype.hasOwnProperty.call(enabledMap, id))
+        saved.info.enabled = enabledMap[id] === true;
+      const persistedSettings = store.get(`plugins.perPlugin.${id}` as never) as
+        Record<string, unknown> | undefined;
+      if (persistedSettings) saved.info.settingsValues = persistedSettings;
       records.set(id, saved.info);
       saved.info.status = { state: saved.info.enabled ? "unloaded" : "disabled" };
       if (saved.info.enabled) start(saved.info, saved.source);
     }
+    const updateTargets = [...records.values()].filter((info) => info.manifest.updateUrl);
+    void Promise.resolve().then(() =>
+      Promise.allSettled(updateTargets.map((info) => mobilePlugins.checkUpdate(info.manifest.id))),
+    );
   })().catch((error) => {
     initialization = undefined;
     throw error;
@@ -335,6 +391,8 @@ export const installMobilePlugin = async (
       settingsValues: previous?.settingsValues ?? {},
     };
     await storage.setItem(manifest.id, { info, source } satisfies SavedPlugin);
+    const enabledMap = { ...store.get("plugins.enabled"), [manifest.id]: info.enabled };
+    store.set("plugins.enabled", enabledMap);
     stop(manifest.id);
     records.set(manifest.id, info);
     if (info.enabled) start(info, source);
@@ -416,6 +474,12 @@ export const mobilePlugins: PluginsApi = {
     try {
       await initialize();
       await storage.removeItem(id);
+      const enabledMap = { ...store.get("plugins.enabled") };
+      delete enabledMap[id];
+      store.set("plugins.enabled", enabledMap);
+      const perPlugin = { ...store.get("plugins.perPlugin") };
+      delete perPlugin[id];
+      store.set("plugins.perPlugin", perPlugin);
       stop(id);
       records.delete(id);
       for (const key of await data.keys()) if (key.startsWith(id + ":")) await data.removeItem(key);
@@ -430,6 +494,7 @@ export const mobilePlugins: PluginsApi = {
     if (!saved) throw new Error("插件未安装");
     saved.info.enabled = enabled;
     await storage.setItem(id, saved);
+    store.set("plugins.enabled", { ...store.get("plugins.enabled"), [id]: enabled });
     const info = records.get(id)!;
     info.enabled = enabled;
     if (enabled) start(info, saved.source);
@@ -464,6 +529,7 @@ export const mobilePlugins: PluginsApi = {
     saved.info.settingsValues = settings;
     await storage.setItem(id, saved);
     info.settingsValues = settings;
+    store.set(`plugins.perPlugin.${id}` as never, settings);
     runtimes
       .get(id)
       ?.worker.postMessage({ kind: "settingsUpdate", pluginId: id, settings } satisfies SandboxIn);
@@ -476,6 +542,8 @@ export const mobilePlugins: PluginsApi = {
       if (!info?.manifest.updateUrl) throw new Error("插件未提供更新地址");
       const { manifest } = parsePluginScript(await fetchPluginScript(info.manifest.updateUrl));
       if (manifest.id !== id) throw new Error("更新文件与当前插件不匹配");
+      if ((manifest.type ?? "source") !== (info.manifest.type ?? "source"))
+        throw new Error("更新文件插件类型不匹配，请重新安装");
       const hasUpdate =
         manifest.version.localeCompare(info.manifest.version, undefined, { numeric: true }) > 0;
       info.updateInfo = hasUpdate
@@ -547,6 +615,24 @@ export const mobilePlugins: PluginsApi = {
       return { ok: false, error: errorText(error) };
     }
   },
+  matchComment: async (args: PluginMatchCommentArgs) => {
+    try {
+      const musicInfo = await findMatch(args);
+      if (!musicInfo)
+        return { ok: true, data: { list: [], total: 0, page: args.page, limit: args.limit } };
+      const data = await call(args.pluginId, "musicComment", {
+        source: args.source,
+        musicInfo,
+        type: args.type,
+        page: args.page,
+        limit: args.limit,
+        cursor: args.cursor,
+      });
+      return { ok: true, data };
+    } catch (error) {
+      return { ok: false, error: errorText(error) };
+    }
+  },
   market: async () => {
     try {
       const result = await requestPlugin(PLUGIN_REGISTRY_URL, { responseType: "json" });
@@ -569,7 +655,50 @@ export const mobilePlugins: PluginsApi = {
 /** 只转发插件订阅的播放事件，不创建额外高频轮询。 */
 export const emitPluginPlayback = (event: PlaybackEventKind, data: unknown): void => {
   for (const [id, runtime] of runtimes) {
-    if (runtime.registration.events?.includes(event))
+    const info = records.get(id);
+    if (
+      info?.enabled &&
+      info.manifest.type === "control" &&
+      info.status.state === "ready" &&
+      runtime.registration.events?.includes(event)
+    )
       runtime.worker.postMessage({ kind: "event", pluginId: id, event, data } satisfies SandboxIn);
   }
+};
+
+/** 注册播放快照提供者，控制插件就绪后立即收到当前状态。 */
+export const setPluginPlaybackSnapshotProvider = (
+  provider: () => Promise<NowPlayingSnapshot>,
+): void => {
+  playbackSnapshotProvider = provider;
+};
+
+/** 向单个刚就绪的控制插件补发当前播放快照。 */
+export const primePluginPlayback = async (id: string): Promise<void> => {
+  const runtime = runtimes.get(id);
+  const info = records.get(id);
+  const snapshot = playbackSnapshotProvider && (await playbackSnapshotProvider());
+  if (!runtime || !info || !snapshot || info.status.state !== "ready") return;
+  const send = (event: PlaybackEventKind, data: unknown): void => {
+    if (runtime.registration.events?.includes(event))
+      runtime.worker.postMessage({ kind: "event", pluginId: id, event, data } satisfies SandboxIn);
+  };
+  send("trackChange", { track: snapshot.track });
+  send("lyricChange", { lines: snapshot.lyric });
+  send("playStateChange", {
+    state:
+      snapshot.state === "playing"
+        ? "playing"
+        : snapshot.state === "stopped"
+          ? "stopped"
+          : "paused",
+    position: snapshot.position,
+  });
+  const offset = snapshot.lyricOffsetMs;
+  let index = -1;
+  for (let i = 0; i < snapshot.lyric.length; i++) {
+    if (snapshot.lyric[i].startTime <= snapshot.position + offset) index = i;
+    else break;
+  }
+  if (index >= 0) send("lineChange", { index, position: snapshot.position });
 };

@@ -8,6 +8,7 @@ import type {
   PluginInvokeMenuArgs,
   PluginMatchLyricArgs,
   PluginMatchCoverArgs,
+  PluginMatchCommentArgs,
 } from "@shared/types/plugin";
 import type { HotkeyActionId, HotkeyBinding, HotkeyConflict } from "@shared/types/hotkey";
 import type { LoadOptions, Track, TrackSource } from "@shared/types/player";
@@ -382,6 +383,8 @@ const api = {
     matchLyric: (args: PluginMatchLyricArgs) => ipcRenderer.invoke("plugin:matchLyric", args),
     // 经插件兜底匹配封面
     matchCover: (args: PluginMatchCoverArgs) => ipcRenderer.invoke("plugin:matchCover", args),
+    // 经插件兜底匹配评论
+    matchComment: (args: PluginMatchCommentArgs) => ipcRenderer.invoke("plugin:matchComment", args),
     // 拉取插件市场列表
     market: () => ipcRenderer.invoke("plugin:market"),
     // 订阅插件状态变化
