@@ -76,6 +76,7 @@ it.each([true, false])("关于页在移动端=%s 时可以渲染、复制环境�
 });
 
 it("iOS 贡献者不重复展示原版继承历史，并将两个版本作者标为 Author", async () => {
+  mocks.isIOS = true;
   mocks.contributors.mockImplementation(async (_repo?: string, options?: { since?: string }) =>
     options?.since
       ? [
@@ -109,7 +110,8 @@ it("iOS 贡献者不重复展示原版继承历史，并将两个版本作者标
   const text = wrapper.text();
   expect(text).toContain("q3cc");
   expect(text).toContain("ios-contributor");
-  expect(text).not.toContain("upstream-user");
+  // 原版贡献者仍应在原版列表展示，但不应重复进入 iOS 列表。
+  expect(text.match(/upstream-user/g)).toHaveLength(1);
   expect(text).toMatch(/q3cc\s+Author/);
   expect(text).toMatch(/imsyy\s+Author/);
   wrapper.unmount();
