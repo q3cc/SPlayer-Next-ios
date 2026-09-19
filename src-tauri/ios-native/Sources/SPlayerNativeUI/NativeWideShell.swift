@@ -111,6 +111,7 @@ struct NativeWideShell: View {
                 Text(item.rawValue).font(.system(size: 14))
                 Spacer()
             }.padding(.horizontal, 12).frame(minHeight: 44)
+                .contentShape(Rectangle())
                 .background(page == item ? Color.primary.opacity(0.08) : .clear, in: RoundedRectangle(cornerRadius: 6))
                 .overlay(alignment: .leading) {
                     if page == item { RoundedRectangle(cornerRadius: 1).fill(Color.primary).frame(width: 2, height: 22).padding(.leading, 2) }
@@ -133,7 +134,7 @@ struct NativeWideShell: View {
             Spacer()
             Label("本地音乐", systemImage: "person.crop.circle").font(.caption)
                 .padding(.horizontal, 12).frame(height: 34).background(Color.primary.opacity(0.04), in: Capsule())
-            Button { navigate(.settings) } label: { Image(systemName: "gearshape").frame(width: 44, height: 44) }
+            Button { navigate(.settings) } label: { Image(systemName: "gearshape").frame(width: 44, height: 44).contentShape(Rectangle()) }
                 .accessibilityLabel("全局设置").accessibilityIdentifier("native.wide.settings")
         }.buttonStyle(.plain).padding(.horizontal, 20).frame(height: 64)
     }
@@ -313,19 +314,19 @@ struct NativeWideShell: View {
                         Text(player.artist).font(.caption).foregroundStyle(.secondary).lineLimit(1)
                     }
                     Spacer(minLength: 0)
-                }.frame(width: 240)
+                }.frame(width: 240).contentShape(Rectangle())
             }.buttonStyle(.plain).disabled(player.current == nil)
                 .accessibilityIdentifier("native.wide.nowPlaying")
             Spacer(minLength: 8)
             HStack(spacing: 8) {
-                Button(action: showQueue) { Image(systemName: "list.bullet").frame(width: 44, height: 44) }.accessibilityLabel("播放队列")
-                Button(action: player.previous) { Image(systemName: "backward.end").frame(width: 44, height: 44) }.accessibilityLabel("上一首")
+                Button(action: showQueue) { Image(systemName: "list.bullet").frame(width: 44, height: 44).contentShape(Rectangle()) }.accessibilityLabel("播放队列")
+                Button(action: player.previous) { Image(systemName: "backward.end").frame(width: 44, height: 44).contentShape(Rectangle()) }.accessibilityLabel("上一首")
                 Button(action: player.togglePlayback) {
                     Image(systemName: player.isPlaying ? "pause.fill" : "play.fill").frame(width: 44, height: 44).background(Color.primary.opacity(0.08), in: Circle())
                 }.accessibilityLabel(player.isPlaying ? "暂停" : "播放")
                     .accessibilityIdentifier("native.wide.playPause")
-                Button(action: player.next) { Image(systemName: "forward.end").frame(width: 44, height: 44) }.accessibilityLabel("下一首")
-                Button { player.repeatOne.toggle() } label: { Image(systemName: player.repeatOne ? "repeat.1" : "repeat").frame(width: 44, height: 44) }.accessibilityLabel("单曲循环")
+                Button(action: player.next) { Image(systemName: "forward.end").frame(width: 44, height: 44).contentShape(Rectangle()) }.accessibilityLabel("下一首")
+                Button { player.repeatOne.toggle() } label: { Image(systemName: player.repeatOne ? "repeat.1" : "repeat").frame(width: 44, height: 44).contentShape(Rectangle()) }.accessibilityLabel("单曲循环")
             }.buttonStyle(.plain).disabled(player.current == nil)
             Spacer(minLength: 8)
             VStack(spacing: 2) {

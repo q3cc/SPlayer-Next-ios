@@ -3,6 +3,12 @@ import XCTest
 
 @MainActor
 final class NativeRootViewTests: XCTestCase {
+    func testLogoDecodesPackagedPixels() {
+        XCTAssertEqual(NativeLogo.image.width, 128)
+        XCTAssertEqual(NativeLogo.image.height, 128)
+        XCTAssertNotNil(NativeLogo.image.dataProvider)
+    }
+
     func testEmptyPlayerDoesNotPretendToPlay() {
         let store = NativePlayerStore()
         store.togglePlayback()

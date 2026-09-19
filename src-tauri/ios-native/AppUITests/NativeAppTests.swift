@@ -8,11 +8,11 @@ final class NativeAppTests: XCTestCase {
 
     func testWideLayoutMatchesOriginalStructure() throws {
         guard UIDevice.current.userInterfaceIdiom == .pad else { throw XCTSkip("仅验证 iPad 宽屏布局") }
-        XCUIDevice.shared.orientation = .landscapeLeft
-        defer { XCUIDevice.shared.orientation = .portrait }
         let app = XCUIApplication()
         app.launchArguments = ["--uitest-light", "--uitest-import"]
         app.launch()
+        XCUIDevice.shared.orientation = .landscapeLeft
+        defer { XCUIDevice.shared.orientation = .portrait }
         XCTAssertTrue(app.buttons["native.wide.nav.首页"].waitForExistence(timeout: 10))
         let hierarchy = XCTAttachment(string: app.debugDescription)
         hierarchy.name = "SPlayer-iPad-accessibility"
@@ -29,7 +29,7 @@ final class NativeAppTests: XCTestCase {
         XCTAssertTrue(bar.exists)
         XCTAssertLessThan(sidebar.frame.width, app.frame.width / 3)
         XCTAssertGreaterThan(bar.frame.width, app.frame.width * 0.9)
-        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        let screenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         screenshot.name = "SPlayer-iPad-home"
         screenshot.lifetime = .keepAlways
         add(screenshot)
@@ -53,19 +53,20 @@ final class NativeAppTests: XCTestCase {
         let song = app.buttons.containing(.staticText, identifier: "SPlayerImportTest").firstMatch
         XCTAssertTrue(song.waitForExistence(timeout: 15), app.debugDescription)
         app.buttons["native.wide.nav.音乐库"].tap()
-        song.tap()
+        // 宽屏歌曲行的大部分区域为空白，也必须能直接开始播放。
+        song.coordinate(withNormalizedOffset: CGVector(dx: 0.7, dy: 0.5)).tap()
         let playbackStarted = XCTNSPredicateExpectation(
             predicate: NSPredicate(format: "label == %@", "暂停"),
             object: app.buttons["native.wide.playPause"]
         )
         XCTAssertEqual(XCTWaiter.wait(for: [playbackStarted], timeout: 10), .completed)
-        let libraryScreenshot = XCTAttachment(screenshot: app.screenshot())
+        let libraryScreenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         libraryScreenshot.name = "SPlayer-iPad-library"
         libraryScreenshot.lifetime = .keepAlways
         add(libraryScreenshot)
         app.buttons["native.wide.nowPlaying"].tap()
         XCTAssertTrue(app.staticTexts["native.player.title"].waitForExistence(timeout: 10))
-        let playerScreenshot = XCTAttachment(screenshot: app.screenshot())
+        let playerScreenshot = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         playerScreenshot.name = "SPlayer-iPad-playing"
         playerScreenshot.lifetime = .keepAlways
         add(playerScreenshot)

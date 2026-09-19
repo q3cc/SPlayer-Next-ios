@@ -268,12 +268,6 @@ extension Color {
     static let splayerAccent = Color(red: 254 / 255, green: 121 / 255, blue: 113 / 255)
 }
 
-struct NativeLogo: View {
-    var body: some View {
-        Image("SPlayerLogo", bundle: .module).resizable().scaledToFit().accessibilityLabel("SPlayer 标志")
-    }
-}
-
 struct NativeTrackRow: View {
     let track: NativeTrack
     let selected: Bool
@@ -287,5 +281,6 @@ struct NativeTrackRow: View {
             Spacer()
             Text(NativeNowPlayingView.time(track.durationMs)).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
         }.padding(.vertical, 4)
+            .contentShape(Rectangle())
     }
 }
