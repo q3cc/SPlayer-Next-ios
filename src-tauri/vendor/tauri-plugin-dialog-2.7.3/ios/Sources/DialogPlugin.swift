@@ -30,6 +30,7 @@ struct Filter: Decodable {
 }
 
 struct FilePickerOptions: Decodable {
+  var diagnosticId: String?
   var directory: Bool?
   var multiple: Bool?
   var filters: [Filter]?
@@ -60,6 +61,7 @@ class DialogPlugin: Plugin {
   var filePickerController: FilePickerController!
   var onFilePickerResult: ((FilePickerEvent) -> Void)? = nil
   private var filePickerActive = false
+  var pickerTrace: FolderPickerTrace?
 
   /** 选择和目录复制共用一个请求锁，不能让后来的调用覆盖正在等待的回调。 */
   func beginFilePicker() -> Bool {
@@ -69,7 +71,9 @@ class DialogPlugin: Plugin {
   }
 
   func finishFilePicker() {
+    pickerTrace?.log("request-finished")
     filePickerActive = false
+    pickerTrace = nil
   }
 
   override init() {
@@ -81,30 +85,41 @@ class DialogPlugin: Plugin {
   @objc public func showFilePicker(_ invoke: Invoke) throws {
     let args = try invoke.parseArgs(FilePickerOptions.self)
 
+    let trace = args.diagnosticId.map { FolderPickerTrace(id: $0) }
+    trace?.log("swift-enter", "os=\(ProcessInfo.processInfo.operatingSystemVersionString)")
     DispatchQueue.main.async {
+      trace?.log("main-dispatch")
       guard self.beginFilePicker() else {
+        trace?.log("busy-reject")
         invoke.reject("文件选择或导入正在进行中")
         return
       }
+      self.pickerTrace = trace
       self.showFilePicker(invoke, args: args)
     }
   }
 
   private func showFilePicker(_ invoke: Invoke, args: FilePickerOptions) {
+    let trace = pickerTrace
     onFilePickerResult = { (event: FilePickerEvent) -> Void in
       switch event {
       case .selected(let urls):
         if args.directory == true && args.fileAccessMode != .scoped {
           DispatchQueue.global(qos: .userInitiated).async {
             do {
-              let imported = try urls.map { try self.importDirectory($0) }
+              trace?.log("import-begin", "count=\(urls.count)")
+              let imported = try urls.map { try self.importDirectory($0, trace: trace) }
+              trace?.log("import-end")
               DispatchQueue.main.async {
                 self.finishFilePicker()
+                trace?.log("resolve")
                 invoke.resolve(["files": imported])
               }
             } catch {
               DispatchQueue.main.async {
                 self.finishFilePicker()
+                let native = error as NSError
+                trace?.log("import-error", "domain=\(native.domain) code=\(native.code)")
                 invoke.reject(error.localizedDescription)
               }
             }
@@ -114,9 +129,11 @@ class DialogPlugin: Plugin {
           invoke.resolve(["files": urls])
         }
       case .cancelled:
+        trace?.log("cancel-resolve")
         self.finishFilePicker()
         invoke.resolve(["files": nil])
       case .error(let error):
+        trace?.log("picker-reject")
         self.finishFilePicker()
         invoke.reject(error)
       }
@@ -168,6 +185,7 @@ class DialogPlugin: Plugin {
             picker.directoryURL = URL(string: defaultPath)
           }
 
+          trace?.log("picker-created", "directory=\(args.directory == true) asCopy=\(!(args.directory == true || args.fileAccessMode == .scoped))")
           picker.delegate = self.filePickerController
           picker.presentationController?.delegate = self.filePickerController
           picker.allowsMultipleSelection = args.multiple ?? false
@@ -181,29 +199,43 @@ class DialogPlugin: Plugin {
   }
 
   /** iOS 目录只能原位授权；copy 模式在授权期间协调读取并导入持久沙盒。 */
-  private func importDirectory(_ source: URL) throws -> URL {
+  private func importDirectory(_ source: URL, trace: FolderPickerTrace?) throws -> URL {
+    trace?.log("access-begin", "fileURL=\(source.isFileURL)")
     let accessed = source.startAccessingSecurityScopedResource()
+    trace?.log("access-result", "granted=\(accessed)")
     defer {
+      trace?.log("access-end")
       if accessed { source.stopAccessingSecurityScopedResource() }
     }
+    trace?.log("directory-check-begin")
     guard try source.resourceValues(forKeys: [.isDirectoryKey]).isDirectory == true else {
       throw NSError(domain: "SPlayerDirectoryImport", code: 1,
                     userInfo: [NSLocalizedDescriptionKey: "请选择文件夹，而不是音频文件"])
     }
+    trace?.log("directory-check-end")
     let manager = FileManager.default
     let root = try manager.url(for: .documentDirectory, in: .userDomainMask,
                                appropriateFor: nil, create: true)
       .appendingPathComponent("Imported Music", isDirectory: true)
       .appendingPathComponent(UUID().uuidString, isDirectory: true)
+    trace?.log("destination-create-begin")
     try manager.createDirectory(at: root, withIntermediateDirectories: true)
+    trace?.log("destination-create-end")
     let destination = root.appendingPathComponent(source.lastPathComponent, isDirectory: true)
     var coordinationError: NSError?
     var copyError: Error?
+    trace?.log("coordinate-begin")
     NSFileCoordinator().coordinate(readingItemAt: source, options: .withoutChanges,
                                    error: &coordinationError) { readable in
-      do { try manager.copyItem(at: readable, to: destination) }
+      trace?.log("coordinate-accessor")
+      do {
+        trace?.log("copy-begin")
+        try manager.copyItem(at: readable, to: destination)
+        trace?.log("copy-end")
+      }
       catch { copyError = error }
     }
+    trace?.log("coordinate-end", "failed=\(coordinationError != nil || copyError != nil)")
     if let error = (coordinationError as Error?) ?? copyError {
       try? manager.removeItem(at: root)
       throw error
@@ -264,12 +296,24 @@ class DialogPlugin: Plugin {
   }
 
   private func presentViewController(_ viewControllerToPresent: UIViewController) {
+    let trace = pickerTrace
+    trace?.log("present-request")
     guard let presenter = self.manager.viewController,
           presenter.presentedViewController == nil else {
+      trace?.log("present-rejected")
       onFilePickerEvent(.error("无法打开文件选择器，请关闭当前弹窗后重试"))
       return
     }
-    presenter.present(viewControllerToPresent, animated: true, completion: nil)
+    trace?.log("present-state", "attached=\(presenter.viewIfLoaded?.window != nil) transitioning=\(presenter.transitionCoordinator != nil)")
+    presenter.present(viewControllerToPresent, animated: true) {
+      trace?.log("present-completed")
+    }
+    if trace != nil {
+      DispatchQueue.main.asyncAfter(deadline: .now() + 15) { [weak viewControllerToPresent] in
+        guard let picker = viewControllerToPresent, picker.presentingViewController != nil else { return }
+        trace?.log("panel-still-present", "interactive=\(picker.viewIfLoaded?.isUserInteractionEnabled == true) dismissing=\(picker.isBeingDismissed)")
+      }
+    }
   }
 
   @available(iOS 14, *)
@@ -352,6 +396,7 @@ class DialogPlugin: Plugin {
 
   public func onFilePickerEvent(_ event: FilePickerEvent) {
     // 先释放回调，重复选择或关闭通知不得再次复制目录、结算同一次请求。
+    pickerTrace?.log("event-dispatch", "pending=\(onFilePickerResult != nil)")
     let result = onFilePickerResult
     onFilePickerResult = nil
     result?(event)

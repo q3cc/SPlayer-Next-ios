@@ -394,6 +394,7 @@ pub struct FileDialogBuilder<R: Runtime> {
     pub(crate) picker_mode: Option<PickerMode>,
     pub(crate) file_access_mode: Option<FileAccessMode>,
     pub(crate) directory_picker: bool,
+    pub(crate) diagnostic_id: Option<String>,
     #[cfg(desktop)]
     pub(crate) parent: Option<crate::desktop::WindowHandle>,
 }
@@ -406,6 +407,7 @@ pub(crate) struct FileDialogPayload<'a> {
     filters: &'a Vec<Filter>,
     multiple: bool,
     directory: bool,
+    diagnostic_id: &'a Option<String>,
     picker_mode: &'a Option<PickerMode>,
     file_access_mode: &'a Option<FileAccessMode>,
 }
@@ -426,6 +428,7 @@ impl<R: Runtime> FileDialogBuilder<R> {
             picker_mode: None,
             file_access_mode: None,
             directory_picker: false,
+            diagnostic_id: None,
             #[cfg(desktop)]
             parent: None,
         }
@@ -438,6 +441,7 @@ impl<R: Runtime> FileDialogBuilder<R> {
             filters: &self.filters,
             multiple,
             directory: self.directory_picker,
+            diagnostic_id: &self.diagnostic_id,
             picker_mode: &self.picker_mode,
             file_access_mode: &self.file_access_mode,
         }

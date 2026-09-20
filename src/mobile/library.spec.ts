@@ -1,5 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mobileLibrary, resolveMobileAudioSource } from "./library";
+import { store } from "./shims/store";
 
 const { open, stat } = vi.hoisted(() => ({ open: vi.fn(), stat: vi.fn() }));
 vi.mock("@tauri-apps/plugin-fs", () => ({ stat }));
@@ -9,8 +10,43 @@ beforeEach(() => {
 });
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open }));
 vi.mock("@tauri-apps/api/core", () => ({ convertFileSrc: (path: string) => `asset:${path}` }));
+afterEach(() => {
+  store.set("system.diagnosticLogging", false);
+  vi.useRealTimers();
+});
 
 describe("移动端系统目录选择", () => {
+  it("诊断标识穿过 open 参数，超时观察不取消选择，结束后清理计时器", async () => {
+    vi.useFakeTimers();
+    store.set("system.diagnosticLogging", true);
+    const output = vi.spyOn(console, "info").mockImplementation(() => {});
+    let finish!: (value: null) => void;
+    open.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          finish = resolve;
+        }),
+    );
+    const request = mobileLibrary.addScanDir();
+    const id = open.mock.calls[0][0].diagnosticId;
+    expect(id).toMatch(/^[a-f0-9-]{36}$/);
+    await vi.advanceTimersByTimeAsync(15000);
+    expect(output).toHaveBeenCalledWith(
+      "[folder-trace]",
+      expect.objectContaining({
+        id,
+        stage: "still-pending",
+        waitingFor: "open-pending",
+      }),
+    );
+    finish(null);
+    expect(await request).toEqual({ success: false, error: "canceled" });
+    expect(vi.getTimerCount()).toBe(0);
+    expect(output).toHaveBeenCalledWith(
+      "[folder-trace]",
+      expect.objectContaining({ id, stage: "add-finished" }),
+    );
+  });
   it("复用目录选择接口并导入持久副本", async () => {
     open.mockResolvedValueOnce("file:///Documents/Imported%20Music/test/music");
     const result = await mobileLibrary.addScanDir();

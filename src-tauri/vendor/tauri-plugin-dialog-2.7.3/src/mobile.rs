@@ -64,10 +64,25 @@ pub(crate) fn pick_directory<R: Runtime>(
         files: Option<Vec<FilePath>>,
     }
     dialog.directory_picker = true;
+    if let Some(id) = &dialog.diagnostic_id {
+        eprintln!("[folder-trace] id={id} layer=rust stage=swift-dispatch");
+    }
     let response = dialog
         .dialog
         .0
-        .run_mobile_plugin::<DirectoryResponse>("showFilePicker", dialog.payload(multiple))?;
+        .run_mobile_plugin::<DirectoryResponse>("showFilePicker", dialog.payload(multiple));
+    let response = response.map_err(|error| {
+        if let Some(id) = &dialog.diagnostic_id {
+            eprintln!("[folder-trace] id={id} layer=rust stage=swift-error");
+        }
+        error
+    })?;
+    if let Some(id) = &dialog.diagnostic_id {
+        eprintln!(
+            "[folder-trace] id={id} layer=rust stage=swift-return count={}",
+            response.files.as_ref().map_or(0, Vec::len)
+        );
+    }
     Ok(response.files)
 }
 

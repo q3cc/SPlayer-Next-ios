@@ -38,6 +38,8 @@ pub struct DialogFilter {
 pub struct OpenDialogOptions {
     /// The title of the dialog window.
     title: Option<String>,
+    /// 仅诊断目录选择，不记录文件路径。
+    diagnostic_id: Option<String>,
     /// The filters of the dialog.
     #[serde(default)]
     filters: Vec<DialogFilter>,
@@ -125,6 +127,15 @@ pub(crate) async fn open<R: Runtime>(
     options: OpenDialogOptions,
 ) -> Result<OpenResponse> {
     let mut dialog_builder = dialog.file();
+    dialog_builder.diagnostic_id = options
+        .diagnostic_id
+        .filter(|id| id.len() <= 64 && id.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'-'));
+    if let Some(id) = &dialog_builder.diagnostic_id {
+        eprintln!(
+            "[folder-trace] id={id} layer=rust stage=open-enter directory={} recursive={}",
+            options.directory, options.recursive
+        );
+    }
     #[cfg(any(windows, target_os = "macos"))]
     {
         dialog_builder = dialog_builder.set_parent(&window);
@@ -184,11 +195,15 @@ pub(crate) async fn open<R: Runtime>(
         }
         #[cfg(target_os = "ios")]
         {
+            let diagnostic_id = dialog_builder.diagnostic_id.clone();
             let multiple = options.multiple;
             let folders = tauri::async_runtime::spawn_blocking(move || {
                 crate::mobile::pick_directory(dialog_builder, multiple)
             })
             .await??;
+            if let Some(id) = &diagnostic_id {
+                eprintln!("[folder-trace] id={id} layer=rust stage=scope-begin");
+            }
             if let Some(folders) = &folders {
                 for folder in folders {
                     if let Ok(path) = folder.clone().into_path() {
@@ -200,6 +215,9 @@ pub(crate) async fn open<R: Runtime>(
                             .allow_directory(&path, options.recursive)?;
                     }
                 }
+            }
+            if let Some(id) = &diagnostic_id {
+                eprintln!("[folder-trace] id={id} layer=rust stage=open-return");
             }
             if multiple {
                 OpenResponse::Files(folders)

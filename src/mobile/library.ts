@@ -4,6 +4,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { readDir, remove, stat } from "@tauri-apps/plugin-fs";
 import type { AlbumSummary, ArtistSummary, LibraryApi, ScanProgress } from "@shared/types/library";
 import type { Track } from "@shared/types/player";
+import { startFolderTrace } from "./folderTrace";
 
 const TRACKS_STORAGE_KEY = "splayer.mobile.library";
 const DIRECTORIES_STORAGE_KEY = "splayer.mobile.scanDirs";
@@ -50,13 +51,22 @@ const childPath = async (parent: string, name: string): Promise<string> => {
   return join(parent, name);
 };
 
-const listAudioFiles = async (root: string): Promise<string[]> => {
+const listAudioFiles = async (
+  root: string,
+  trace: ReturnType<typeof startFolderTrace>,
+): Promise<string[]> => {
   const files: string[] = [];
   const pending = [root];
+  let visited = 0;
   while (pending.length) {
     const current = pending.pop();
     if (!current) continue;
-    for (const entry of await readDir(current)) {
+    const sampled = visited < 10 || visited % 100 === 0;
+    if (sampled) trace.log("read-dir-begin", { index: visited });
+    const entries = await readDir(current);
+    if (sampled) trace.log("read-dir-end", { index: visited, count: entries.length });
+    visited++;
+    for (const entry of entries) {
       const path = await childPath(current, entry.name);
       if (entry.isDirectory) pending.push(path);
       else if (entry.isFile && AUDIO_EXTENSIONS.has(extensionOf(entry.name))) files.push(path);
@@ -94,11 +104,16 @@ const trackFromFile = async (path: string): Promise<Track> => {
  * @returns 可直接交给公共曲库 store 的曲目
  */
 export const scanMobileDirectories = async (directories: readonly string[]): Promise<Track[]> => {
-  const paths = (await Promise.all(directories.map(listAudioFiles))).flat();
+  const trace = startFolderTrace();
+  trace.log("scan-begin", { directories: directories.length });
+  const paths = (await Promise.all(directories.map((dir) => listAudioFiles(dir, trace)))).flat();
+  trace.log("enumerate-end", { audioFiles: paths.length });
   const next: Track[] = [];
   announce({ phase: "scanning", total: paths.length, scanned: 0 });
   for (const [index, path] of paths.entries()) {
+    if (index < 10 || index % 100 === 0) trace.log("track-read-begin", { index });
     next.push(await trackFromFile(path));
+    if (index < 10 || index % 100 === 0) trace.log("track-read-end", { index });
     announce({
       phase: "scanning",
       total: paths.length,
@@ -106,6 +121,7 @@ export const scanMobileDirectories = async (directories: readonly string[]): Pro
       current: pathName(path),
     });
   }
+  trace.log("scan-end", { tracks: next.length });
   return next;
 };
 
@@ -133,11 +149,14 @@ export const getMobileTrack = (id: string): Track | undefined =>
 
 export const mobileLibrary: LibraryApi = {
   scan: async () => {
+    const trace = startFolderTrace();
     try {
       await scanDirectories();
+      trace.log("scan-persisted");
       return success();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      trace.log("scan-error", { errorType: error instanceof Error ? error.name : typeof error });
       announce({ phase: "error", total: 0, scanned: 0, error: message });
       return { success: false, error: message };
     }
@@ -198,28 +217,52 @@ export const mobileLibrary: LibraryApi = {
     success([...tracks].sort(() => Math.random() - 0.5).slice(0, limit)),
   isScanning: async () => success(false),
   addScanDir: async () => {
+    const trace = startFolderTrace();
+    trace.log("add-enter", { busy: addingDirectory, directories: scanDirs.length });
     if (addingDirectory) return { success: false, error: "文件夹选择或导入正在进行中" };
     addingDirectory = true;
+    let stage = "open-pending";
+    const pendingTimer = trace.id
+      ? setTimeout(() => trace.log("still-pending", { waitingFor: stage }), 15000)
+      : undefined;
     try {
-      const selected = await open({
+      const options = {
         directory: true,
-        multiple: false,
+        multiple: false as const,
         recursive: true,
-        fileAccessMode: "copy",
-      });
+        fileAccessMode: "copy" as const,
+        ...(trace.id ? { diagnosticId: trace.id } : {}),
+      };
+      trace.log("open-call", { build: __COMMIT_HASH__, visibility: document.visibilityState });
+      const selected = await open(options);
+      trace.log("open-return", { selected: Boolean(selected) });
       if (!selected) return { success: false, error: "canceled" };
+      stage = "stat-pending";
+      trace.log("stat-begin");
       if (!(await stat(selected)).isDirectory) {
+        trace.log("stat-not-directory");
         return { success: false, error: "请选择文件夹，而不是音频文件" };
       }
+      trace.log("stat-end");
       if (!scanDirs.includes(selected)) {
         scanDirs = [...scanDirs, selected];
+        stage = "persist-pending";
+        trace.log("persist-begin");
         persist();
+        trace.log("persist-end");
       }
+      trace.log("add-success");
       return success(selected);
     } catch (error) {
+      trace.log("add-error", {
+        waitingFor: stage,
+        errorType: error instanceof Error ? error.name : typeof error,
+      });
       return { success: false, error: error instanceof Error ? error.message : String(error) };
     } finally {
+      clearTimeout(pendingTimer);
       addingDirectory = false;
+      trace.log("add-finished");
     }
   },
   removeScanDir: async (directory) => {
