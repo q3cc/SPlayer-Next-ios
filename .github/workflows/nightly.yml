@@ -1,34 +1,68 @@
-# tag（v*）触发
-# 各架构原生 runner 构建 → 合并清单 → 创建 GitHub 草稿 Release
-name: Release
+# Nightly 每夜定时构建与滚动发布
+name: Nightly Build
 
 on:
-  push:
-    tags:
-      - "v*"
+  schedule:
+    # 每天 UTC 18:00 触发
+    - cron: "0 18 * * *"
   workflow_dispatch:
-    inputs:
-      tag:
-        description: "要发布的标签（例如 v1.1.0-beta.1 或 v1.1.0-alpha.1）"
-        required: true
-        type: string
 
 permissions:
   contents: write
 
-env:
-  NODE_VERSION: 22.x
-  RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
-
-# 同一个 tag 的发布串行执行，避免并发上传资源产生竞态
 concurrency:
-  group: release-${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+  group: nightly-release
   cancel-in-progress: false
 
+env:
+  NODE_VERSION: 22.x
+
 jobs:
-  # 各平台/架构在对应的原生 runner 上独立构建
+  # 智能检查 dev 分支自上次发布以来是否有新提交
+  check-commits:
+    name: Check for new commits
+    runs-on: ubuntu-latest
+    outputs:
+      has_new_commits: ${{ steps.check.outputs.has_new_commits }}
+      prev_sha: ${{ steps.check.outputs.prev_sha }}
+    steps:
+      - name: Check out dev branch
+        uses: actions/checkout@v5
+        with:
+          ref: dev
+
+      - name: Compare commit with latest nightly release
+        id: check
+        shell: bash
+        run: |
+          NIGHTLY_TAG="nightly"
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "手动触发构建，直接继续执行"
+            echo "has_new_commits=true" >> "$GITHUB_OUTPUT"
+            echo "prev_sha=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          REMOTE_TAG_SHA=$(git ls-remote origin "refs/tags/$NIGHTLY_TAG" | awk '{print $1}')
+          CURRENT_DEV_SHA=$(git rev-parse HEAD)
+
+          echo "当前 dev 最新 Commit: $CURRENT_DEV_SHA"
+          echo "上次 Nightly Tag Commit: $REMOTE_TAG_SHA"
+          echo "prev_sha=$REMOTE_TAG_SHA" >> "$GITHUB_OUTPUT"
+
+          if [ -n "$REMOTE_TAG_SHA" ] && [ "$REMOTE_TAG_SHA" = "$CURRENT_DEV_SHA" ]; then
+            echo "自上次 Nightly 构建以来无新代码提交，跳过本次夜间构建"
+            echo "has_new_commits=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "检测到新提交代码，启动夜间多平台构建"
+            echo "has_new_commits=true" >> "$GITHUB_OUTPUT"
+          fi
+
+  # 平台独立构建
   build:
     name: Build on ${{ matrix.name }}
+    needs: check-commits
+    if: needs.check-commits.outputs.has_new_commits == 'true'
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -56,7 +90,8 @@ jobs:
       - name: Check out git repository
         uses: actions/checkout@v5
         with:
-          ref: ${{ env.RELEASE_TAG }}
+          ref: dev
+          fetch-depth: 0
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
@@ -74,31 +109,6 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: ". -> target"
-
-      # 校验标签、版本和更新通道
-      - name: Verify release metadata
-        shell: bash
-        run: |
-          VERSION="$(node -p "require('./package.json').version")"
-          if [ "v$VERSION" != "$RELEASE_TAG" ]; then
-            echo "标签 $RELEASE_TAG 与 package.json 版本 v$VERSION 不一致"
-            exit 1
-          fi
-          case "$VERSION" in
-            *-alpha|*-alpha.*)
-              echo "UPDATE_CHANNEL=alpha" >> "$GITHUB_ENV"
-              ;;
-            *-beta|*-beta.*)
-              echo "UPDATE_CHANNEL=beta" >> "$GITHUB_ENV"
-              ;;
-            *-*)
-              echo "不支持的预发布版本格式: $VERSION"
-              exit 1
-              ;;
-            *)
-              echo "UPDATE_CHANNEL=latest" >> "$GITHUB_ENV"
-              ;;
-          esac
 
       # Linux: 安装系统构建/打包依赖
       - name: 安装系统依赖 (Linux)
@@ -123,11 +133,17 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      # 仅构建本机架构
+      # 动态注入递增的 Nightly 构建版本号
+      - name: Generate Nightly Version
+        shell: bash
+        run: node scripts/gen-nightly-version.cjs
+
+      # 构建并生成更新清单
       - name: Build ${{ matrix.name }}
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          UPDATE_CHANNEL: nightly
           CSC_IDENTITY_AUTO_DISCOVERY: false
         run: |
           case "${{ matrix.target }}" in
@@ -155,61 +171,45 @@ jobs:
               ;;
           esac
 
+      # 上传产物以供后续聚合发布
       - name: Upload Artifact
         uses: actions/upload-artifact@v7
         with:
-          name: SPlayer-Next-${{ matrix.name }}
+          name: SPlayer-Next-${{ matrix.target }}
           path: dist/*.*
 
-  # 合并多架构更新清单并创建 GitHub 草稿 Release
+  # 合并多架构更新清单并滚动覆盖发布至单一固定 Tag
   release:
-    name: Create GitHub Release
-    needs: build
+    name: Publish Nightly Release
+    needs: [check-commits, build]
+    if: needs.check-commits.outputs.has_new_commits == 'true'
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
     steps:
-      - name: Checkout code
+      - name: Check out dev branch
         uses: actions/checkout@v5
         with:
-          ref: ${{ env.RELEASE_TAG }}
+          ref: dev
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
         with:
           node-version: ${{ env.NODE_VERSION }}
 
-      - name: Verify release metadata
-        shell: bash
-        run: |
-          VERSION="$(node -p "require('./package.json').version")"
-          if [ "v$VERSION" != "$RELEASE_TAG" ]; then
-            echo "标签 $RELEASE_TAG 与 package.json 版本 v$VERSION 不一致"
-            exit 1
-          fi
-          case "$VERSION" in
-            *-alpha|*-alpha.*)
-              echo "UPDATE_CHANNEL=alpha" >> "$GITHUB_ENV"
-              ;;
-            *-beta|*-beta.*)
-              echo "UPDATE_CHANNEL=beta" >> "$GITHUB_ENV"
-              ;;
-            *-*)
-              echo "不支持的预发布版本格式: $VERSION"
-              exit 1
-              ;;
-            *)
-              echo "UPDATE_CHANNEL=latest" >> "$GITHUB_ENV"
-              ;;
-          esac
-          echo "APP_VERSION=$VERSION" >> "$GITHUB_ENV"
-
       - name: Download all artifacts
         uses: actions/download-artifact@v8
         with:
           path: artifacts
 
-      # 整理待发布资源
+      # 读取注入的 Nightly 版本号
+      - name: Read Nightly Version
+        shell: bash
+        run: |
+          node scripts/gen-nightly-version.cjs
+          VERSION="$(node -p "require('./package.json').version")"
+          echo "APP_VERSION=$VERSION" >> "$GITHUB_ENV"
+
+      # 整理待发布资源并执行清单合并单元测试
       - name: Prepare release assets
         shell: bash
         run: |
@@ -221,31 +221,29 @@ jobs:
           echo "待发布资源："
           ls -1 release-assets
 
-      # 用官方 gh CLI 确定性创建 Release
-      # 正式版保持草稿，预览版直接发布为 prerelease
-      - name: Create GitHub Release
+      # 滚动覆盖发布到固定 Tag nightly
+      - name: Publish or Update Nightly Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NIGHTLY_TAG: nightly
+          PREV_COMMIT_SHA: ${{ needs.check-commits.outputs.prev_sha }}
         shell: bash
         run: |
-          # 重跑场景：若同名 release 已存在则先删除，避免脏状态（保留 tag）
-          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release delete "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --yes
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -f "$NIGHTLY_TAG"
+          git push -f origin "$NIGHTLY_TAG"
+
+          if gh release view "$NIGHTLY_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "正在重置已有 Nightly Release..."
+            gh release delete "$NIGHTLY_TAG" --repo "$GITHUB_REPOSITORY" --yes
           fi
-          if [ "$UPDATE_CHANNEL" != "latest" ]; then
-            gh release create "$RELEASE_TAG" \
-              --repo "$GITHUB_REPOSITORY" \
-              --title "$RELEASE_TAG" \
-              --generate-notes \
-              --verify-tag \
-              --prerelease \
-              release-assets/*
-          else
-            gh release create "$RELEASE_TAG" \
-              --repo "$GITHUB_REPOSITORY" \
-              --title "$RELEASE_TAG" \
-              --generate-notes \
-              --verify-tag \
-              --draft \
-              release-assets/*
-          fi
+
+          node scripts/gen-nightly-notes.cjs notes.md
+
+          gh release create "$NIGHTLY_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "v$APP_VERSION" \
+            --notes-file notes.md \
+            --prerelease \
+            release-assets/*
