@@ -4,19 +4,10 @@ import {
   type BaseRenderer,
   BackgroundRender as CoreBackgroundRender,
   MeshGradientRenderer,
-  IsolationRenderer,
-  PixiRenderer,
 } from "@applemusic-like-lyrics/core";
-import type { PlayerBgRenderer } from "@/types/settings";
 import { getFftFrame } from "@/services/playback";
 import { acquireFft, releaseFft } from "@/services/fftCapture";
 import { getBassPulse, toAmllLowFreqVolume } from "@/services/audioFeatures";
-
-const RENDERER_MAP: Record<PlayerBgRenderer, new (canvas: HTMLCanvasElement) => BaseRenderer> = {
-  mesh: MeshGradientRenderer,
-  isolation: IsolationRenderer,
-  pixi: PixiRenderer,
-};
 
 export interface BackgroundRenderProps {
   /** 界面不可见时暂停所有渲染 */
@@ -35,9 +26,7 @@ export interface BackgroundRenderProps {
   renderScale?: number;
   /** 是否随低频节拍脉动（默认 false，关闭则不采集 FFT） */
   enableBeat?: boolean;
-  /** 渲染引擎标识，默认为 'mesh' */
-  renderEngine?: PlayerBgRenderer;
-  /** 自定义渲染器类（若指定则优先于 renderEngine） */
+  /** 渲染器类，默认为 MeshGradientRenderer */
   renderer?: new (...args: ConstructorParameters<typeof BaseRenderer>) => BaseRenderer;
 }
 
@@ -49,7 +38,7 @@ const props = withDefaults(defineProps<BackgroundRenderProps>(), {
   fps: 30,
   renderScale: 0.5,
   enableBeat: false,
-  renderEngine: "mesh",
+  renderer: () => MeshGradientRenderer,
 });
 
 const wrapperRef = ref<HTMLDivElement | null>(null);
@@ -163,20 +152,13 @@ const syncFftCapture = () => {
   }
 };
 
-const getRendererClass = () => {
-  if (props.renderer) return props.renderer;
-  return RENDERER_MAP[props.renderEngine ?? "mesh"] ?? MeshGradientRenderer;
-};
-
-/**
- * 初始化底层渲染器并挂载至 DOM
- */
-const initRenderer = () => {
+onMounted(() => {
   if (!wrapperRef.value) return;
 
-  const RendererClass = getRendererClass();
-  bgRenderRef.value = CoreBackgroundRender.new(RendererClass);
+  // 初始化 AMLL 底层渲染器
+  bgRenderRef.value = CoreBackgroundRender.new(props.renderer);
 
+  // 设置 Canvas 自适应容器并附着 DOM
   const el = bgRenderRef.value.getElement();
   el.style.width = "100%";
   el.style.height = "100%";
@@ -185,40 +167,19 @@ const initRenderer = () => {
 
   updateRendererState();
   syncFftCapture();
-};
+});
 
-/**
- * 释放渲染器资源并清空容器
- */
-const destroyRenderer = () => {
+onBeforeUnmount(() => {
   stopFftCapture();
 
   const renderer = bgRenderRef.value;
   if (renderer) {
+    // 同步释放底层 Canvas 与 WebGL 上下文，避免上下文泄漏
     renderer.pause();
-    const el = renderer.getElement();
-    el?.remove();
     renderer.dispose();
     bgRenderRef.value = undefined;
   }
-};
-
-onMounted(() => {
-  initRenderer();
 });
-
-onBeforeUnmount(() => {
-  destroyRenderer();
-});
-
-// 监听渲染器引擎切换，平滑重建实例
-watch(
-  () => [props.renderEngine, props.renderer],
-  () => {
-    destroyRenderer();
-    initRenderer();
-  },
-);
 
 // 属性变化监听
 watch(

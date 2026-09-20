@@ -157,7 +157,6 @@ onBeforeUnmount(() => {
         :render-scale="settings.player.playerBgRenderScale"
         :has-lyric="media.parsedLyric.length > 0"
         :enable-beat="settings.player.playerBgBeat"
-        :render-engine="settings.player.playerBgRenderer"
       />
     </div>
   </Transition>

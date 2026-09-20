@@ -7,8 +7,6 @@ import type { QualityLevel } from "@/utils/quality";
 
 /** 播放器背景类型 */
 export type PlayerBgType = "blur" | "solid" | "animation";
-/** 流体背景渲染引擎 */
-export type PlayerBgRenderer = "mesh" | "isolation" | "pixi";
 export type CoverLayout = "default" | "fullscreen";
 
 /**
@@ -205,6 +203,7 @@ export interface LyricSettings {
   /** AMLL 歌词优化 */
   amllCleanUnintentionalOverlaps: boolean;
   amllTryAdvanceStartTime: boolean;
+  amllConvertExcessiveBackgroundLines: boolean;
   amllSyncMainAndBackgroundLines: boolean;
   amllNormalizeSpaces: boolean;
   amllResetLineTimestamps: boolean;
@@ -216,8 +215,6 @@ export interface PlayerSettings {
   theme: "original" | "apple-music";
   /** 播放器背景类型 */
   playerBgType: PlayerBgType;
-  /** 流体背景渲染引擎 */
-  playerBgRenderer: PlayerBgRenderer;
   /** 流体背景帧率（fps） */
   playerBgFps: number;
   /** 流体背景流动速度 */
@@ -244,8 +241,6 @@ export interface PlayerSettings {
   outputDevice: string | null;
   /** 切换输出设备时暂停播放 */
   pauseOnDeviceSwitch: boolean;
-  /** 是否为不同输出设备独立记忆音量 */
-  rememberDeviceVolume: boolean;
   /** 是否启用音乐频谱可视化 */
   enableSpectrum: boolean;
   /** 频谱单条宽度（px） */
@@ -306,10 +301,10 @@ export interface AppearanceSettings {
 
 /** 强迫症设置 */
 export interface PresetSettings {
-  /** 跳过指定关键词歌曲 */
-  skipKeywordsSongs: boolean;
-  /** 跳过指定关键词列表 */
-  skipTrackKeywords: string[];
+  /** Fuck DJ Mode */
+  fuckDjMode: boolean;
+  /** Fuck ** Mode */
+  uncensorProfanity: boolean;
   /** 隐藏歌曲列表的 VIP 标签 */
   hideVipTag: boolean;
   /** 隐藏歌曲列表的音质标签 */
