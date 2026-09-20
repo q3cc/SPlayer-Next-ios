@@ -22,6 +22,38 @@ const readJson = <T>(key: string, fallback: T): T => {
 let tracks = readJson<Track[]>(TRACKS_STORAGE_KEY, []);
 let scanDirs = readJson<string[]>(DIRECTORIES_STORAGE_KEY, []);
 let addingDirectory = false;
+let grantsReady: Promise<void> | undefined;
+let directoryGrants: DirectoryGrant[] = [];
+
+type DirectoryGrant = { directory: string; path: string | null; error: string | null };
+
+const restoreDirectoryGrants = async (): Promise<void> => {
+  if (!isTauri()) return;
+  const response = await invoke<{ directories: DirectoryGrant[] }>(
+    "plugin:dialog|directory_access",
+    {
+      options: { directory: null },
+    },
+  );
+  const grants = response.directories ?? [];
+  directoryGrants = grants;
+  const restored = grants.filter((grant) => grant.path).map((grant) => grant.path as string);
+  const failed = grants.filter((grant) => grant.error);
+  if (restored.length || failed.length) {
+    const grantDirectories = new Set(grants.map((grant) => grant.directory));
+    const preserved = scanDirs.filter(
+      (directory) => !grantDirectories.has(directory) && !restored.includes(directory),
+    );
+    scanDirs = [...new Set([...preserved, ...restored, ...failed.map((grant) => grant.directory)])];
+    persist();
+  }
+};
+
+const ensureDirectoryGrants = (): Promise<void> =>
+  (grantsReady ??= restoreDirectoryGrants().catch((error) => {
+    grantsReady = undefined;
+    throw error;
+  }));
 
 const persist = (): void => {
   localStorage.setItem(TRACKS_STORAGE_KEY, JSON.stringify(tracks));
@@ -126,6 +158,11 @@ export const scanMobileDirectories = async (directories: readonly string[]): Pro
 };
 
 const scanDirectories = async (): Promise<void> => {
+  if (isTauri()) {
+    await ensureDirectoryGrants();
+    const failed = directoryGrants.find((grant) => grant.error);
+    if (failed) throw new Error(failed.error!);
+  }
   tracks = await scanMobileDirectories(scanDirs);
   persist();
   announce({ phase: "done", total: tracks.length, scanned: tracks.length });
@@ -226,17 +263,22 @@ export const mobileLibrary: LibraryApi = {
       ? setTimeout(() => trace.log("still-pending", { waitingFor: stage }), 15000)
       : undefined;
     try {
+      if (isTauri()) await ensureDirectoryGrants();
       const options = {
         directory: true,
         multiple: false as const,
         recursive: true,
-        fileAccessMode: "copy" as const,
+        fileAccessMode: "scoped" as const,
         ...(trace.id ? { diagnosticId: trace.id } : {}),
       };
       trace.log("open-call", { build: __COMMIT_HASH__, visibility: document.visibilityState });
       const selected = await open(options);
       trace.log("open-return", { selected: Boolean(selected) });
       if (!selected) return { success: false, error: "canceled" };
+      if (isTauri()) {
+        grantsReady = undefined;
+        await ensureDirectoryGrants();
+      }
       stage = "stat-pending";
       trace.log("stat-begin");
       if (!(await stat(selected)).isDirectory) {
@@ -266,12 +308,22 @@ export const mobileLibrary: LibraryApi = {
     }
   },
   removeScanDir: async (directory) => {
+    if (isTauri()) {
+      await ensureDirectoryGrants();
+      await invoke("plugin:dialog|directory_access", { options: { directory } });
+      directoryGrants = directoryGrants.filter(
+        (grant) => grant.directory !== directory && grant.path !== directory,
+      );
+    }
     scanDirs = scanDirs.filter((item) => item !== directory);
     tracks = tracks.filter((track) => !track.path || !isWithin(track.path, directory));
     persist();
     return success();
   },
-  getScanDirs: async () => success(scanDirs),
+  getScanDirs: async () => {
+    if (isTauri()) await ensureDirectoryGrants();
+    return success(scanDirs);
+  },
   deleteTracks: async (paths) => {
     let deleted = 0;
     for (const path of paths) {

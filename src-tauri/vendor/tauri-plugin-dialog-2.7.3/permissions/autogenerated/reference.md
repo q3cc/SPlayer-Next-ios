@@ -12,6 +12,7 @@ All dialog types are enabled.
 - `allow-message`
 - `allow-save`
 - `allow-open`
+- `allow-directory-access`
 
 ## Permission Table
 

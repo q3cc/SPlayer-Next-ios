@@ -205,6 +205,7 @@ pub fn init<R: Runtime>() -> TauriPlugin<R> {
             commands::open,
             commands::save,
             commands::message,
+            commands::directory_access,
         ])
         .setup(|app, api| {
             #[cfg(mobile)]

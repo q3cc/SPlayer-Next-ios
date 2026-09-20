@@ -71,6 +71,54 @@ pub struct OpenDialogOptions {
     file_access_mode: Option<FileAccessMode>,
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DirectoryAccessOptions {
+    pub directory: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct DirectoryAccessResponse {
+    pub directories: serde_json::Value,
+}
+
+#[command]
+pub(crate) async fn directory_access<R: Runtime>(
+    window: Window<R>,
+    dialog: State<'_, Dialog<R>>,
+    options: DirectoryAccessOptions,
+) -> Result<DirectoryAccessResponse> {
+    #[cfg(not(target_os = "ios"))]
+    {
+        let _ = (window, dialog, options);
+        return Err(crate::Error::DirectoryAccessNotImplemented);
+    }
+    #[cfg(target_os = "ios")]
+    {
+        let dialog = (*dialog).clone();
+        let response = tauri::async_runtime::spawn_blocking(move || {
+            dialog.directory_access(options)
+        }).await??;
+        if let Some(items) = response.directories.as_array() {
+            for item in items {
+                if let Some(path) = item.get("path").and_then(serde_json::Value::as_str) {
+                    let path = url::Url::parse(path)
+                        .ok()
+                        .and_then(|url| url.to_file_path().ok())
+                        .ok_or_else(|| std::io::Error::new(
+                            std::io::ErrorKind::InvalidData, "无效的目录授权地址"
+                        ))?;
+                    if let Some(scope) = window.try_fs_scope() {
+                        scope.allow_directory(&path, true)?;
+                    }
+                    window.state::<tauri::scope::Scopes>().allow_directory(&path, true)?;
+                }
+            }
+        }
+        Ok(response)
+    }
+}
+
 /// The options for the save dialog API.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]

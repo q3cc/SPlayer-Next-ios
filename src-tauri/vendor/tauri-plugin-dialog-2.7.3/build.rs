@@ -2,9 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-License-Identifier: MIT
 
-const COMMANDS: &[&str] = &["open", "save", "message"];
+const COMMANDS: &[&str] = &["open", "save", "message", "directory_access"];
 
 fn main() {
+    println!("cargo:rerun-if-changed=../DirectoryAccess");
     let result = tauri_plugin::Builder::new(COMMANDS)
         .global_api_script_path("./api-iife.js")
         .android_path("android")

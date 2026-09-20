@@ -1,6 +1,6 @@
 # 文件夹选择诊断
 
-本次仅增加观测，不改变选择器关闭、复制与扫描顺序。必须重新构建并安装 IPA，更新网页资源不能替换 Swift/Rust 埋点。
+本次仅增加观测，不改变选择器关闭、授权保存与扫描顺序。必须重新构建并安装 IPA，更新网页资源不能替换 Swift/Rust 埋点。
 
 ## 采集
 
@@ -20,7 +20,7 @@
 | `present-completed`，没有 `delegate-selected`                 | 系统尚未向应用交付选择结果；不能据此声称复制卡住 |
 | `dismiss-request`，没有 `dismiss-completed`                   | 关闭转场未完成                                   |
 | `coordinate-begin`，没有 `coordinate-accessor`                | 文件协调等待                                     |
-| `copy-begin`，没有 `copy-end`                                 | 目录复制                                         |
+| `bookmark-save-begin`，没有 `bookmark-save-end`               | 安全书签保存                                     |
 | `resolve`，没有 `swift-return`                                | 原生响应或 Rust 反序列化                         |
 | `scope-begin`，没有 `open-return`                             | 文件访问范围授权                                 |
 | `stat-begin` / `persist-begin`                                | 前端目录校验或持久化                             |

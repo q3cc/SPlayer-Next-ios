@@ -39,6 +39,14 @@ impl<R: Runtime> Clone for Dialog<R> {
 }
 
 impl<R: Runtime> Dialog<R> {
+    #[cfg(target_os = "ios")]
+    pub(crate) fn directory_access(
+        &self,
+        options: crate::commands::DirectoryAccessOptions,
+    ) -> crate::Result<crate::commands::DirectoryAccessResponse> {
+        Ok(self.0.run_mobile_plugin("directoryAccess", options)?)
+    }
+
     pub(crate) fn app_handle(&self) -> &AppHandle<R> {
         self.0.app()
     }

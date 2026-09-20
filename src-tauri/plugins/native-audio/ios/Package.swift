@@ -8,13 +8,15 @@ let package = Package(
   dependencies: [
     .package(name: "Tauri", path: "../.tauri/tauri-api"),
     // 保留原生解码与音效链，并修复 FLAC 变码率音源的精确跳转。
-    .package(path: "../../../vendor/AudioStreaming")
+    .package(path: "../../../vendor/AudioStreaming"),
+    .package(path: "../../../vendor/DirectoryAccess")
   ],
   targets: [
     .target(name: "SiriAuthorization", path: "AuthorizationBridge", publicHeadersPath: "include"),
     .target(name: "tauri-plugin-native-audio", dependencies: [
       .byName(name: "Tauri"), .byName(name: "SiriAuthorization"),
-      .product(name: "AudioStreaming", package: "AudioStreaming")
+      .product(name: "AudioStreaming", package: "AudioStreaming"),
+      .product(name: "DirectoryAccess", package: "DirectoryAccess")
     ], path: "Sources", exclude: ["Resources"])
   ]
 )

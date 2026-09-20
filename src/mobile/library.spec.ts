@@ -2,14 +2,22 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mobileLibrary, resolveMobileAudioSource } from "./library";
 import { store } from "./shims/store";
 
-const { open, stat } = vi.hoisted(() => ({ open: vi.fn(), stat: vi.fn() }));
+const { open, stat, invoke } = vi.hoisted(() => ({
+  open: vi.fn(),
+  stat: vi.fn(),
+  invoke: vi.fn(),
+}));
 vi.mock("@tauri-apps/plugin-fs", () => ({ stat }));
 beforeEach(() => {
   open.mockReset();
   stat.mockReset().mockResolvedValue({ isDirectory: true });
 });
 vi.mock("@tauri-apps/plugin-dialog", () => ({ open }));
-vi.mock("@tauri-apps/api/core", () => ({ convertFileSrc: (path: string) => `asset:${path}` }));
+vi.mock("@tauri-apps/api/core", () => ({
+  convertFileSrc: (path: string) => `asset:${path}`,
+  invoke,
+  isTauri: () => false,
+}));
 afterEach(() => {
   store.set("system.diagnosticLogging", false);
   vi.useRealTimers();
@@ -47,7 +55,7 @@ describe("移动端系统目录选择", () => {
       expect.objectContaining({ id, stage: "add-finished" }),
     );
   });
-  it("复用目录选择接口并导入持久副本", async () => {
+  it("复用目录选择接口并请求原目录授权", async () => {
     open.mockResolvedValueOnce("file:///Documents/Imported%20Music/test/music");
     const result = await mobileLibrary.addScanDir();
     expect(result.success).toBe(true);
@@ -55,7 +63,7 @@ describe("移动端系统目录选择", () => {
       directory: true,
       multiple: false,
       recursive: true,
-      fileAccessMode: "copy",
+      fileAccessMode: "scoped",
     });
     expect((await mobileLibrary.getScanDirs()).data).toContain(result.data);
   });

@@ -1,0 +1,11 @@
+# 恢复和移除 iOS 目录书签的权限。
+
+[[permission]]
+identifier = "allow-directory-access"
+description = "Enables restoring and removing saved directory access grants."
+commands.allow = ["directory_access"]
+
+[[permission]]
+identifier = "deny-directory-access"
+description = "Denies restoring and removing saved directory access grants."
+commands.deny = ["directory_access"]

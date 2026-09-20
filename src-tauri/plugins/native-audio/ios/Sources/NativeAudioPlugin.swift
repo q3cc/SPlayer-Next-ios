@@ -1,5 +1,6 @@
 import AVFoundation
 import AudioStreaming
+import DirectoryAccess
 import MediaPlayer
 import Tauri
 import UIKit
@@ -60,6 +61,7 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
   private var loadTimeout: DispatchWorkItem?
   private var autoPlay = true
   private var sourceURL: URL?
+  private var directoryLease: DirectoryLease?
   private(set) var currentTrackId: String?
   private var visible = false
   private var timer: Timer?
@@ -221,10 +223,10 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
       invoke.reject("只读取用户导入的本地音频标签"); return
     }
     Task {
-      let access = url.startAccessingSecurityScopedResource()
-      defer { if access { url.stopAccessingSecurityScopedResource() } }
       do {
-        let asset = AVURLAsset(url: url)
+        let (resolved, lease) = try DirectoryAccess.shared.source(url)
+        defer { withExtendedLifetime(lease) {} }
+        let asset = AVURLAsset(url: resolved)
         let items = try await asset.load(.commonMetadata)
         var value: JSObject = [:]
         for item in items {
@@ -280,7 +282,9 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
       self.player?.delegate = nil
       self.player?.stop()
       self.player = nil
+      self.directoryLease = nil
       do {
+        let (resolved, lease) = try DirectoryAccess.shared.source(url)
         let session = AVAudioSession.sharedInstance()
         try session.setCategory(.playback, mode: .default, policy: .longFormAudio)
         try session.setActive(true)
@@ -288,7 +292,8 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
         self.audioEffects = AudioEffects()
         player.attach(nodes: [self.audioEffects.equalizer, self.audioEffects.timePitch])
         self.player = player
-        self.sourceURL = url
+        self.sourceURL = resolved
+        self.directoryLease = lease
         self.currentTrackId = trackId
         self.autoPlay = autoPlay
         self.applyEffects()
@@ -296,7 +301,7 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
         if !autoPlay { player.volume = 0 }
         self.pendingLoad = invoke
         player.delegate = self
-        player.play(url: url)
+        player.play(url: resolved)
         let timeout = DispatchWorkItem { [weak self, weak player] in
           guard let self = self, self.player === player, let pending = self.pendingLoad else { return }
           self.pendingLoad = nil

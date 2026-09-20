@@ -1,4 +1,5 @@
 fn main() {
+    println!("cargo:rerun-if-changed=../../vendor/DirectoryAccess");
     println!("cargo:rerun-if-changed=../../vendor/AudioStreaming");
     tauri_plugin::Builder::new(&[
         "load",

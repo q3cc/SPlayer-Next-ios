@@ -10,6 +10,7 @@ import Tauri
 import UIKit
 import UniformTypeIdentifiers
 import WebKit
+import DirectoryAccess
 
 enum FilePickerEvent {
   case selected([URL])
@@ -42,6 +43,10 @@ struct FilePickerOptions: Decodable {
 struct SaveFileDialogOptions: Decodable {
   var fileName: String?
   var defaultPath: String?
+}
+
+struct DirectoryAccessOptions: Decodable {
+  let directory: String?
 }
 
 enum FileAccessMode: String, Decodable {
@@ -104,7 +109,26 @@ class DialogPlugin: Plugin {
     onFilePickerResult = { (event: FilePickerEvent) -> Void in
       switch event {
       case .selected(let urls):
-        if args.directory == true && args.fileAccessMode != .scoped {
+        if args.directory == true && args.fileAccessMode == .scoped {
+          DispatchQueue.global(qos: .userInitiated).async {
+            do {
+              trace?.log("bookmark-save-begin", "count=\(urls.count)")
+              let directories = try urls.map { try DirectoryAccess.shared.register($0) }
+              trace?.log("bookmark-save-end")
+              DispatchQueue.main.async {
+                self.finishFilePicker()
+                trace?.log("resolve")
+                invoke.resolve(["files": directories])
+              }
+            } catch {
+              DispatchQueue.main.async {
+                self.finishFilePicker()
+                trace?.log("bookmark-save-error")
+                invoke.reject(error.localizedDescription)
+              }
+            }
+          }
+        } else if args.directory == true && args.fileAccessMode != .scoped {
           DispatchQueue.global(qos: .userInitiated).async {
             do {
               trace?.log("import-begin", "count=\(urls.count)")
@@ -175,7 +199,7 @@ class DialogPlugin: Plugin {
       } else {
         DispatchQueue.main.async {
           // The UTType.item is the catch-all, allowing for any file type to be selected.
-          let contentTypes = args.directory == true ? [UTType.folder] :
+          let contentTypes: [UTType] = args.directory == true ? [UTType.folder] :
             (parsedTypes.isEmpty ? [UTType.item] : parsedTypes)
           let picker: UIDocumentPickerViewController = UIDocumentPickerViewController(
             forOpeningContentTypes: contentTypes,
@@ -198,7 +222,24 @@ class DialogPlugin: Plugin {
     }
   }
 
-  /** iOS 目录只能原位授权；copy 模式在授权期间协调读取并导入持久沙盒。 */
+  @objc public func directoryAccess(_ invoke: Invoke) throws {
+    let args = try invoke.parseArgs(DirectoryAccessOptions.self)
+    DispatchQueue.global(qos: .userInitiated).async {
+      do {
+        if let directory = args.directory {
+          try DirectoryAccess.shared.remove(directory)
+          invoke.resolve(["directories": []])
+        } else {
+          let grants = try DirectoryAccess.shared.restore()
+          let data = try JSONEncoder().encode(grants)
+          let value = try JSONSerialization.jsonObject(with: data) as! [[String: Any]]
+          invoke.resolve(["directories": value])
+        }
+      } catch { invoke.reject(error.localizedDescription) }
+    }
+  }
+
+  /** 兼容调用方的副本模式；授权模式不会复制目录内容。 */
   private func importDirectory(_ source: URL, trace: FolderPickerTrace?) throws -> URL {
     trace?.log("access-begin", "fileURL=\(source.isFileURL)")
     let accessed = source.startAccessingSecurityScopedResource()

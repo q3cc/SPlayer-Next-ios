@@ -19,6 +19,8 @@ pub enum Error {
     #[cfg(mobile)]
     #[error("Folder picker is not implemented on mobile")]
     FolderPickerNotImplemented,
+    #[error("Directory access is not implemented on this platform")]
+    DirectoryAccessNotImplemented,
     #[error(transparent)]
     Fs(#[from] tauri_plugin_fs::Error),
 }
