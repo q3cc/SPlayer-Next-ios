@@ -355,7 +355,6 @@ class DialogPlugin: Plugin {
     }
     trace?.log("present-state", "attached=\(presenter.viewIfLoaded?.window != nil) transitioning=\(presenter.transitionCoordinator != nil)")
     presenter.present(viewControllerToPresent, animated: true) {
-      viewControllerToPresent.presentationController?.delegate = self.filePickerController
       trace?.log("present-completed")
     }
     if trace != nil {
