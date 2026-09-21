@@ -134,7 +134,7 @@ public class FilePickerController: NSObject {
 }
 
 extension FilePickerController: UIDocumentPickerDelegate {
-  public func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+  private func handlePickedDocuments(_ controller: UIDocumentPickerViewController, urls: [URL]) {
     let trace = plugin.pickerTrace
     trace?.log("delegate-selected", "count=\(urls.count) presented=\(controller.presentingViewController != nil)")
     // 即使结果已经消费，也关闭仍可交互的系统面板，避免“使用文件夹”反复触发。
@@ -142,6 +142,15 @@ extension FilePickerController: UIDocumentPickerDelegate {
     trace?.log("dismiss-request")
     dismissViewController(controller) { trace?.log("dismiss-completed") }
     plugin.onFilePickerEvent(.selected(urls))
+  }
+
+  public func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+    handlePickedDocuments(controller, urls: urls)
+  }
+
+  @available(iOS, deprecated: 11.0)
+  public func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentAt url: URL) {
+    handlePickedDocuments(controller, urls: [url])
   }
 
   public func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {

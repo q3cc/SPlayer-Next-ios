@@ -17,6 +17,21 @@ final class IpaUpdatePlugin: Plugin {
     guard downloaded?.path == file.path else { return }
     try? FileManager.default.removeItem(at: file.deletingLastPathComponent())
     downloaded = nil
+    cleanupUpdateCacheRoot(file.deletingLastPathComponent().deletingLastPathComponent())
+  }
+
+  /** 删除上次中断或已失效的更新目录，避免缓存长期占用安装包空间。 */
+  private func cleanupUpdateCacheRoot(_ root: URL, keeping: URL? = nil) {
+    let entries = (try? FileManager.default.contentsOfDirectory(
+      at: root, includingPropertiesForKeys: [.isDirectoryKey])) ?? []
+    for entry in entries where entry.path != keeping?.path {
+      guard (try? entry.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else { continue }
+      try? FileManager.default.removeItem(at: entry)
+    }
+    if keeping == nil,
+       (try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil).isEmpty) == true {
+      try? FileManager.default.removeItem(at: root)
+    }
   }
 
   @objc func download(_ invoke: Invoke) throws {
@@ -29,6 +44,7 @@ final class IpaUpdatePlugin: Plugin {
       let root = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
         .appendingPathComponent("IpaUpdates", isDirectory: true)
       let folder = root.appendingPathComponent(UUID().uuidString, isDirectory: true)
+      self.cleanupUpdateCacheRoot(root)
       let task = IpaDownload(url: url, size: request.size, digest: request.digest, directory: folder,
         progress: { received, total, speed in
           DispatchQueue.main.async {
