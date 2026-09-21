@@ -199,11 +199,20 @@ class DialogPlugin: Plugin {
       } else {
         DispatchQueue.main.async {
           // The UTType.item is the catch-all, allowing for any file type to be selected.
-          let contentTypes: [UTType] = args.directory == true ? [UTType.folder] :
-            (parsedTypes.isEmpty ? [UTType.item] : parsedTypes)
-          let picker: UIDocumentPickerViewController = UIDocumentPickerViewController(
-            forOpeningContentTypes: contentTypes,
-            asCopy: args.directory == true || args.fileAccessMode == .scoped ? false : true)
+          let picker: UIDocumentPickerViewController
+          if args.directory == true {
+            // iPadOS 27 的现代文件夹初始化器在部分 Files provider 上会吞掉“打开”回调。
+            // 旧的 .open 初始化器仍然走系统原生目录确认路径，并且同样返回安全范围 URL。
+            picker = UIDocumentPickerViewController(
+              documentTypes: [UTType.folder.identifier],
+              in: .open)
+            trace?.log("picker-mode", "directory=legacy-open")
+          } else {
+            let contentTypes: [UTType] = parsedTypes.isEmpty ? [UTType.item] : parsedTypes
+            picker = UIDocumentPickerViewController(
+              forOpeningContentTypes: contentTypes,
+              asCopy: args.fileAccessMode == .scoped ? false : true)
+          }
 
           if let defaultPath = args.defaultPath {
             picker.directoryURL = URL(string: defaultPath)
@@ -211,7 +220,6 @@ class DialogPlugin: Plugin {
 
           trace?.log("picker-created", "directory=\(args.directory == true) asCopy=\(!(args.directory == true || args.fileAccessMode == .scoped))")
           picker.delegate = self.filePickerController
-          picker.presentationController?.delegate = self.filePickerController
           picker.allowsMultipleSelection = args.multiple ?? false
           picker.modalPresentationStyle = .fullScreen
           self.presentViewController(picker)
@@ -347,6 +355,7 @@ class DialogPlugin: Plugin {
     }
     trace?.log("present-state", "attached=\(presenter.viewIfLoaded?.window != nil) transitioning=\(presenter.transitionCoordinator != nil)")
     presenter.present(viewControllerToPresent, animated: true) {
+      viewControllerToPresent.presentationController?.delegate = self.filePickerController
       trace?.log("present-completed")
     }
     if trace != nil {
