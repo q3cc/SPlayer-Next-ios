@@ -12,6 +12,13 @@ final class IpaUpdatePlugin: Plugin {
   private var downloadTask: IpaDownload?
   private var downloaded: URL?
 
+  /** 分享完成后删除临时 IPA；用户取消分享时保留文件以便重试。 */
+  private func cleanupDownloaded(_ file: URL) {
+    guard downloaded?.path == file.path else { return }
+    try? FileManager.default.removeItem(at: file.deletingLastPathComponent())
+    downloaded = nil
+  }
+
   @objc func download(_ invoke: Invoke) throws {
     let request = try invoke.parseArgs(DownloadRequest.self)
     DispatchQueue.main.async {
@@ -79,6 +86,10 @@ final class IpaUpdatePlugin: Plugin {
         popover.sourceView = presenter.view
         popover.sourceRect = CGRect(x: presenter.view.bounds.midX, y: presenter.view.bounds.midY, width: 1, height: 1)
         popover.permittedArrowDirections = []
+      }
+      sheet.completionWithItemsHandler = { [weak self] _, completed, _, _ in
+        guard completed else { return }
+        self?.cleanupDownloaded(file)
       }
       presenter.present(sheet, animated: true) {
         guard sheet.presentingViewController != nil else {
