@@ -74,8 +74,7 @@ public final class DirectoryAccess {
     guard try url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory == true else {
       throw Self.failure("请选择文件夹，而不是音频文件")
     }
-    // iOS 的文稿选择器书签自带授权，withSecurityScope 仅适用于 macOS。
-    let data = try url.bookmarkData(options: .minimalBookmark,
+    let data = try url.bookmarkData(options: [.minimalBookmark, .withSecurityScope],
       includingResourceValuesForKeys: nil, relativeTo: nil)
     let key = bookmarks.first(where: {
       $0.directory == url.absoluteString || active[$0.directory]?.standardizedFileURL == url.standardizedFileURL
@@ -104,7 +103,7 @@ public final class DirectoryAccess {
         throw Self.failure("原文件夹不存在，请重新添加文件夹")
       }
       if stale {
-        let data = try url.bookmarkData(options: .minimalBookmark,
+        let data = try url.bookmarkData(options: [.minimalBookmark, .withSecurityScope],
           includingResourceValuesForKeys: nil, relativeTo: nil)
         try save(bookmarks.map {
           $0.directory == bookmark.directory ? Bookmark(directory: $0.directory, data: data) : $0

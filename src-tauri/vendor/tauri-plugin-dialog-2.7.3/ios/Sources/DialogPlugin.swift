@@ -201,12 +201,11 @@ class DialogPlugin: Plugin {
           // The UTType.item is the catch-all, allowing for any file type to be selected.
           let picker: UIDocumentPickerViewController
           if args.directory == true {
-            // iPadOS 27 的现代文件夹初始化器在部分 Files provider 上会吞掉“打开”回调。
-            // 旧的 .open 初始化器仍然走系统原生目录确认路径，并且同样返回安全范围 URL。
+            // 目录选择需要使用现代初始化器，系统会返回安全范围 URL。
             picker = UIDocumentPickerViewController(
-              documentTypes: [UTType.folder.identifier],
-              in: .open)
-            trace?.log("picker-mode", "directory=legacy-open")
+              forOpeningContentTypes: [.folder],
+              asCopy: false)
+            trace?.log("picker-mode", "directory=folder-open-in-place")
           } else {
             let contentTypes: [UTType] = parsedTypes.isEmpty ? [UTType.item] : parsedTypes
             picker = UIDocumentPickerViewController(
@@ -410,9 +409,11 @@ class DialogPlugin: Plugin {
         self.presentViewController(picker)
       }
     } else {
-      let documentTypes = parsedTypes.isEmpty ? ["public.data"] : parsedTypes
+      let documentTypes = args.directory == true ? [kUTTypeFolder as String] :
+        (parsedTypes.isEmpty ? ["public.data"] : parsedTypes)
       DispatchQueue.main.async {
-        let picker = UIDocumentPickerViewController(documentTypes: documentTypes, in: .import)
+        let mode: UIDocumentPickerMode = args.directory == true ? .open : .import
+        let picker = UIDocumentPickerViewController(documentTypes: documentTypes, in: mode)
         if let defaultPath = args.defaultPath {
           picker.directoryURL = URL(string: defaultPath)
         }
