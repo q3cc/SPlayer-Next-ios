@@ -63,6 +63,8 @@ export interface LibraryApi {
   isScanning: () => Promise<IpcResponse<boolean>>;
   /** 弹出目录选择器，添加扫描目录 */
   addScanDir: () => Promise<IpcResponse<string>>;
+  /** 弹出文件选择器，添加本地歌曲（移动端引导页使用） */
+  addTracksFromFiles?: () => Promise<IpcResponse<number>>;
   /** 移除扫描目录及其下曲目 */
   removeScanDir: (dir: string) => Promise<IpcResponse>;
   /** 获取已配置的扫描目录 */

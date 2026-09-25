@@ -24,6 +24,44 @@ afterEach(() => {
 });
 
 describe("移动端系统目录选择", () => {
+  it("首次建库支持多选歌曲并持久化，重复文件不会重复添加", async () => {
+    open.mockResolvedValueOnce([
+      "file:///Documents/song.mp3",
+      "file:///Documents/song.mp3",
+      "file:///Documents/cover.jpg",
+      "file:///Documents/second.flac",
+    ]);
+    expect(await mobileLibrary.addTracksFromFiles?.()).toEqual({ success: true, data: 2 });
+    expect(open).toHaveBeenCalledWith({
+      multiple: true,
+      directory: false,
+      filters: [
+        {
+          name: "Audio",
+          extensions: ["mp3", "m4a", "aac", "wav", "flac", "ogg", "opus", "ape"],
+        },
+      ],
+    });
+    expect((await mobileLibrary.getTracks()).data).toHaveLength(2);
+    expect(JSON.parse(localStorage.getItem("splayer.mobile.library") ?? "[]")).toHaveLength(2);
+  });
+
+  it("歌曲选择取消时不修改曲库", async () => {
+    const before = (await mobileLibrary.getTracks()).data?.length ?? 0;
+    open.mockResolvedValueOnce(null);
+    expect(await mobileLibrary.addTracksFromFiles?.()).toEqual({
+      success: false,
+      error: "canceled",
+    });
+    expect((await mobileLibrary.getTracks()).data).toHaveLength(before);
+  });
+
+  it("重新扫描无授权目录时保留首次手动添加的歌曲", async () => {
+    expect((await mobileLibrary.getTracks()).data).toHaveLength(2);
+    expect(await mobileLibrary.scan()).toEqual({ success: true });
+    expect((await mobileLibrary.getTracks()).data).toHaveLength(2);
+  });
+
   it("诊断标识穿过 open 参数，超时观察不取消选择，结束后清理计时器", async () => {
     vi.useFakeTimers();
     store.set("system.diagnosticLogging", true);

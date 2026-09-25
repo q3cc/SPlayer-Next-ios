@@ -9,6 +9,7 @@ import { startFolderTrace } from "./folderTrace";
 const TRACKS_STORAGE_KEY = "splayer.mobile.library";
 const DIRECTORIES_STORAGE_KEY = "splayer.mobile.scanDirs";
 const AUDIO_EXTENSIONS = new Set(["mp3", "m4a", "aac", "wav", "flac", "ogg", "opus", "ape"]);
+const AUDIO_FILTER_EXTENSIONS = [...AUDIO_EXTENSIONS];
 const listeners = new Set<(progress: ScanProgress) => void>();
 
 const readJson = <T>(key: string, fallback: T): T => {
@@ -163,7 +164,13 @@ const scanDirectories = async (): Promise<void> => {
     const failed = directoryGrants.find((grant) => grant.error);
     if (failed) throw new Error(failed.error!);
   }
-  tracks = await scanMobileDirectories(scanDirs);
+  const scanned = await scanMobileDirectories(scanDirs);
+  const scannedDirectories = scanDirs;
+  const imported = tracks.filter(
+    (track) =>
+      !track.path || !scannedDirectories.some((directory) => isWithin(track.path!, directory)),
+  );
+  tracks = [...imported, ...scanned];
   persist();
   announce({ phase: "done", total: tracks.length, scanned: tracks.length });
 };
@@ -183,6 +190,31 @@ export const resolveMobileAudioSource = (source: string): string => {
 
 export const getMobileTrack = (id: string): Track | undefined =>
   tracks.find((track) => track.id === id);
+
+const importFiles = (paths: string[]): number => {
+  const known = new Set(tracks.map((track) => track.path));
+  const now = Date.now();
+  const additions = paths
+    .filter((path) => {
+      if (!AUDIO_EXTENSIONS.has(extensionOf(path)) || known.has(path)) return false;
+      known.add(path);
+      return true;
+    })
+    .map<Track>((path) => ({
+      id: idFor(path),
+      source: "local",
+      path,
+      title: withoutExtension(pathName(path)),
+      artists: [{ name: "Unknown Artist" }],
+      duration: 0,
+      mtime: now,
+      ctime: now,
+    }));
+  if (!additions.length) return 0;
+  tracks = [...tracks, ...additions];
+  persist();
+  return additions.length;
+};
 
 export const mobileLibrary: LibraryApi = {
   scan: async () => {
@@ -253,6 +285,26 @@ export const mobileLibrary: LibraryApi = {
   getRandomTracks: async (limit) =>
     success([...tracks].sort(() => Math.random() - 0.5).slice(0, limit)),
   isScanning: async () => success(false),
+  addTracksFromFiles: async () => {
+    if (addingDirectory) return { success: false, error: "文件选择或导入正在进行中" };
+    addingDirectory = true;
+    try {
+      const selected = await open({
+        multiple: true,
+        directory: false,
+        filters: [{ name: "Audio", extensions: AUDIO_FILTER_EXTENSIONS }],
+      });
+      const paths = selected == null ? [] : Array.isArray(selected) ? selected : [selected];
+      if (!paths.length) return { success: false, error: "canceled" };
+      const added = importFiles(paths);
+      announce({ phase: "done", total: added, scanned: added });
+      return success(added);
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    } finally {
+      addingDirectory = false;
+    }
+  },
   addScanDir: async () => {
     const trace = startFolderTrace();
     trace.log("add-enter", { busy: addingDirectory, directories: scanDirs.length });

@@ -52,7 +52,10 @@
     },
     "library": {
       "title": "Local Music Library",
-      "subtitle": "Add folders to scan and SPlayer-Next will index them automatically. You can add more later."
+      "subtitle": "Add folders to scan and SPlayer-Next will index them automatically. You can add more later.",
+      "mobileSubtitle": "Choose songs to add to your library. You can select multiple files or add more later.",
+      "addSongs": "Add Songs",
+      "songsAdded": "Added {count} songs"
     },
     "streaming": {
       "title": "Streaming Servers",

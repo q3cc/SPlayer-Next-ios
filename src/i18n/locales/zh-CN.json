@@ -40,7 +40,10 @@
     },
     "library": {
       "title": "本地音乐库",
-      "subtitle": "添加要扫描的音乐文件夹，SPlayer-Next 会自动建立曲库索引。可以添加多个目录，也可以之后再添加"
+      "subtitle": "添加要扫描的音乐文件夹，SPlayer-Next 会自动建立曲库索引。可以添加多个目录，也可以之后再添加",
+      "mobileSubtitle": "选择要加入音乐库的歌曲，可以多选，也可以之后再添加",
+      "addSongs": "添加歌曲",
+      "songsAdded": "已添加 {count} 首歌曲"
     },
     "streaming": {
       "title": "流媒体服务器",
