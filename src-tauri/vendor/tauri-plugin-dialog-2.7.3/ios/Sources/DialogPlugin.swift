@@ -201,11 +201,12 @@ class DialogPlugin: Plugin {
           // The UTType.item is the catch-all, allowing for any file type to be selected.
           let picker: UIDocumentPickerViewController
           if args.directory == true {
-            // 目录选择需要使用现代初始化器，系统会返回安全范围 URL。
+            // iPadOS 的现代 folder 初始化器在部分 Files provider 上会把确认动作当作取消。
+            // 旧的 open 初始化器仍返回安全范围 URL，并能稳定触发 didPickDocumentsAt。
             picker = UIDocumentPickerViewController(
-              forOpeningContentTypes: [.folder],
-              asCopy: false)
-            trace?.log("picker-mode", "directory=folder-open-in-place")
+              documentTypes: [UTType.folder.identifier],
+              in: .open)
+            trace?.log("picker-mode", "directory=legacy-open")
           } else {
             let contentTypes: [UTType] = parsedTypes.isEmpty ? [UTType.item] : parsedTypes
             picker = UIDocumentPickerViewController(
