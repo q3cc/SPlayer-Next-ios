@@ -16,6 +16,7 @@ import * as player from "@/core/player";
 const { t } = useI18n();
 const libraryStore = useLibraryStore();
 const { tracks, scanDirs, scanning, scanProgress, initialized } = storeToRefs(libraryStore);
+const mobile = typeof window !== "undefined" && Boolean(window.api?.library?.addTracksFromFiles);
 
 const playbackContext = computed<PlaybackContext>(() => ({
   originId: "library",
@@ -46,6 +47,16 @@ const handleQuickAddFolder = async (): Promise<void> => {
   if (addingFolder.value) return;
   addingFolder.value = true;
   try {
+    if (mobile) {
+      const res = await libraryStore.addTracksFromFiles();
+      if (res.success) {
+        await libraryStore.load();
+        if (res.data) toast.success(t("library.songsAdded", { count: res.data }));
+      } else if (res.error && res.error !== "canceled") {
+        toast.error(res.error);
+      }
+      return;
+    }
     const res = await libraryStore.addScanDir();
     if (res.success) {
       libraryStore.startScan(false);
@@ -80,16 +91,23 @@ const scanPercent = computed(() => {
 // 目录管理弹窗
 const folderDialogOpen = ref(false);
 
-const moreMenuItems = computed<DropdownMenuItem[]>(() => [
-  { key: "batchManage", label: t("songList.batch.manage"), icon: IconLucideListChecks },
-  { key: "folders", label: t("library.folders"), icon: IconFolderOpen, separator: true },
-  {
-    key: "scan",
-    label: scanning.value ? t("library.scanning") : t("library.scanAll"),
-    icon: IconRefreshCw,
-    disabled: scanning.value || scanDirs.value.length === 0,
-  },
-]);
+const moreMenuItems = computed<DropdownMenuItem[]>(() => {
+  const items: DropdownMenuItem[] = [
+    { key: "batchManage", label: t("songList.batch.manage"), icon: IconLucideListChecks },
+  ];
+  if (!mobile) {
+    items.push(
+      { key: "folders", label: t("library.folders"), icon: IconFolderOpen, separator: true },
+      {
+        key: "scan",
+        label: scanning.value ? t("library.scanning") : t("library.scanAll"),
+        icon: IconRefreshCw,
+        disabled: scanning.value || scanDirs.value.length === 0,
+      },
+    );
+  }
+  return items;
+});
 
 // 更多菜单
 const handleMoreMenu = (key: string): void => {
@@ -185,7 +203,7 @@ onUnmounted(() => {
           <SButton
             variant="secondary"
             circle
-            :disabled="scanning || scanDirs.length === 0"
+            :disabled="mobile || scanning || scanDirs.length === 0"
             @click="libraryStore.startScan(true)"
           >
             <template #icon>
@@ -232,20 +250,26 @@ onUnmounted(() => {
       <div class="text-center text-on-surface-variant/50">
         <IconLucideMusic class="size-12 mx-auto mb-3 opacity-30" />
         <div class="text-sm mb-1">{{ t("library.empty") }}</div>
-        <div class="text-xs mb-4 opacity-70">{{ t("library.emptyHint") }}</div>
+        <div class="text-xs mb-4 opacity-70">
+          {{ t(mobile ? "library.emptySongsHint" : "library.emptyHint") }}
+        </div>
         <SButton
           type="primary"
           variant="secondary"
           :loading="addingFolder"
           @click="handleQuickAddFolder"
         >
-          <template #icon><IconLucideFolderPlus /></template>
-          {{ t("library.addFolder") }}
+          <template #icon>
+            <IconLucideMusic2 v-if="mobile" />
+            <IconLucideFolderPlus v-else />
+          </template>
+          {{ t(mobile ? "library.addSongs" : "library.addFolder") }}
         </SButton>
       </div>
     </div>
     <!-- 文件夹管理 -->
     <SDialog
+      v-if="!mobile"
       v-model:open="folderDialogOpen"
       :title="t('library.folders')"
       :description="t('library.foldersDescription')"

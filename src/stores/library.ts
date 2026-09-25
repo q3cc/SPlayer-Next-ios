@@ -176,6 +176,17 @@ export const useLibraryStore = defineStore("library", () => {
     return res;
   };
 
+  /** 添加移动端本地歌曲文件 */
+  const addTracksFromFiles = async (): Promise<{
+    success: boolean;
+    data?: number;
+    error?: string;
+  }> => {
+    const add = window.api.library.addTracksFromFiles;
+    if (!add) return { success: false, error: "当前平台不支持直接添加歌曲" };
+    return add();
+  };
+
   /** 移除扫描目录 */
   const removeScanDir = async (dir: string): Promise<void> => {
     await window.api.library.removeScanDir(dir);
@@ -351,6 +362,7 @@ export const useLibraryStore = defineStore("library", () => {
     startScan,
     cancelScan,
     addScanDir,
+    addTracksFromFiles,
     removeScanDir,
     subscribeScanProgress,
     unsubscribeScanProgress,
