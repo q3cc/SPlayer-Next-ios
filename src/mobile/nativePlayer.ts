@@ -161,16 +161,50 @@ export const createNativePlayer = (fallback: PlayerApi): PlayerApi => {
           bitRate: 0,
           codec: "Audio",
         };
+        const metadata: {
+          title?: string;
+          artist?: string;
+          album?: string;
+          duration?: number;
+          embeddedLyric?: string;
+          externalLyrics?: {
+            format: import("@shared/types/lyrics").LyricFormat;
+            path: string;
+          }[];
+        } =
+          options.meta?.source === "local"
+            ? await invoke<{
+                title?: string;
+                artist?: string;
+                album?: string;
+                duration?: number;
+                embeddedLyric?: string;
+                externalLyrics?: {
+                  format: import("@shared/types/lyrics").LyricFormat;
+                  path: string;
+                }[];
+              }>("plugin:native-audio|read_metadata", {
+                source,
+                autoPlay: false,
+                trackId: null,
+              }).catch(() => ({}))
+            : {};
         return {
           success: true,
           data: {
-            detail: { quality, externalLyrics: [] },
+            detail: {
+              quality,
+              embeddedLyric: metadata.embeddedLyric,
+              externalLyrics: metadata.externalLyrics ?? [],
+            },
             mediaInfo: {
-              title: options.meta?.title,
-              artists: options.meta?.artists,
-              album: options.meta?.album,
+              title: options.meta?.title ?? metadata.title,
+              artists:
+                options.meta?.artists ??
+                (metadata.artist ? [{ name: metadata.artist }] : undefined),
+              album: options.meta?.album ?? (metadata.album ? { name: metadata.album } : undefined),
               cover: options.meta?.cover,
-              duration: value.duration || options.meta?.duration || 0,
+              duration: value.duration || options.meta?.duration || metadata.duration || 0,
               quality,
             },
           },
@@ -206,6 +240,18 @@ export const createNativePlayer = (fallback: PlayerApi): PlayerApi => {
       }
     },
     getCoverRaw: async () => ({ success: true, data: cover }),
+    readLyricFile: async (filePath) => {
+      const fallbackResult = await fallback.readLyricFile(filePath);
+      if (fallbackResult.success && fallbackResult.data != null) return fallbackResult;
+      try {
+        return {
+          success: true,
+          data: await invoke<string>("plugin:native-audio|read_lyric_file", { path: filePath }),
+        };
+      } catch (error) {
+        return { success: false, error: String(error) };
+      }
+    },
     setVolume: async (volume) => {
       try {
         await invoke("plugin:native-audio|system_volume", { value: volume });

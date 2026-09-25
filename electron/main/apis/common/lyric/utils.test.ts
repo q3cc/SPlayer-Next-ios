@@ -70,4 +70,18 @@ describe("buildLyricSearchKeyword", () => {
       "歌名 歌手 A 歌手 B",
     );
   });
+
+  it("文件名带歌手但标签为 Unknown Artist 时按文件名匹配", () => {
+    const best = pickBestCandidate(
+      [{ name: "晴天", artist: "周杰伦", duration: 180_000, extra: { id: "hit" } }],
+      track({ title: "周杰伦 - 晴天", artists: [{ name: "Unknown Artist" }] }),
+    );
+    assert.equal(best?.extra.id, "hit");
+    assert.equal(
+      buildLyricSearchKeyword(
+        track({ title: "周杰伦 - 晴天", artists: [{ name: "Unknown Artist" }] }),
+      ),
+      "晴天 周杰伦",
+    );
+  });
 });

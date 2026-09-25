@@ -11,6 +11,9 @@ private struct SourceRequest: Decodable {
   let autoPlay: Bool
   let trackId: String?
 }
+private struct LyricFileRequest: Decodable {
+  let path: String
+}
 private struct ControlRequest: Decodable {
   let action: String
   let position: Double?
@@ -225,10 +228,15 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
     Task {
       do {
         let (resolved, lease) = try DirectoryAccess.shared.source(url)
-        defer { withExtendedLifetime(lease) {} }
+        let directAccess = lease == nil && resolved.startAccessingSecurityScopedResource()
+        defer {
+          if directAccess { resolved.stopAccessingSecurityScopedResource() }
+          withExtendedLifetime(lease) {}
+        }
         let asset = AVURLAsset(url: resolved)
         let items = try await asset.load(.commonMetadata)
         var value: JSObject = [:]
+        var embeddedLyric: String?
         for item in items {
           if let text = try? await item.load(.stringValue) {
             switch item.commonKey {
@@ -237,13 +245,61 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
             case .commonKeyAlbumName: value["album"] = text
             default: break
             }
+            let identifier = item.identifier?.rawValue.lowercased() ?? ""
+            if identifier.contains("lyrics") || identifier.contains("unsyncedlyrics") {
+              if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { embeddedLyric = text }
+            }
           }
         }
+        if let embeddedLyric { value["embeddedLyric"] = embeddedLyric }
+        value["externalLyrics"] = Self.externalLyrics(for: resolved)
         if let duration = try? await asset.load(.duration), duration.seconds.isFinite {
           value["duration"] = max(0, duration.seconds * 1000)
         }
         invoke.resolve(value)
       } catch { invoke.reject("音频标签读取失败") }
+    }
+  }
+
+  /** 扫描与音频同名的歌词文件，路径保持原位置以便后续按授权读取。 */
+  private static func externalLyrics(for audioURL: URL) -> [[String: String]] {
+    let extensions = ["ttml", "lys", "qrc", "krc", "yrc", "lrc", "ass", "srt"]
+    let directory = audioURL.deletingLastPathComponent()
+    let stem = audioURL.deletingPathExtension().lastPathComponent
+    guard let urls = try? FileManager.default.contentsOfDirectory(
+      at: directory,
+      includingPropertiesForKeys: [.isRegularFileKey],
+      options: [.skipsHiddenFiles]) else { return [] }
+    return urls.compactMap { url in
+      guard url.deletingPathExtension().lastPathComponent.caseInsensitiveCompare(stem) == .orderedSame,
+            extensions.contains(url.pathExtension.lowercased()) else { return nil }
+      return ["format": url.pathExtension.lowercased(), "path": url.absoluteString]
+    }
+  }
+
+  @objc func readLyricFile(_ invoke: Invoke) throws {
+    let request = try invoke.parseArgs(LyricFileRequest.self)
+    guard let url = request.path.hasPrefix("/") ? URL(fileURLWithPath: request.path) : URL(string: request.path), url.isFileURL else {
+      invoke.reject("只读取用户选择的本地歌词文件"); return
+    }
+    Task {
+      do {
+        let (resolved, lease) = try DirectoryAccess.shared.source(url)
+        let directAccess = lease == nil && resolved.startAccessingSecurityScopedResource()
+        defer {
+          if directAccess { resolved.stopAccessingSecurityScopedResource() }
+          withExtendedLifetime(lease) {}
+        }
+        let data = try Data(contentsOf: resolved)
+        let text = String(data: data, encoding: .utf8)
+          ?? String(data: data, encoding: .utf16)
+          ?? String(data: data, encoding: .utf16LittleEndian)
+          ?? String(data: data, encoding: .utf16BigEndian)
+        guard let text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+          invoke.reject("歌词文件为空或编码不受支持"); return
+        }
+        invoke.resolve(text)
+      } catch { invoke.reject("歌词文件读取失败") }
     }
   }
 

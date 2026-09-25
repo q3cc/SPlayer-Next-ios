@@ -515,6 +515,11 @@
       "title": "Lyric Offset",
       "hint": "Positive values advance lyrics, in milliseconds"
     },
+    "externalLyric": {
+      "pick": "Add external lyrics",
+      "loaded": "External lyrics loaded",
+      "failed": "Could not read or parse external lyrics"
+    },
     "lyricCredit": "Lyrics by",
     "copyLyric": {
       "title": "Copy Lyrics",

@@ -503,6 +503,11 @@
       "title": "歌词偏移",
       "hint": "正值为歌词提前，单位毫秒"
     },
+    "externalLyric": {
+      "pick": "添加外置歌词",
+      "loaded": "外置歌词已加载",
+      "failed": "外置歌词读取或解析失败"
+    },
     "lyricCredit": "歌词制作",
     "copyLyric": {
       "title": "复制歌词",

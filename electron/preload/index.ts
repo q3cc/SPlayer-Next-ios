@@ -124,6 +124,8 @@ const api = {
     getCoverRaw: () => ipcRenderer.invoke("player:getCoverRaw"),
     // 按需读取外部歌词文件内容
     readLyricFile: (filePath: string) => ipcRenderer.invoke("player:readLyricFile", filePath),
+    // 选择外部歌词文件
+    pickLyricFile: () => ipcRenderer.invoke("player:pickLyricFile"),
     // 同步播放模式到主进程（供托盘菜单显示）
     syncPlayMode: (repeatMode: string, shuffleMode: string) =>
       ipcRenderer.send("player:syncPlayMode", repeatMode, shuffleMode),

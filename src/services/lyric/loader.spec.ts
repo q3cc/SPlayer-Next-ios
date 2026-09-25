@@ -126,6 +126,22 @@ describe("lyric loader", () => {
     expect(media.activeLyric?.format).toBe("lrc");
   });
 
+  it("外置歌词读取失败时回退到内嵌歌词", async () => {
+    const media = useMediaStore();
+    media.track = { ...createTrack("embedded", "local"), path: "/music/embedded.mp3" };
+    media.detail = {
+      quality: { sampleRate: 0, channels: 2, bitsPerSample: 0, bitRate: 0, codec: "MP3" },
+      embeddedLyric: "[00:01.00]内嵌歌词",
+      externalLyrics: [{ format: "lrc", path: "/music/embedded.lrc" }],
+    };
+    mockResolveOnlineByPreference.mockResolvedValue(null);
+
+    await loadForTrack(media.detail);
+
+    expect(media.activeLyric).toEqual({ source: "embedded", format: "lrc" });
+    expect(media.parsedLyric[0]?.words[0]?.word).toContain("内嵌歌词");
+  });
+
   it("防降级保护：已展示高优先级逐词格式时，迟到的普通文本 LRC 无法覆盖降级", async () => {
     const media = useMediaStore();
     const track = createTrack("song_2");

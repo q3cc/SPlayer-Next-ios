@@ -62,11 +62,41 @@ const readLocal = async (
   const idx = bestExternalIndex(detail.externalLyrics, order);
   if (idx !== -1) {
     const ext = detail.externalLyrics[idx];
-    const result = await window.api.player.readLyricFile(ext.path);
-    if (!result.success || result.data == null) return null;
-    return { source: { source: "external", format: ext.format }, content: result.data };
+    try {
+      const result = await window.api.player.readLyricFile(ext.path);
+      if (result.success && result.data?.trim()) {
+        return { source: { source: "external", format: ext.format }, content: result.data };
+      }
+    } catch {
+      // 外置文件不可访问时继续尝试音频标签中的内嵌歌词。
+    }
   }
   return embeddedLyricFromDetail(detail);
+};
+
+/**
+ * 读取并立即应用用户选择的外置歌词。
+ * @param path - 歌词文件路径
+ * @param format - 歌词格式
+ * @returns 是否成功解析并应用
+ */
+export const loadExternalLyricFile = async (
+  path: string,
+  format: LyricFormat,
+): Promise<boolean> => {
+  const token = ++currentToken;
+  try {
+    const result = await window.api.player.readLyricFile(path);
+    if (token !== currentToken || !result.success || !result.data?.trim()) return false;
+    const media = useMediaStore();
+    const detail = media.detail;
+    if (detail && !detail.externalLyrics.some((item) => item.path === path)) {
+      detail.externalLyrics = [...detail.externalLyrics, { format, path }];
+    }
+    return commitAndHasParsed(token, { source: "external", format }, { content: result.data });
+  } catch {
+    return false;
+  }
 };
 
 /**

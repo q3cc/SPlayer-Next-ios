@@ -14,6 +14,8 @@ import { mobileMediaSession } from "./mediaSession";
 import { mobileLyricPip } from "./lyricPip";
 import { isTauri } from "@tauri-apps/api/core";
 import { createNativePlayer } from "./nativePlayer";
+import { open } from "@tauri-apps/plugin-dialog";
+import type { LyricFormat } from "@shared/types/lyrics";
 
 type PlayerListener = (event: PlayerEvent) => void;
 
@@ -234,7 +236,37 @@ const webPlayer: PlayerApi = {
     success: true,
     data: currentMeta?.coverOriginal ?? currentMeta?.cover ?? null,
   }),
-  readLyricFile: async () => ({ success: false, error: "local lyric files are not available" }),
+  readLyricFile: async (filePath) => {
+    if (!isTauri()) return { success: false, error: "local lyric files are not available" };
+    try {
+      const { readTextFile } = await import("@tauri-apps/plugin-fs");
+      return { success: true, data: await readTextFile(filePath) };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  },
+  pickLyricFile: async () => {
+    if (!isTauri()) return { success: false, error: "local lyric files are not available" };
+    try {
+      const selected = await open({
+        multiple: false,
+        directory: false,
+        fileAccessMode: "scoped",
+        filters: [
+          { name: "Lyrics", extensions: ["ttml", "lys", "qrc", "krc", "yrc", "lrc", "ass", "srt"] },
+        ],
+      });
+      if (!selected || Array.isArray(selected)) return { success: false, error: "canceled" };
+      const path = String(selected);
+      const ext = path.split(".").pop()?.toLowerCase() as LyricFormat | undefined;
+      if (!ext || !["ttml", "lys", "qrc", "krc", "yrc", "lrc", "ass", "srt"].includes(ext)) {
+        return { success: false, error: "不支持的歌词文件类型" };
+      }
+      return { success: true, data: { path, format: ext } };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  },
   reinit: async () => ok(),
   setNormalizationEnabled: async () => ok(),
   setEqualizerEnabled: async () => ok(),

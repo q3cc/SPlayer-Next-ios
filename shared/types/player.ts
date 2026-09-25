@@ -275,6 +275,8 @@ export interface PlayerApi {
   getCoverRaw: () => Promise<IpcResponse<string | null>>;
   /** 读取外部歌词文件内容 */
   readLyricFile: (filePath: string) => Promise<IpcResponse<string>>;
+  /** 选择一个外部歌词文件 */
+  pickLyricFile: () => Promise<IpcResponse<{ path: string; format: LyricFormat }>>;
   /** 重建音频输出设备 */
   reinit: () => Promise<IpcResponse>;
   /** 设置音量均衡 */

@@ -12,6 +12,7 @@ fn main() {
         "visibility",
         "siri",
         "read_metadata",
+        "read_lyric_file",
         "register_listener",
         "remove_listener",
     ])

@@ -1,5 +1,5 @@
 import { extname } from "node:path";
-import { app, ipcMain, powerMonitor } from "electron";
+import { app, dialog, ipcMain, powerMonitor } from "electron";
 import { sendToMain } from "@main/utils/broadcast";
 import { readFileAutoEncoding } from "@main/utils/encoding";
 import { wsBroadcast } from "@main/server/broadcast";
@@ -593,6 +593,28 @@ export const registerPlayerIpc = (): void => {
     } catch (error) {
       return fail(ErrorCode.UNKNOWN, error);
     }
+  });
+
+  ipcMain.handle("player:pickLyricFile", async () => {
+    const result = await dialog.showOpenDialog({
+      title: "选择歌词文件",
+      properties: ["openFile"],
+      filters: [
+        { name: "歌词文件", extensions: ["ttml", "lys", "qrc", "krc", "yrc", "lrc", "ass", "srt"] },
+      ],
+    });
+    if (result.canceled || result.filePaths.length === 0) {
+      return { success: false, error: "canceled" };
+    }
+    const path = result.filePaths[0];
+    const ext = extname(path).slice(1).toLowerCase();
+    if (!LYRIC_FILE_EXTS.has("." + ext)) {
+      return { success: false, error: "不支持的歌词文件类型: ." + ext };
+    }
+    return {
+      success: true,
+      data: { path, format: ext as import("@shared/types/lyrics").LyricFormat },
+    };
   });
 
   // 获取当前歌曲的原始高清封面（base64 data URL）
