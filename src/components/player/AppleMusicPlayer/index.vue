@@ -17,7 +17,6 @@ import AMLLLyrics from "../Lyrics/AMLLLyrics.vue";
 import PlayerBackground from "../FullPlayer/PlayerBackground.vue";
 import PlayerCover from "../FullPlayer/PlayerCover.vue";
 import AirPlayControl from "../AirPlayControl.vue";
-import VolumeControl from "../VolumeControl.vue";
 import PlayingNext from "./PlayingNext.vue";
 import PlaylistPickerDialog from "@/components/modals/PlaylistPickerDialog.vue";
 import "./style.css";
@@ -43,6 +42,13 @@ const artist = computed(
   () => track.value?.artists?.map((value) => value.name).join(" / ") || t("playlist.unknownArtist"),
 );
 const visible = computed(() => status.isPlayerExpanded && visibility.value === "visible");
+const syncSystemVolume = (event: Event): void => {
+  const volume = (event as CustomEvent<number>).detail;
+  if (Number.isFinite(volume)) status.volume = volume;
+};
+onMounted(() => {
+  if (isMobile) window.addEventListener("splayer:system-volume", syncSystemVolume);
+});
 const showLyrics = computed(
   () => visible.value && panel.value === "lyrics" && media.parsedLyric.length > 0,
 );
@@ -141,6 +147,7 @@ watch(
   { immediate: true },
 );
 onBeforeUnmount(() => {
+  window.removeEventListener("splayer:system-volume", syncSystemVolume);
   stop();
   emit("lyricsVisible", false);
 });
@@ -385,7 +392,8 @@ const togglePanel = (value: "lyrics" | "queue"): void => {
               </button>
             </div>
             <div class="am-volume">
-              <VolumeControl cover />
+              <IconLucideVolumeX v-if="status.volume === 0" aria-hidden="true" />
+              <IconLucideVolume1 v-else aria-hidden="true" />
               <SSlider
                 :model-value="status.volume"
                 :max="1"

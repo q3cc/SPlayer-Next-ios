@@ -174,33 +174,53 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
       if request.show == false { self.dismissSystemVolume() }
       if request.show == true || request.value != nil {
         guard self.visible, let webview = self.volumeWebView, let window = webview.window else { invoke.reject("播放器尚未显示"); return }
-        // 挂在当前窗口顶层，避免 WKWebView 的内容层或播放器全屏层覆盖原生控件。
-        self.volumeOverlay.frame = window.bounds
-        self.volumeOverlay.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        let inset = window.safeAreaInsets
-        let scaleX = webview.bounds.width / CGFloat(max(1, request.viewportWidth ?? Double(webview.bounds.width)))
-        let scaleY = webview.bounds.height / CGFloat(max(1, request.viewportHeight ?? Double(webview.bounds.height)))
-        let anchor = webview.convert(CGPoint(x: CGFloat(request.x ?? Double(webview.bounds.midX)) * scaleX,
-          y: CGFloat(request.y ?? Double(webview.bounds.midY)) * scaleY), to: window)
-        let width = min(240, window.bounds.width - inset.left - inset.right - 24)
-        let x = min(max(anchor.x - width / 2, inset.left + 12), window.bounds.width - inset.right - width - 12)
-        let y = min(max(anchor.y - 88, inset.top + 12), window.bounds.height - inset.bottom - 88)
-        self.volumePanel.frame = CGRect(x: x, y: y, width: width, height: 76)
-        self.volumeView.frame.size.width = width - 32
-        self.volumeLabel.frame.size.width = width - 32
-        window.addSubview(self.volumeOverlay)
-        self.volumePanel.layoutIfNeeded()
+        let temporaryOverlay = request.show != true && request.value != nil && self.volumeOverlay.superview == nil
+        if temporaryOverlay {
+          // MPVolumeView 在窗口中接收设值事件，透明挂载避免拖动网页滑块时弹出第二条音量条。
+          self.volumeOverlay.alpha = 0
+          self.volumeOverlay.frame = window.bounds
+          self.volumePanel.frame = CGRect(x: 0, y: 0, width: 240, height: 76)
+          window.addSubview(self.volumeOverlay)
+          self.volumePanel.layoutIfNeeded()
+        }
+        defer {
+          if temporaryOverlay {
+            self.volumeOverlay.removeFromSuperview()
+            self.volumeOverlay.alpha = 1
+          }
+        }
+        if request.show == true {
+          // 只有用户主动打开系统音量控件时，才把浮层挂到窗口顶层。
+          self.volumeOverlay.frame = window.bounds
+          self.volumeOverlay.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+          let inset = window.safeAreaInsets
+          let scaleX = webview.bounds.width / CGFloat(max(1, request.viewportWidth ?? Double(webview.bounds.width)))
+          let scaleY = webview.bounds.height / CGFloat(max(1, request.viewportHeight ?? Double(webview.bounds.height)))
+          let anchor = webview.convert(CGPoint(x: CGFloat(request.x ?? Double(webview.bounds.midX)) * scaleX,
+            y: CGFloat(request.y ?? Double(webview.bounds.midY)) * scaleY), to: window)
+          let width = min(240, window.bounds.width - inset.left - inset.right - 24)
+          let x = min(max(anchor.x - width / 2, inset.left + 12), window.bounds.width - inset.right - width - 12)
+          let y = min(max(anchor.y - 88, inset.top + 12), window.bounds.height - inset.bottom - 88)
+          self.volumePanel.frame = CGRect(x: x, y: y, width: width, height: 76)
+          self.volumeView.frame.size.width = width - 32
+          self.volumeLabel.frame.size.width = width - 32
+          window.addSubview(self.volumeOverlay)
+          self.volumePanel.layoutIfNeeded()
+        }
         if let value = request.value {
+          self.volumeView.layoutIfNeeded()
           guard value.isFinite, (0...1).contains(value),
                 let slider = self.volumeView.subviews.compactMap({ $0 as? UISlider }).first else { invoke.reject("系统音量控件不可用"); return }
           slider.setValue(value, animated: false)
           slider.sendActions(for: .valueChanged)
         }
-        self.volumeLabel.text = "\(Int((AVAudioSession.sharedInstance().outputVolume * 100).rounded()))%"
-        self.volumeDismiss?.cancel()
-        let dismiss = DispatchWorkItem { [weak self] in self?.dismissSystemVolume() }
-        self.volumeDismiss = dismiss
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3, execute: dismiss)
+        if request.show == true {
+          self.volumeLabel.text = "\(Int((AVAudioSession.sharedInstance().outputVolume * 100).rounded()))%"
+          self.volumeDismiss?.cancel()
+          let dismiss = DispatchWorkItem { [weak self] in self?.dismissSystemVolume() }
+          self.volumeDismiss = dismiss
+          DispatchQueue.main.asyncAfter(deadline: .now() + 3, execute: dismiss)
+        }
       }
       invoke.resolve(["volume": Double(AVAudioSession.sharedInstance().outputVolume)])
     }

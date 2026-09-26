@@ -8,6 +8,7 @@ fn main() {
         "metadata",
         "status",
         "system_volume",
+        "keep_awake",
         "airplay",
         "visibility",
         "siri",

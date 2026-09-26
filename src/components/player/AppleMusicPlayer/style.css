@@ -236,10 +236,6 @@
   width: 20px;
   height: 20px;
 }
-.apple-music-player .am-volume button {
-  min-width: 44px;
-  min-height: 44px;
-}
 .apple-music-player .am-footer {
   display: flex;
   justify-content: space-around;

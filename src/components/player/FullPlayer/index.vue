@@ -85,6 +85,7 @@ const onBeforeLeave = () => {
 /** 收起后 */
 const onAfterLeave = () => {
   lyricMounted.value = false;
+  cancelDismiss();
 };
 
 // 重新挂载时，刷新初始时间
@@ -134,6 +135,67 @@ const lyricFontSize = computed(() =>
 const { immersive, onActivity, onPointerDown, onPointerUp } = useImmersiveMode(isPlayerExpanded);
 
 const { isFullscreen, toggleFullscreen } = useWindowControls();
+
+const dragOffset = ref(0);
+const dragging = ref(false);
+let dismissGesture: { id: number; x: number; y: number; time: number } | undefined;
+let suppressHeaderClick = false;
+
+/** 顶部下滑收起手势，锁定为垂直方向后才接管触摸。 */
+const startDismiss = (event: PointerEvent): void => {
+  if (event.pointerType !== "touch" || !event.isPrimary || event.button !== 0) return;
+  dismissGesture = {
+    id: event.pointerId,
+    x: event.clientX,
+    y: event.clientY,
+    time: event.timeStamp,
+  };
+  suppressHeaderClick = false;
+};
+
+const moveDismiss = (event: PointerEvent): void => {
+  const gesture = dismissGesture;
+  if (!gesture || gesture.id !== event.pointerId) return;
+  const dx = event.clientX - gesture.x;
+  const dy = event.clientY - gesture.y;
+  if (!dragging.value) {
+    if (Math.max(Math.abs(dx), Math.abs(dy)) < 8) return;
+    suppressHeaderClick = true;
+    if (dy <= 0 || Math.abs(dx) > dy) {
+      dismissGesture = undefined;
+      return;
+    }
+    dragging.value = true;
+    (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+  }
+  dragOffset.value = Math.max(0, dy);
+};
+
+const endDismiss = (event: PointerEvent): void => {
+  const gesture = dismissGesture;
+  if (!gesture || gesture.id !== event.pointerId) return;
+  const distance = Math.max(0, event.clientY - gesture.y);
+  const velocity = distance / Math.max(1, event.timeStamp - gesture.time);
+  const shouldClose = dragging.value && (distance >= 80 || (distance >= 24 && velocity >= 0.6));
+  dismissGesture = undefined;
+  dragging.value = false;
+  if (shouldClose) collapse();
+  else dragOffset.value = 0;
+};
+
+const cancelDismiss = (): void => {
+  dismissGesture = undefined;
+  dragging.value = false;
+  dragOffset.value = 0;
+};
+
+const guardHeaderClick = (event: MouseEvent): void => {
+  if (suppressHeaderClick && event.detail !== 0) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+  suppressHeaderClick = false;
+};
 
 const canDownload = computed(
   () =>
@@ -199,8 +261,14 @@ const showComments = (): void => {
       <div
         v-show="isPlayerExpanded"
         class="full-player fixed inset-0 z-200 overflow-hidden text-cover"
-        :class="immersive ? 'cursor-none [&_*]:!cursor-none' : ''"
-        style="--lp-color: rgb(var(--s-cover))"
+        :class="[
+          immersive ? 'cursor-none [&_*]:!cursor-none' : '',
+          dragging ? 'full-player-dragging' : '',
+        ]"
+        :style="{
+          '--lp-color': 'rgb(var(--s-cover))',
+          '--full-player-drag-offset': `${dragOffset}px`,
+        }"
         @pointerdown.capture="onPointerDown"
         @pointerup.capture="onPointerUp"
         @pointercancel.capture="onPointerUp"
@@ -232,11 +300,17 @@ const showComments = (): void => {
         />
         <!-- 顶栏 -->
         <div
-          class="absolute top-0 inset-x-0 h-14 z-10 app-drag-region transition-opacity duration-400 flex items-center justify-between px-3"
+          class="full-player-header absolute top-0 inset-x-0 h-14 z-10 app-drag-region transition-opacity duration-400 flex items-center justify-between px-3"
           :class="[
             immersive ? 'opacity-0 pointer-events-none' : 'opacity-100',
             useMobileLayout || isMobile ? 'safe-full-player-header' : '',
           ]"
+          @pointerdown="startDismiss"
+          @pointermove="moveDismiss"
+          @pointerup="endDismiss"
+          @pointercancel="cancelDismiss"
+          @lostpointercapture="dismissGesture && cancelDismiss()"
+          @click.capture="guardHeaderClick"
         >
           <div class="app-no-drag flex items-center gap-2">
             <SButton
@@ -244,7 +318,7 @@ const showComments = (): void => {
               type="cover"
               variant="ghost"
               circle
-              :size="40"
+              :size="44"
               @click="collapse"
             >
               <template #icon><IconLucideChevronDown /></template>
@@ -253,7 +327,7 @@ const showComments = (): void => {
               type="cover"
               variant="ghost"
               circle
-              :size="40"
+              :size="44"
               :disabled="lyricToggleDisabled"
               :class="lyricToggleActive ? 'opacity-100' : 'opacity-40'"
               @click="toggleLyric"
@@ -583,6 +657,7 @@ const showComments = (): void => {
               type="cover"
               variant="ghost"
               circle
+              :size="44"
               :disabled="!hasTrack || fmMode"
               @click="player.prevTrack()"
             >
@@ -591,7 +666,7 @@ const showComments = (): void => {
             <SButton
               type="cover"
               variant="secondary"
-              size="large"
+              :size="48"
               circle
               :loading="isLoading"
               :disabled="!hasTrack && !isLoading"
@@ -608,6 +683,7 @@ const showComments = (): void => {
               type="cover"
               variant="ghost"
               circle
+              :size="44"
               :disabled="!hasTrack"
               @click="player.nextTrack()"
             >
@@ -627,6 +703,19 @@ const showComments = (): void => {
   padding-right: calc(1.25rem + var(--s-safe-right));
   padding-bottom: calc(0.75rem + var(--s-safe-bottom));
   padding-left: calc(1.25rem + var(--s-safe-left));
+}
+
+.full-player {
+  translate: 0 var(--full-player-drag-offset, 0px);
+  transition: translate 220ms ease-out;
+}
+
+.full-player-dragging {
+  transition: none;
+}
+
+.full-player-header {
+  touch-action: none;
 }
 
 .safe-full-player-header {

@@ -29,6 +29,7 @@ import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
 import android.provider.Settings
+import android.view.WindowManager
 import app.tauri.annotation.Command
 import app.tauri.annotation.InvokeArg
 import app.tauri.annotation.TauriPlugin
@@ -83,6 +84,11 @@ class MetadataArgs {
 class VolumeArgs {
     var value: Double? = null
     var show: Boolean? = null
+}
+
+@InvokeArg
+class KeepAwakeArgs {
+    var enabled: Boolean = false
 }
 
 @InvokeArg
@@ -607,6 +613,15 @@ class NativeAudioPlugin(private val activity: Activity) : Plugin(activity) {
 
     @Command fun status(invoke: Invoke) { handler.post { invoke.resolve(engine.snapshot()) } }
     @Command fun visibility(invoke: Invoke) { invoke.resolve() }
+
+    @Command fun keepAwake(invoke: Invoke) {
+        val args = invoke.parseArgs(KeepAwakeArgs::class.java)
+        handler.post {
+            if (args.enabled) activity.window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            else activity.window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            invoke.resolve()
+        }
+    }
 
     @Command fun systemVolume(invoke: Invoke) {
         val args = invoke.parseArgs(VolumeArgs::class.java)

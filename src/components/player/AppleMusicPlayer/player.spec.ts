@@ -4,6 +4,7 @@ import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import AppleMusicPlayer from "./index.vue";
 
 const mocks = vi.hoisted(() => ({
+  isIOS: true,
   status: {} as Record<string, unknown>,
   media: {} as Record<string, unknown>,
   start: vi.fn(),
@@ -31,7 +32,12 @@ vi.mock("@/stores/settings", () => ({
     lyric: { engine: "custom", showTranslation: true },
   }),
 }));
-vi.mock("@/utils/config", () => ({ isIOS: true }));
+vi.mock("@/utils/config", () => ({
+  get isIOS() {
+    return mocks.isIOS;
+  },
+  isMobile: true,
+}));
 vi.mock("vue-i18n", () => ({ useI18n: () => ({ t: (key: string) => key }) }));
 vi.mock("@/services/playback", () => ({ getCurrentTime: () => 25000 }));
 vi.mock("@/composables/usePlaybackTime", () => ({
@@ -88,7 +94,6 @@ vi.mock("../FullPlayer/PlayerBackground.vue", () => ({
 }));
 vi.mock("../FullPlayer/PlayerCover.vue", () => ({ default: { template: "<div data-cover />" } }));
 vi.mock("../AirPlayControl.vue", () => ({ default: { template: "<div data-airplay />" } }));
-vi.mock("../VolumeControl.vue", () => ({ default: { template: "<div data-volume />" } }));
 vi.mock("./PlayingNext.vue", () => ({ default: { template: "<div data-queue />" } }));
 vi.mock("@/components/modals/PlaylistPickerDialog.vue", () => ({
   default: { template: "<div />" },
@@ -119,6 +124,7 @@ const create = () => {
           ].map((name) => [name, { name, props: ["open"], template: "<div />" }]),
         ),
         SSlider: {
+          name: "SSlider",
           emits: ["dragEnd", "change"],
           template: "<button data-slider @click=\"$emit('dragEnd', 18000)\" />",
         },
@@ -133,6 +139,8 @@ const create = () => {
             "LoaderCircle",
             "Repeat1",
             "Repeat2",
+            "VolumeX",
+            "Volume1",
             "Volume2",
             "MessageSquareQuote",
             "Disc3",
@@ -151,6 +159,7 @@ const create = () => {
   return wrapper;
 };
 beforeEach(() => {
+  mocks.isIOS = true;
   mocks.status = reactive({
     isPlayerExpanded: true,
     isPlaying: false,
@@ -323,6 +332,31 @@ it("歌词点击跳转并恢复播放，进度条不另起播放", async () => {
   await flushPromises();
   expect(mocks.seek).toHaveBeenLastCalledWith(18000);
   expect(mocks.play).toHaveBeenCalledTimes(1);
+});
+it("音量只显示一条滑块，实体按键变化同步到播放器", async () => {
+  const wrapper = create();
+  expect(wrapper.find("[data-volume]").exists()).toBe(false);
+  const slider = wrapper.get(".am-volume").findComponent({ name: "SSlider" });
+  expect(slider.exists()).toBe(true);
+  expect(wrapper.findAll(".am-volume [data-slider]")).toHaveLength(1);
+  slider.vm.$emit("change", 0.4);
+  expect(mocks.volume).toHaveBeenCalledWith(0.4);
+  window.dispatchEvent(new CustomEvent("splayer:system-volume", { detail: 0.65 }));
+  expect(mocks.status.volume).toBe(0.65);
+});
+it("安卓 AM 主题保留封面与音量控制，不显示 iOS 专属入口", async () => {
+  mocks.isIOS = false;
+  const wrapper = create();
+  expect(wrapper.find("[data-airplay]").exists()).toBe(false);
+  const menu = wrapper.findComponent({ name: "SDropdownMenu" }).props("items") as {
+    key: string;
+  }[];
+  expect(menu.some((item) => item.key === "am-desktop-lyric")).toBe(false);
+  await wrapper.get('[aria-label="player.appleMusic.lyrics"]').trigger("click");
+  expect(wrapper.find("[data-lyrics]").exists()).toBe(true);
+  await wrapper.get('[aria-label="player.appleMusic.cover"]').trigger("click");
+  expect(wrapper.find("[data-lyrics]").exists()).toBe(false);
+  expect(wrapper.get(".am-volume").findComponent({ name: "SSlider" }).exists()).toBe(true);
 });
 it("播放按钮复用既有播放服务", async () => {
   const wrapper = create();

@@ -27,6 +27,9 @@ vi.mock("@/utils/config", () => ({
   get isIOS() {
     return mocks.isIOS;
   },
+  get isMobile() {
+    return mocks.isIOS;
+  },
   APP_VERSION: "2.0.0",
   REPO_URL: "https://github.com/q3cc/SPlayer-Next-ios",
   REPO_NAME: "SPlayer-Next-ios",

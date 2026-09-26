@@ -1,9 +1,7 @@
 <script setup lang="ts">
 import type { LyricLine } from "@shared/types/lyrics";
-import {
-  LyricPlayer as CoreLyricPlayer,
-  type LyricLineMouseEvent,
-} from "@applemusic-like-lyrics/core";
+import type { LyricLineMouseEvent } from "@applemusic-like-lyrics/core";
+import { SPlayerLyricPlayer } from "./SPlayerLyricPlayer";
 import { useSettingsStore } from "@/stores/settings";
 import { useStatusStore } from "@/stores/status";
 import { getCurrentTime } from "@/services/playback";
@@ -63,7 +61,7 @@ const settings = useSettingsStore();
 const status = useStatusStore();
 
 const wrapperRef = ref<HTMLDivElement | null>(null);
-const playerRef = ref<CoreLyricPlayer>();
+const playerRef = ref<SPlayerLyricPlayer>();
 const bottomLineEl = ref<HTMLElement>();
 const clockInitialized = ref(false);
 // 播放器是否已初始化完成
@@ -192,7 +190,7 @@ const handleVisibility = () => {
 
 onMounted(async () => {
   if (!wrapperRef.value) return;
-  const player = new CoreLyricPlayer();
+  const player = new SPlayerLyricPlayer();
   playerRef.value = player;
 
   const el = player.getElement();

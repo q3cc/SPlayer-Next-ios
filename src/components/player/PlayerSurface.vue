@@ -3,7 +3,7 @@ import FullPlayer from "./FullPlayer/index.vue";
 import { useSettingsStore } from "@/stores/settings";
 import { useStatusStore } from "@/stores/status";
 import { useMediaStore } from "@/stores/media";
-import { isIOS } from "@/utils/config";
+import { isAndroid, isIOS } from "@/utils/config";
 import { invoke } from "@tauri-apps/api/core";
 
 const AppleMusicPlayer = defineAsyncComponent(() => import("./AppleMusicPlayer/index.vue"));
@@ -15,7 +15,8 @@ const appleLyricsVisible = ref(false);
 const visibility = useDocumentVisibility();
 
 // 两套界面共用一个常亮开关，避免主题卸载与挂载的异步请求相互覆盖。
-if (isIOS) {
+if (isIOS || isAndroid) {
+  const keepAwakeCommand = isIOS ? "plugin:lyric-pip|keepawake" : "plugin:native-audio|keep_awake";
   let updating = Promise.resolve();
   watch(
     () =>
@@ -28,9 +29,7 @@ if (isIOS) {
           settings.player.coverLayout !== "fullscreen" &&
           (media.parsedLyric.length > 0 || media.lyricLoading)),
     (enabled) => {
-      updating = updating
-        .catch(() => {})
-        .then(() => invoke<void>("plugin:lyric-pip|keepawake", { enabled }));
+      updating = updating.catch(() => {}).then(() => invoke<void>(keepAwakeCommand, { enabled }));
       void updating.catch((error) => console.warn("[lyrics] 常亮状态更新失败", error));
     },
     { immediate: true },
@@ -38,7 +37,7 @@ if (isIOS) {
   onBeforeUnmount(() => {
     void updating
       .catch(() => {})
-      .then(() => invoke("plugin:lyric-pip|keepawake", { enabled: false }))
+      .then(() => invoke(keepAwakeCommand, { enabled: false }))
       .catch((error) => console.warn("[lyrics] 恢复自动熄屏失败", error));
   });
 }

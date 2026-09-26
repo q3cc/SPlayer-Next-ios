@@ -37,7 +37,7 @@ vi.mock("@/utils/navigate", () => ({
   navigateToPlaylist: vi.fn(),
 }));
 vi.mock("@/utils/link", () => ({ parseMusicLink: () => null }));
-vi.mock("@/utils/config", () => ({ isIOS: true }));
+vi.mock("@/utils/config", () => ({ isIOS: true, isMobile: true }));
 vi.mock("~icons/lucide/music", () => ({ default: {} }));
 vi.mock("~icons/lucide/user", () => ({ default: {} }));
 vi.mock("~icons/lucide/disc", () => ({ default: {} }));
