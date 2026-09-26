@@ -9,6 +9,7 @@ import type {
 import { mobileMediaSession } from "./mediaSession";
 import { mobileLyricPip } from "./lyricPip";
 import { isAndroid } from "./platform";
+import { neteaseCdnUrl } from "@shared/utils/neteaseCdnUrl";
 
 /** 移动端使用系统音频引擎，浏览器预览保留原播放器。 */
 export const createNativePlayer = (fallback: PlayerApi): PlayerApi => {
@@ -142,6 +143,7 @@ export const createNativePlayer = (fallback: PlayerApi): PlayerApi => {
     ...fallback,
     load: async (source, options = {}): Promise<IpcResponse<LoadResult>> => {
       const current = ++generation;
+      const playbackSource = neteaseCdnUrl(source);
       const sourceType = /^(https?):/i.test(source)
         ? "http"
         : source.startsWith("content:")
@@ -160,7 +162,7 @@ export const createNativePlayer = (fallback: PlayerApi): PlayerApi => {
             request: JSON.stringify({ action: "interrupt" }),
           });
         const value = await invoke<PlayerStatus>("plugin:native-audio|load", {
-          source,
+          source: playbackSource,
           autoPlay: options.autoPlay !== false,
           trackId: options.meta ? `${options.meta.source}:${options.meta.id}` : null,
         });
@@ -199,7 +201,7 @@ export const createNativePlayer = (fallback: PlayerApi): PlayerApi => {
                   path: string;
                 }[];
               }>("plugin:native-audio|read_metadata", {
-                source,
+                source: playbackSource,
                 autoPlay: false,
                 trackId: null,
               }).catch(() => ({}))

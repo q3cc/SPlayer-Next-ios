@@ -280,6 +280,17 @@ internal class AudioEngine private constructor(private val context: Context) {
             when {
                 args.source.startsWith("content:") -> mediaPlayer.setDataSource(context, Uri.parse(args.source))
                 args.source.startsWith("file:") -> mediaPlayer.setDataSource(Uri.parse(args.source).path!!)
+                args.source.startsWith("https:") || args.source.startsWith("http:") -> {
+                    val url = Uri.parse(args.source)
+                    val host = url.host.orEmpty()
+                    Log.i("SPlayerAudio", "load scheme=${url.scheme} host=$host")
+                    if (host == "music.126.net" || host.endsWith(".music.126.net")) {
+                        mediaPlayer.setDataSource(context, url, mapOf(
+                            "User-Agent" to "NeteaseMusic/9.5.61",
+                            "Referer" to "https://music.163.com/"
+                        ))
+                    } else mediaPlayer.setDataSource(args.source)
+                }
                 else -> mediaPlayer.setDataSource(args.source)
             }
             player = mediaPlayer
@@ -336,6 +347,8 @@ internal class AudioEngine private constructor(private val context: Context) {
             mediaPlayer.prepareAsync()
             loadTimeout = Runnable {
                 if (player !== mediaPlayer || pending == null) return@Runnable
+                val url = Uri.parse(args.source)
+                Log.e("SPlayerAudio", "load timeout scheme=${url.scheme} host=${url.host.orEmpty()}")
                 val failed = pending
                 pending = null
                 reset()

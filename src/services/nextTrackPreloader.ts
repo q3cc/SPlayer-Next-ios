@@ -13,6 +13,7 @@ import { useStreamingStore } from "@/stores/streaming";
 import { usePluginsStore } from "@/stores/plugins";
 import { useMediaStore } from "@/stores/media";
 import * as queue from "@/stores/queue";
+import { neteaseCdnUrl } from "@shared/utils/neteaseCdnUrl";
 
 /** 预载结果 */
 export interface NextTrackPreloadResult {
@@ -182,7 +183,7 @@ export const scheduleNextTrackPreload = (): void => {
   void (async () => {
     try {
       if (candidateTrack.cover) {
-        void preloadCover(candidateTrack.cover);
+        void preloadCover(neteaseCdnUrl(candidateTrack.cover));
       }
       // 音源预拉取
       const source = await resolveTrackSource(candidateTrack, {

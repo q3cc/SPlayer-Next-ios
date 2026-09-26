@@ -1,6 +1,7 @@
 import type { Album, Artist, AudioQuality, Playlist, Track } from "@shared/types/player";
 import type { UserSubcount } from "@/types/user";
 import type { NeteaseSong } from "@/types/netease";
+import { neteaseCdnUrl } from "@shared/utils/neteaseCdnUrl";
 
 interface NeteaseError {
   code?: number;
@@ -27,8 +28,9 @@ export const ensureOk = <T>(body: T): T => {
  */
 export const withPicSize = (url: string | undefined, size = 300): string | undefined => {
   if (!url) return undefined;
-  if (url.includes("?param=")) return url;
-  return `${url}?param=${size}y${size}`;
+  const secureUrl = neteaseCdnUrl(url);
+  if (secureUrl.includes("?param=")) return secureUrl;
+  return `${secureUrl}?param=${size}y${size}`;
 };
 
 /**

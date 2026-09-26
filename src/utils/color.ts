@@ -6,6 +6,7 @@ import {
   type Theme,
 } from "@material/material-color-utilities";
 import type { ThemePalette } from "@/types/theme";
+import { neteaseCdnUrl } from "@shared/utils/neteaseCdnUrl";
 import { useSettingsStore } from "@/stores/settings";
 import { useThemeStore } from "@/stores/theme";
 
@@ -193,8 +194,9 @@ export const extractColorFromUrl = (url: string | null): void => {
     themeStore.coverColor = null;
     return;
   }
-  if (/^https?:\/\//i.test(url)) {
-    void loadColorFromRemote(url, token);
+  const imageUrl = neteaseCdnUrl(url);
+  if (/^https?:\/\//i.test(imageUrl)) {
+    void loadColorFromRemote(imageUrl, token);
     return;
   }
   const img = new Image();
@@ -207,7 +209,7 @@ export const extractColorFromUrl = (url: string | null): void => {
     if (token !== coverColorToken) return;
     themeStore.coverColor = null;
   };
-  img.src = url;
+  img.src = imageUrl;
 };
 
 /** 跨域封面：主进程拉字节 → blob URL → 同源 canvas 取色 */

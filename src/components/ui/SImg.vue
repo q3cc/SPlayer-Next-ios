@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import defaultFallback from "@/assets/images/song.jpg";
+import { neteaseCdnUrl } from "@shared/utils/neteaseCdnUrl";
 
 export interface SImgProps {
   /** 图片地址 */
@@ -20,6 +21,7 @@ const emit = defineEmits<{
 }>();
 
 const isLoaded = ref(false);
+const imageSrc = computed(() => (props.src ? neteaseCdnUrl(props.src) : undefined));
 
 const onLoad = (e: Event) => {
   const target = e.target as HTMLImageElement;
@@ -28,12 +30,9 @@ const onLoad = (e: Event) => {
   emit("load", target);
 };
 
-watch(
-  () => props.src,
-  () => {
-    isLoaded.value = false;
-  },
-);
+watch(imageSrc, () => {
+  isLoaded.value = false;
+});
 </script>
 
 <template>
@@ -54,9 +53,9 @@ watch(
       enter-from-class="opacity-0"
       leave-to-class="opacity-0"
     >
-      <div v-if="src" :key="src" class="absolute inset-0 z-1">
+      <div v-if="imageSrc" :key="imageSrc" class="absolute inset-0 z-1">
         <img
-          :src="src"
+          :src="imageSrc"
           :alt="alt"
           class="w-full h-full object-cover opacity-0 transition-opacity duration-200"
           decoding="async"

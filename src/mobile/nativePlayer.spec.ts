@@ -131,6 +131,16 @@ it("加载时将歌曲身份与音源一起下发，避免后台把进度记到�
   });
 });
 
+it("安卓把旧的网易云 HTTP 音源升级为 HTTPS，不改动签名参数", async () => {
+  const player = createNativePlayer({} as PlayerApi);
+  await player.load("http://m10.music.126.net/song.mp3?token=a%2Fb");
+  expect(mocks.invoke).toHaveBeenCalledWith("plugin:native-audio|load", {
+    source: "https://m10.music.126.net/song.mp3?token=a%2Fb",
+    autoPlay: true,
+    trackId: null,
+  });
+});
+
 it("原生加载等实际播放态再完成，等待数据回调不能提前暂停或取消超时", () => {
   const swift = readFileSync(
     "src-tauri/plugins/native-audio/ios/Sources/NativeAudioPlugin.swift",

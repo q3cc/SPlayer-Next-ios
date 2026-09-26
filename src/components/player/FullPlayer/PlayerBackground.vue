@@ -3,6 +3,7 @@ import { useSettingsStore } from "@/stores/settings";
 import { useMediaStore } from "@/stores/media";
 import { useStatusStore } from "@/stores/status";
 import DEFAULT_COVER from "@/assets/images/song.jpg";
+import { neteaseCdnUrl } from "@shared/utils/neteaseCdnUrl";
 import BackgroundRender from "./BackgroundRender.vue";
 
 const props = withDefaults(defineProps<{ active?: boolean; reducedMotion?: boolean }>(), {
@@ -56,7 +57,7 @@ const bgPlaying = computed(() => {
 });
 
 // 模糊模式：双缓冲层，切歌时交叉淡入淡出
-const initialCover = media.track?.cover || DEFAULT_COVER;
+const initialCover = neteaseCdnUrl(media.track?.cover || DEFAULT_COVER);
 const blurLayers = reactive([
   { src: initialCover, active: true },
   { src: "", active: false },
@@ -83,7 +84,7 @@ watch(
       return;
     }
     if (!expanded || !active || pageVisibility !== "visible") return;
-    const targetCover = newCover || DEFAULT_COVER;
+    const targetCover = neteaseCdnUrl(newCover || DEFAULT_COVER);
     // 相同不切换
     if (blurLayers[currentLayerIndex].src === targetCover) return;
     const nextIndex = currentLayerIndex === 0 ? 1 : 0;

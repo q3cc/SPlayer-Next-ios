@@ -3,6 +3,7 @@ import type { Track } from "@shared/types/player";
 import { findLyricIndex } from "lyric-kit";
 import { getLineText } from "@shared/utils/lyrics";
 import { originalArtwork } from "@shared/utils/artwork";
+import { neteaseCdnUrl } from "@shared/utils/neteaseCdnUrl";
 import { store } from "./shims/store";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 
@@ -38,7 +39,7 @@ const prepareArtwork = (value: Track): void => {
   if (key === artworkKey) return;
   clearArtwork();
   artworkKey = key;
-  artworkCover = value.cover || "";
+  artworkCover = neteaseCdnUrl(value.cover || "");
   if (!candidate || candidate === artworkCover) return;
   const image = new Image();
   pendingArtwork = image;
