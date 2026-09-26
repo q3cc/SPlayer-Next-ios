@@ -756,7 +756,7 @@
     },
     "diagnosticLogging": {
       "label": "日志记录",
-      "description": "排查问题时开启，立即生效。日志保存在“文件”App 的 SPlayer Next/logs；关闭后停止记录，已有文件保留。"
+      "description": "排查问题时开启，立即生效。安卓可在“关于”中分享日志，iOS 可在“文件”App 的 SPlayer Next/logs 中查看；关闭后已有日志保留。"
     },
     "title": "设置",
     "subtitle": "调整您的专属配置",
@@ -840,6 +840,7 @@
       "checking": "检查中",
       "newVersion": "发现新版本",
       "openLogs": "打开日志",
+      "shareLogs": "分享日志",
       "officialSite": "官方网站",
       "iosContributors": "iOS 版本贡献者",
       "originalContributors": "原版项目贡献者",

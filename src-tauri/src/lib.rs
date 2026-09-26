@@ -51,7 +51,9 @@ pub fn run() {
             report_boot_stage,
             diagnostics::append_diagnostic_log,
             diagnostics::set_diagnostic_logging,
-            diagnostics::diagnostic_log_path
+            diagnostics::diagnostic_log_path,
+            #[cfg(target_os = "android")]
+            diagnostics::prepare_diagnostic_log_share
         ])
         .run(tauri::generate_context!())
         .expect("error while running SPlayer Next mobile");

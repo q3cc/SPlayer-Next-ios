@@ -14,6 +14,7 @@ fn main() {
         "siri",
         "read_metadata",
         "read_lyric_file",
+        "share_log",
         "register_listener",
         "remove_listener",
     ])

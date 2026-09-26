@@ -30,6 +30,7 @@ import android.os.Looper
 import android.os.PowerManager
 import android.provider.Settings
 import android.view.WindowManager
+import androidx.core.content.FileProvider
 import app.tauri.annotation.Command
 import app.tauri.annotation.InvokeArg
 import app.tauri.annotation.TauriPlugin
@@ -650,5 +651,27 @@ class NativeAudioPlugin(private val activity: Activity) : Plugin(activity) {
             try { invoke.resolveObject(engine.readLyrics(args.path)) }
             catch (error: Exception) { invoke.reject(error.message ?: "无法读取歌词") }
         }.start()
+    }
+
+    @Command fun shareLog(invoke: Invoke) {
+        val args = invoke.parseArgs(FileArgs::class.java)
+        try {
+            val source = File(args.path).canonicalFile
+            val cacheRoot = activity.cacheDir.canonicalFile
+            if (!source.path.startsWith(cacheRoot.path + File.separator) || !source.isFile) {
+                throw IllegalArgumentException("日志文件无效")
+            }
+            val uri = FileProvider.getUriForFile(
+                activity, "${activity.packageName}.fileprovider", source)
+            val send = Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            activity.startActivity(Intent.createChooser(send, "分享日志"))
+            invoke.resolve()
+        } catch (error: Exception) {
+            invoke.reject(error.message ?: "无法分享日志")
+        }
     }
 }

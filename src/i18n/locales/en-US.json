@@ -768,7 +768,7 @@
     },
     "diagnosticLogging": {
       "label": "Diagnostic logging",
-      "description": "Enable when troubleshooting. Takes effect immediately. Logs are in Files → SPlayer Next/logs. Disabling stops recording and keeps existing files."
+      "description": "Enable when troubleshooting. On Android, share logs from About. On iOS, find them in Files → SPlayer Next/logs. Existing logs remain after disabling."
     },
     "title": "Settings",
     "subtitle": "Tailor your experience",
@@ -852,6 +852,7 @@
       "checking": "Checking",
       "newVersion": "Update Available",
       "openLogs": "Open Logs",
+      "shareLogs": "Share Logs",
       "officialSite": "Official Site",
       "iosContributors": "iOS Version Contributors",
       "originalContributors": "Original Project Contributors",

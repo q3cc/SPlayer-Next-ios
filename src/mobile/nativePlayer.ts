@@ -142,6 +142,17 @@ export const createNativePlayer = (fallback: PlayerApi): PlayerApi => {
     ...fallback,
     load: async (source, options = {}): Promise<IpcResponse<LoadResult>> => {
       const current = ++generation;
+      const sourceType = /^(https?):/i.test(source)
+        ? "http"
+        : source.startsWith("content:")
+          ? "content"
+          : source.startsWith("file:")
+            ? "file"
+            : "path";
+      console.info("[native-audio] load-start", {
+        sourceType,
+        autoPlay: options.autoPlay !== false,
+      });
       try {
         await initialize();
         if (import.meta.env.VITE_MOBILE_TARGET !== "android" && !isAndroid)
@@ -157,6 +168,7 @@ export const createNativePlayer = (fallback: PlayerApi): PlayerApi => {
         cover = options.meta?.coverOriginal ?? options.meta?.cover ?? null;
         mobileMediaSession.setTrack(options.meta ?? null);
         update(value);
+        console.info("[native-audio] load-ready", { sourceType, duration: value.duration });
         const quality = options.meta?.quality ?? {
           sampleRate: 0,
           channels: 2,
@@ -213,6 +225,7 @@ export const createNativePlayer = (fallback: PlayerApi): PlayerApi => {
           },
         };
       } catch (error) {
+        console.error("[native-audio] load-failed", { sourceType }, error);
         if (current === generation) {
           status = { ...status, state: "idle" };
           mobileMediaSession.setTrack(null);

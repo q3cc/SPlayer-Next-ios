@@ -1,4 +1,4 @@
-import { convertFileSrc } from "@tauri-apps/api/core";
+import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { getCurrent, onOpenUrl } from "@tauri-apps/plugin-deep-link";
 import { save, open } from "@tauri-apps/plugin-dialog";
 import { readTextFile, writeFile } from "@tauri-apps/plugin-fs";
@@ -316,7 +316,12 @@ const api = {
     osInfo: { type: isAndroid ? "Android" : "iOS", arch: "arm64", release: "" },
     toggleDevTools: async () => undefined,
     showInExplorer: async () => undefined,
-    openLogsDir: async () => "",
+    openLogsDir: async () => {
+      if (!isAndroid) return "";
+      const path = await invoke<string>("prepare_diagnostic_log_share");
+      await invoke("plugin:native-audio|share_log", { path });
+      return path;
+    },
     setLocale: noop,
     focusMainWindow: async () => undefined,
     openSettings: async () => undefined,

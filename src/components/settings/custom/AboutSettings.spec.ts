@@ -24,6 +24,7 @@ vi.mock("@/stores/update", () => ({
 }));
 vi.mock("@/utils/url", () => ({ openExternal: vi.fn() }));
 vi.mock("@/utils/config", () => ({
+  isAndroid: false,
   get isIOS() {
     return mocks.isIOS;
   },

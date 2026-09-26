@@ -7,6 +7,7 @@ import {
 } from "@/apis/github";
 import { useCopyText } from "@/composables/useCopyText";
 import { useUpdateStore } from "@/stores/update";
+import { toast } from "@/composables/useToast";
 import { openExternal } from "@/utils/url";
 import {
   APP_VERSION,
@@ -16,6 +17,7 @@ import {
   COPYRIGHT_HOLDER,
   IS_APPX,
   isIOS,
+  isAndroid,
   isMobile,
   COMMIT_HASH,
   COMMIT_DATE,
@@ -50,7 +52,11 @@ const handleCheckUpdate = (): void => {
 };
 
 /** 打开日志目录 */
-const handleOpenLogs = (): void => void window.api.system.openLogsDir();
+const handleOpenLogs = (): void => {
+  void window.api.system
+    .openLogsDir()
+    .catch((error) => toast.error(error instanceof Error ? error.message : String(error)));
+};
 
 interface EnvItem {
   label: string;
@@ -197,8 +203,8 @@ onMounted(async () => {
                   : t("settings.about.checkUpdate")
             }}
           </SButton>
-          <SButton v-if="!isMobile" variant="secondary" @click="handleOpenLogs">
-            {{ t("settings.about.openLogs") }}
+          <SButton v-if="!isMobile || isAndroid" variant="secondary" @click="handleOpenLogs">
+            {{ t(isAndroid ? "settings.about.shareLogs" : "settings.about.openLogs") }}
           </SButton>
         </div>
       </SCard>

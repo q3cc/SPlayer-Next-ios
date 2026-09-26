@@ -22,4 +22,5 @@ android {
 
 dependencies {
     implementation(project(":tauri-android"))
+    implementation("androidx.core:core:1.9.0")
 }
