@@ -13,8 +13,7 @@ export const isLinux = import.meta.env.MODE !== "mobile" && platform === "linux"
 export const isMobile =
   import.meta.env.MODE === "mobile" || platform === "ios" || platform === "android";
 /** 是否为 iOS / iPadOS */
-export const isIOS =
-  import.meta.env.VITE_MOBILE_TARGET === "android" ? false : platform === "ios";
+export const isIOS = import.meta.env.VITE_MOBILE_TARGET === "android" ? false : platform === "ios";
 /** 是否为 Android */
 export const isAndroid =
   import.meta.env.VITE_MOBILE_TARGET === "ios" ? false : platform === "android";
