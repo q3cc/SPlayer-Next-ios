@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { marked } from "marked";
 import { useUpdateStore } from "@/stores/update";
-import { APP_VERSION, IS_APPX, isIOS } from "@/utils/config";
+import { APP_VERSION, IS_APPX, isIOS, isAndroid } from "@/utils/config";
 import { formatFileSize } from "@/utils/format";
 
 const { t } = useI18n();
@@ -63,7 +63,7 @@ const releaseDateText = computed(() => {
         <!-- eslint-enable vue/no-v-html -->
       </div>
       <div
-        v-if="isIOS && update.phase === 'downloading'"
+        v-if="(isIOS || isAndroid) && update.phase === 'downloading'"
         class="flex flex-col gap-2"
         aria-live="polite"
       >
@@ -104,7 +104,15 @@ const releaseDateText = computed(() => {
           {{ t("update.goDownload") }}
         </SButton>
         <SButton v-if="update.phase === 'downloaded'" type="primary" @click="update.install()">
-          {{ t(isIOS ? "update.openInApp" : "update.installNow") }}
+          {{
+            t(
+              isIOS
+                ? "update.openInApp"
+                : isAndroid
+                  ? "update.androidInstallNow"
+                  : "update.installNow",
+            )
+          }}
         </SButton>
         <SButton v-else-if="update.phase === 'downloading'" type="primary" disabled>
           {{ t("update.downloading") }} {{ update.percent.toFixed(1) }}%

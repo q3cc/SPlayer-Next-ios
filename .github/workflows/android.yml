@@ -13,6 +13,8 @@ on:
       - "shared/**"
       - "public/**"
       - "scripts/configure-android-signing.mjs"
+      - "scripts/configure-android-icons.mjs"
+      - "scripts/publish-android-action.cjs"
       - "scripts/configure-ios-siri.mjs"
       - "scripts/verify-mobile-bundle.ts"
       - "index.html"
@@ -33,9 +35,16 @@ concurrency:
 
 jobs:
   build-android:
-    name: Signed Android arm64 APK
+    name: Signed Android ${{ matrix.arch }} APK
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 75
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: arm64, target: aarch64, abi: arm64-v8a }
+          - { arch: arm32, target: armv7, abi: armeabi-v7a }
+          - { arch: x64, target: x86_64, abi: x86_64 }
     env:
       CI: "true"
       ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
@@ -77,19 +86,22 @@ jobs:
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-linux-android
+          targets: ${{ matrix.target == 'aarch64' && 'aarch64-linux-android' || matrix.target == 'armv7' && 'armv7-linux-androideabi' || 'x86_64-linux-android' }}
 
       - name: Cache Rust artifacts
         uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
-          key: android-arm64
+          key: android-${{ matrix.arch }}
 
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile --ignore-scripts
 
       - name: Generate Android project
         run: pnpm tauri android init --ci --skip-targets-install
+
+      - name: Install Android launcher icons
+        run: node scripts/configure-android-icons.mjs
 
       - name: Configure release signing
         env:
@@ -115,13 +127,20 @@ jobs:
           node scripts/configure-android-signing.mjs
 
       - name: Build signed APK
-        run: pnpm tauri android build --ci --apk --target aarch64
+        run: pnpm tauri android build --ci --apk --split-per-abi --target ${{ matrix.target }}
 
       - name: Collect and verify APK
         run: |
           set -euo pipefail
-          apk=$(find src-tauri/gen/android/app/build/outputs/apk -type f -name '*.apk' -print -quit)
-          test -n "$apk"
+          mapfile -t apks < <(find src-tauri/gen/android/app/build/outputs/apk -type f -name '*.apk')
+          test "${#apks[@]}" -eq 1
+          apk=${apks[0]}
+          mapfile -t native_libs < <(unzip -Z1 "$apk" | grep '^lib/[^/]*/libsplayer_next_mobile_lib\.so$')
+          test "${#native_libs[@]}" -eq 1
+          test "${native_libs[0]}" = 'lib/${{ matrix.abi }}/libsplayer_next_mobile_lib.so'
+          mapfile -t packaged_abis < <(unzip -Z1 "$apk" | sed -n 's|^lib/\([^/]*\)/.*\.so$|\1|p' | sort -u)
+          test "${#packaged_abis[@]}" -eq 1
+          test "${packaged_abis[0]}" = '${{ matrix.abi }}'
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose "$apk"
           signer=$("$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs "$apk" \
             | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')
@@ -130,17 +149,42 @@ jobs:
             echo 'Android build links an iOS-only plugin' >&2
             exit 1
           fi
-          if unzip -Z1 "$apk" | grep -Eiq '(^|/)(Siri|AirPlay|ipa-update|lyric-pip|AudioStreaming)(/|\.|$)'; then
+          if grep -Eiq '(^|/)(Siri|AirPlay|ipa-update|lyric-pip|AudioStreaming)(/|\.|$)' < <(unzip -Z1 "$apk"); then
             echo 'Android APK contains an iOS-only file' >&2
             exit 1
           fi
-          cp "$apk" SPlayer-Next-Android-arm64.apk
+          cmp src-tauri/icons/android/mipmap-xxxhdpi/ic_launcher.png \
+            src-tauri/gen/android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png
+          cp "$apk" SPlayer-Next-Android-${{ matrix.arch }}.apk
 
       - name: Upload signed APK
         uses: actions/upload-artifact@v4
         with:
-          name: SPlayer-Next-Android-arm64-${{ github.sha }}
-          path: SPlayer-Next-Android-arm64.apk
+          name: SPlayer-Next-Android-${{ matrix.arch }}-${{ github.sha }}
+          path: SPlayer-Next-Android-${{ matrix.arch }}.apk
           if-no-files-found: error
           compression-level: 0
           retention-days: 14
+
+  publish-action:
+    name: Publish Android Action update channel
+    needs: build-android
+    if: github.repository == 'q3cc/SPlayer-Next-ios' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      actions: read
+    concurrency:
+      group: publish-android-action-channel
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: SPlayer-Next-Android-*-${{ github.sha }}
+          merge-multiple: true
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            const publish = require('./scripts/publish-android-action.cjs');
+            await publish({ github, context });

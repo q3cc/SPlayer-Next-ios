@@ -1,7 +1,7 @@
 import type { UpdateEvent, UpdateMeta, UpdatePhase } from "@shared/types/update";
 import { toast } from "@/composables/useToast";
 import i18n from "@/i18n";
-import { isIOS } from "@/utils/config";
+import { isIOS, isAndroid } from "@/utils/config";
 
 const { t } = i18n.global;
 
@@ -51,12 +51,24 @@ export const useUpdateStore = defineStore("update", () => {
       case "downloaded":
         phase.value = "downloaded";
         meta.value = event.meta;
-        toast.success(t(isIOS ? "update.iosReadyToast" : "update.readyToast"));
+        toast.success(
+          t(
+            isIOS
+              ? "update.iosReadyToast"
+              : isAndroid
+                ? "update.androidReadyToast"
+                : "update.readyToast",
+          ),
+        );
         break;
       case "error":
-        if (event.stage !== "share") phase.value = "error";
+        if (event.stage !== "share" && event.stage !== "install") phase.value = "error";
         if (event.manual)
-          toast.error(isIOS ? `${t("update.failed")}：${event.message}` : t("update.failed"));
+          toast.error(
+            isIOS || isAndroid || event.stage === "install"
+              ? `${t("update.failed")}：${event.message}`
+              : t("update.failed"),
+          );
         break;
     }
   };

@@ -55,9 +55,9 @@
     "ios:init": "tauri ios init",
     "ios:dev": "tauri ios dev",
     "ios:build": "tauri ios build",
-    "android:init": "tauri android init",
+    "android:init": "tauri android init && node scripts/configure-android-icons.mjs",
     "android:dev": "tauri android dev",
-    "android:build": "tauri android build",
+    "android:build": "node scripts/configure-android-icons.mjs && tauri android build",
     "docs:dev": "vitepress dev docs",
     "docs:build": "vitepress build docs",
     "docs:preview": "vitepress preview docs"

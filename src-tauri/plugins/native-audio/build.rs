@@ -15,6 +15,9 @@ fn main() {
         "read_metadata",
         "read_lyric_file",
         "share_log",
+        "device_abi",
+        "download_update",
+        "install_update",
         "register_listener",
         "remove_listener",
     ])

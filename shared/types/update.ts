@@ -27,7 +27,7 @@ export type UpdateEvent =
       totalBytes?: number;
     }
   | { type: "downloaded"; meta: UpdateMeta }
-  | { type: "error"; message: string; manual: boolean; stage?: "share" };
+  | { type: "error"; message: string; manual: boolean; stage?: "share" | "install" };
 
 /** 更新模块对渲染层暴露的 API */
 export interface UpdateApi {

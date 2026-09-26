@@ -3,7 +3,7 @@ import { LOCALES } from "@shared/types/settings";
 import StorageManager from "@/components/settings/custom/StorageManager.vue";
 import { useUpdateStore } from "@/stores/update";
 import IconLucideCog from "~icons/lucide/cog";
-import { isIOS, isMobile } from "@/utils/config";
+import { isMobile } from "@/utils/config";
 
 const generalCategory: SettingCategory = {
   id: "general",
@@ -98,7 +98,7 @@ const generalCategory: SettingCategory = {
             { value: "stable", labelKey: "settings.updateChannel.stable" },
             { value: "beta", labelKey: "settings.updateChannel.beta" },
             { value: "alpha", labelKey: "settings.updateChannel.alpha" },
-            ...(isIOS ? [{ value: "action", labelKey: "settings.updateChannel.action" }] : []),
+            ...(isMobile ? [{ value: "action", labelKey: "settings.updateChannel.action" }] : []),
           ],
           defaultValue: "stable",
           confirm: {

@@ -29,6 +29,7 @@ import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
 import android.provider.Settings
+import android.util.Log
 import android.view.WindowManager
 import androidx.core.content.FileProvider
 import app.tauri.annotation.Command
@@ -38,6 +39,21 @@ import app.tauri.plugin.Invoke
 import app.tauri.plugin.JSObject
 import app.tauri.plugin.Plugin
 import java.io.File
+import java.net.HttpURLConnection
+import java.net.URL
+import java.security.MessageDigest
+
+@InvokeArg
+class UpdateDownloadArgs {
+    lateinit var url: String
+    var size: Long = 0
+    var digest: String? = null
+}
+
+@InvokeArg
+class UpdateInstallArgs {
+    lateinit var path: String
+}
 
 @InvokeArg
 class SourceArgs {
@@ -672,6 +688,129 @@ class NativeAudioPlugin(private val activity: Activity) : Plugin(activity) {
             invoke.resolve()
         } catch (error: Exception) {
             invoke.reject(error.message ?: "无法分享日志")
+        }
+    }
+
+    @Command fun deviceAbi(invoke: Invoke) {
+        val abi = Build.SUPPORTED_ABIS.firstOrNull { it == "arm64-v8a" || it == "armeabi-v7a" || it == "x86_64" }
+        if (abi == null) invoke.reject("此设备架构暂不支持 Android 更新")
+        else invoke.resolveObject(abi)
+    }
+
+    @Command fun downloadUpdate(invoke: Invoke) {
+        val args = invoke.parseArgs(UpdateDownloadArgs::class.java)
+        Thread {
+            var connection: HttpURLConnection? = null
+            var temporary: File? = null
+            try {
+                val url = URL(args.url)
+                if (url.protocol != "https" || url.host != "github.com" ||
+                    !url.path.startsWith("/q3cc/SPlayer-Next-ios/releases/download/") ||
+                    !url.path.endsWith(".apk") || args.size <= 0 || args.size > 500_000_000) {
+                    throw IllegalArgumentException("更新包来源或大小无效")
+                }
+                val directory = File(activity.cacheDir, "updates").apply { mkdirs() }
+                directory.listFiles()?.filter { it.isFile && it.extension == "part" }?.forEach { it.delete() }
+                val name = url.path.substringAfterLast('/')
+                if (!Regex("^SPlayer-Next-Android-(arm64|arm32|x64)(?:-[a-f0-9]{7})?\\.apk$").matches(name)) {
+                    throw IllegalArgumentException("更新包文件名无效")
+                }
+                val target = File(directory, name)
+                val part = File(directory, "$name.part")
+                temporary = part
+                connection = (url.openConnection() as HttpURLConnection).apply {
+                    connectTimeout = 15_000
+                    readTimeout = 30_000
+                    setRequestProperty("User-Agent", "SPlayer-Next-Android")
+                }
+                if (connection.responseCode != 200) throw IllegalStateException("下载失败：HTTP ${connection.responseCode}")
+                val digest = MessageDigest.getInstance("SHA-256")
+                var downloaded = 0L
+                var lastReport = System.currentTimeMillis()
+                var lastBytes = 0L
+                val started = lastReport
+                connection.inputStream.use { input ->
+                    part.outputStream().use { output ->
+                        val buffer = ByteArray(64 * 1024)
+                        while (true) {
+                            val count = input.read(buffer)
+                            if (count < 0) break
+                            downloaded += count
+                            if (downloaded > args.size) throw IllegalStateException("更新包超过预期大小")
+                            digest.update(buffer, 0, count)
+                            output.write(buffer, 0, count)
+                            val now = System.currentTimeMillis()
+                            if (now - lastReport >= 250) {
+                                val speed = ((downloaded - lastBytes) * 1000 / (now - lastReport)).coerceAtLeast(0)
+                                val progress = JSObject().apply {
+                                    put("percent", downloaded * 100.0 / args.size)
+                                    put("downloadedBytes", downloaded)
+                                    put("totalBytes", args.size)
+                                    put("bytesPerSecond", speed)
+                                }
+                                handler.post { trigger("updateProgress", progress) }
+                                lastReport = now
+                                lastBytes = downloaded
+                            }
+                        }
+                    }
+                }
+                if (downloaded != args.size) throw IllegalStateException("更新包下载不完整")
+                val expected = args.digest?.removePrefix("sha256:")?.lowercase()
+                if (expected != null && expected != digest.digest().joinToString("") { "%02x".format(it.toInt() and 0xff) }) {
+                    throw IllegalStateException("更新包校验失败")
+                }
+                if (target.exists()) target.delete()
+                if (!part.renameTo(target)) throw IllegalStateException("无法保存更新包")
+                temporary = null
+                directory.listFiles()?.filter { it.isFile && it != target && it.extension == "apk" }
+                    ?.forEach { it.delete() }
+                handler.post {
+                    trigger("updateProgress", JSObject().apply {
+                        put("percent", 100.0)
+                        put("downloadedBytes", downloaded)
+                        put("totalBytes", args.size)
+                        put("bytesPerSecond", if (System.currentTimeMillis() > started)
+                            downloaded * 1000 / (System.currentTimeMillis() - started) else 0)
+                    })
+                    invoke.resolveObject(target.absolutePath)
+                }
+            } catch (error: Exception) {
+                Log.e("SPlayerUpdate", "APK download failed", error)
+                invoke.reject(error.message ?: "下载更新包失败")
+            } finally {
+                connection?.disconnect()
+                temporary?.delete()
+            }
+        }.start()
+    }
+
+    @Command fun installUpdate(invoke: Invoke) {
+        val args = invoke.parseArgs(UpdateInstallArgs::class.java)
+        handler.post {
+            try {
+                val source = File(args.path).canonicalFile
+                val updates = File(activity.cacheDir, "updates").canonicalFile
+                if (source.parentFile != updates || !source.isFile || source.extension != "apk") {
+                    throw IllegalArgumentException("更新包文件无效，请重新下载")
+                }
+                if (Build.VERSION.SDK_INT >= 26 && !activity.packageManager.canRequestPackageInstalls()) {
+                    val settings = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                        Uri.parse("package:${activity.packageName}"))
+                    activity.startActivity(settings)
+                    throw IllegalStateException("请允许安装应用后返回，再点击安装")
+                }
+                val uri = FileProvider.getUriForFile(
+                    activity, "${activity.packageName}.fileprovider", source)
+                val intent = Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(uri, "application/vnd.android.package-archive")
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                activity.startActivity(intent)
+                invoke.resolve()
+            } catch (error: Exception) {
+                invoke.reject(error.message ?: "无法打开安装程序")
+            }
         }
     }
 }

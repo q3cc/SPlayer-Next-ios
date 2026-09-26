@@ -2,6 +2,8 @@
   "update": {
     "iosInstallHint": "After download, choose your signing tool in the share sheet. The IPA still needs signing before installation.",
     "iosReadyToast": "IPA downloaded. Open it in another app.",
+    "androidReadyToast": "Update downloaded. Ready to install.",
+    "androidInstallNow": "Install now",
     "openInApp": "Open in another app",
     "updateNow": "Update now",
     "dialogTitle": "New Version Available",

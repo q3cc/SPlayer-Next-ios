@@ -2,6 +2,8 @@
   "update": {
     "iosInstallHint": "下载后会弹出分享面板，选择签名工具打开 IPA。仍需重新签名安装。",
     "iosReadyToast": "IPA 已下载，可用其他 App 打开",
+    "androidReadyToast": "更新包已下载，可立即安装",
+    "androidInstallNow": "立即安装",
     "openInApp": "其他 App 打开",
     "updateNow": "立即更新",
     "dialogTitle": "发现新版本",
