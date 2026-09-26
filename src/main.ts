@@ -15,6 +15,7 @@ import { installHotkeyManager } from "./core/hotkey/manager";
 import { vRipple } from "./directives/ripple";
 import { reportBootStage } from "./boot";
 import { dismissSplash } from "./splash";
+import { isIOS } from "./utils/config";
 
 const startApp = async (): Promise<void> => {
   reportBootStage("vue-setup-start");
@@ -46,7 +47,7 @@ const startApp = async (): Promise<void> => {
   const bootstrapPlayback = async (): Promise<void> => {
     await initPlayer();
     const siriPlaying =
-      import.meta.env.MODE === "mobile"
+      isIOS && import.meta.env.VITE_MOBILE_TARGET !== "android"
         ? await import("./mobile/siri")
             .then(({ mobileSiri }) => mobileSiri.initialize())
             .catch((error) => {

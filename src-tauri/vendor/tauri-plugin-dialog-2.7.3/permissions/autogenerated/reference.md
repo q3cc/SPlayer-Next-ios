@@ -52,6 +52,32 @@ Denies the ask command without any pre-configured scope. (**DEPRECATED**: This i
 <tr>
 <td>
 
+`dialog:allow-directory-access`
+
+</td>
+<td>
+
+Enables the directory_access command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`dialog:deny-directory-access`
+
+</td>
+<td>
+
+Denies the directory_access command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
 `dialog:allow-message`
 
 </td>

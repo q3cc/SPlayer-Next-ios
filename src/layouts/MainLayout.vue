@@ -4,7 +4,7 @@ import { useMediaStore } from "@/stores/media";
 import { useSettingsStore } from "@/stores/settings";
 import { useOrpheusProtocol } from "@/composables/useOrpheusProtocol";
 import { useExternalFileHandler } from "@/composables/useExternalFileHandler";
-import { isIOS } from "@/utils/config";
+import { isMobile } from "@/utils/config";
 import PlayerSurface from "@/components/player/PlayerSurface.vue";
 
 const route = useRoute();
@@ -115,7 +115,7 @@ const playerBarInnerClass = computed(() => {
     case "floating":
       return `${base} mx-auto max-w-4xl glass-panel rounded-full shadow-xl border border-solid border-primary/10`;
     default:
-      return `${base} ${isIOS ? "ios-player-bar" : "h-20"} bg-surface-panel border-t border-t-solid border-t-primary/10`;
+      return `${base} ${isMobile ? "ios-player-bar" : "h-20"} bg-surface-panel border-t border-t-solid border-t-primary/10`;
   }
 });
 </script>
@@ -125,7 +125,7 @@ const playerBarInnerClass = computed(() => {
   <div
     class="app-viewport h-screen flex overflow-hidden bg-app text-on-surface transition-[transform,opacity] duration-500 ease-[cubic-bezier(0.7,0,0.3,1)] origin-center"
     :class="[
-      isIOS ? 'ios-app-viewport' : '',
+      isMobile ? 'ios-app-viewport' : '',
       isPlayerExpanded ? 'scale-95 opacity-0 pointer-events-none' : '',
     ]"
   >
@@ -179,7 +179,7 @@ const playerBarInnerClass = computed(() => {
       v-if="showPlayerBar"
       :class="playerBarWrapperClass"
       :style="
-        isIOS && !isCompactLayout && appearance.layoutMode === 'floating'
+        isMobile && !isCompactLayout && appearance.layoutMode === 'floating'
           ? { bottom: 'var(--s-safe-bottom)' }
           : undefined
       "

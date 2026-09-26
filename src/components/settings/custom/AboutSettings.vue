@@ -16,6 +16,7 @@ import {
   COPYRIGHT_HOLDER,
   IS_APPX,
   isIOS,
+  isMobile,
   COMMIT_HASH,
   COMMIT_DATE,
 } from "@/utils/config";
@@ -32,7 +33,7 @@ const update = useUpdateStore();
 /** 提交时间 */
 const commitTimeAgo = useTimeAgo(new Date(COMMIT_DATE));
 /** 当前版本 */
-const versions = isIOS ? null : window.electron.process.versions;
+const versions = isMobile ? null : window.electron.process.versions;
 /** 操作系统信息 */
 const osInfo = window.api.system.osInfo;
 
@@ -75,7 +76,7 @@ const envItems = computed<EnvItem[]>(() => [
         { label: "Node.js", value: versions.node },
         { label: "V8", value: versions.v8 },
       ]
-    : [{ label: "WebKit", value: navigator.userAgent }]),
+    : [{ label: isIOS ? "WebKit" : "WebView", value: navigator.userAgent }]),
   { label: "OS", value: `${osInfo.type} ${osInfo.arch} ${osInfo.release}` },
 ]);
 
@@ -196,7 +197,7 @@ onMounted(async () => {
                   : t("settings.about.checkUpdate")
             }}
           </SButton>
-          <SButton v-if="!isIOS" variant="secondary" @click="handleOpenLogs">
+          <SButton v-if="!isMobile" variant="secondary" @click="handleOpenLogs">
             {{ t("settings.about.openLogs") }}
           </SButton>
         </div>

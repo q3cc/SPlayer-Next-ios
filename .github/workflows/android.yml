@@ -1,0 +1,144 @@
+name: Build Android APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - feat/ios-ipados
+    paths:
+      - ".github/workflows/android.yml"
+      - "src-tauri/**"
+      - "src/**"
+      - "shared/**"
+      - "public/**"
+      - "scripts/configure-android-signing.mjs"
+      - "scripts/configure-ios-siri.mjs"
+      - "scripts/verify-mobile-bundle.ts"
+      - "index.html"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "patches/**"
+      - "vite.config.ts"
+      - "vite.siri.config.ts"
+      - "uno.config.ts"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-android:
+    name: Signed Android arm64 APK
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      CI: "true"
+      ELECTRON_SKIP_BINARY_DOWNLOAD: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.5.2
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.19.0
+          cache: pnpm
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android platform and NDK
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0" "ndk;27.2.12479018"
+
+      - name: Configure Android NDK
+        run: |
+          echo "NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/27.2.12479018" >> "$GITHUB_ENV"
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-linux-android
+
+      - name: Cache Rust artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: android-arm64
+
+      - name: Install frontend dependencies
+        run: pnpm install --frozen-lockfile --ignore-scripts
+
+      - name: Generate Android project
+        run: pnpm tauri android init --ci --skip-targets-install
+
+      - name: Configure release signing
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          set -euo pipefail
+          test -n "$ANDROID_KEYSTORE_BASE64"
+          test -n "$ANDROID_KEYSTORE_PASSWORD"
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/q3cc-android.p12"
+          chmod 600 "$RUNNER_TEMP/q3cc-android.p12"
+          fingerprint=$(keytool -exportcert -rfc -storetype PKCS12 \
+            -keystore "$RUNNER_TEMP/q3cc-android.p12" \
+            -storepass "$ANDROID_KEYSTORE_PASSWORD" -alias q3cc-android \
+            | openssl x509 -noout -fingerprint -sha256 | cut -d= -f2)
+          test "$fingerprint" = 'D5:B9:79:54:F3:57:06:B1:E3:75:CB:34:32:97:15:DF:42:7B:7A:75:A2:E1:A3:1D:B8:10:AC:EE:7C:51:05:7F'
+          {
+            printf 'keyAlias=q3cc-android\n'
+            printf 'password=%s\n' "$ANDROID_KEYSTORE_PASSWORD"
+            printf 'storeFile=%s\n' "$RUNNER_TEMP/q3cc-android.p12"
+          } > src-tauri/gen/android/keystore.properties
+          chmod 600 src-tauri/gen/android/keystore.properties
+          node scripts/configure-android-signing.mjs
+
+      - name: Build signed APK
+        run: pnpm tauri android build --ci --apk --target aarch64
+
+      - name: Collect and verify APK
+        run: |
+          set -euo pipefail
+          apk=$(find src-tauri/gen/android/app/build/outputs/apk -type f -name '*.apk' -print -quit)
+          test -n "$apk"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --verbose "$apk"
+          signer=$("$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs "$apk" \
+            | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')
+          test "$signer" = 'd5b97954f35706b1e375cb34329715df427b7a75a2e1a31db810acee7c51057f'
+          if grep -Eq 'tauri-plugin-(ipa-update|lyric-pip)' src-tauri/gen/android/tauri.settings.gradle; then
+            echo 'Android build links an iOS-only plugin' >&2
+            exit 1
+          fi
+          if unzip -Z1 "$apk" | grep -Eiq '(^|/)(Siri|AirPlay|ipa-update|lyric-pip|AudioStreaming)(/|\.|$)'; then
+            echo 'Android APK contains an iOS-only file' >&2
+            exit 1
+          fi
+          cp "$apk" SPlayer-Next-Android-arm64.apk
+
+      - name: Upload signed APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: SPlayer-Next-Android-arm64-${{ github.sha }}
+          path: SPlayer-Next-Android-arm64.apk
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14

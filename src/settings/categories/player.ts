@@ -1,6 +1,6 @@
 import type { SettingCategory, SettingItem, SettingSection } from "@/types/settings-schema";
 import DeviceSelector from "@/components/settings/custom/DeviceSelector.vue";
-import { isIOS } from "@/utils/config";
+import { isMobile } from "@/utils/config";
 import IconLucidePlay from "~icons/lucide/play";
 
 const playerCategory: SettingCategory = {
@@ -22,7 +22,7 @@ const playerCategory: SettingCategory = {
           binding: { store: "settings", path: "system.player.rememberLastTrack" },
           defaultValue: false,
         },
-        ...(isIOS
+        ...(isMobile
           ? []
           : ([
               {
@@ -117,7 +117,7 @@ const playerCategory: SettingCategory = {
         },
       ],
     },
-    ...(isIOS
+    ...(isMobile
       ? []
       : ([
           {

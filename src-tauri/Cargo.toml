@@ -1,7 +1,7 @@
 [package]
 name = "splayer-next-mobile"
 version = "2.0.0"
-description = "SPlayer Next for iOS and iPadOS"
+description = "SPlayer Next for iOS, iPadOS, and Android"
 authors = ["SPlayer-Dev contributors"]
 edition = "2021"
 license = "AGPL-3.0"
@@ -17,18 +17,18 @@ tauri-build = { version = "2", features = [] }
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-tauri = { version = "2", features = [] }
+tauri = { version = "2", features = ["protocol-asset"] }
 tauri-plugin-deep-link = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
 tauri-plugin-http = { version = "2", features = ["unsafe-headers", "gzip", "deflate"] }
-tauri-plugin-ipa-update = { path = "plugins/ipa-update" }
-tauri-plugin-lyric-pip = { path = "plugins/lyric-pip" }
 tauri-plugin-native-audio = { path = "plugins/native-audio" }
 tauri-plugin-opener = "2"
 
 [target.'cfg(target_os = "ios")'.dependencies]
 libc = "0.2"
+tauri-plugin-ipa-update = { path = "plugins/ipa-update" }
+tauri-plugin-lyric-pip = { path = "plugins/lyric-pip" }
 
 [features]
 default = ["custom-protocol"]

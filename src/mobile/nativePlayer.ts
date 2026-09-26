@@ -8,8 +8,9 @@ import type {
 } from "@shared/types/player";
 import { mobileMediaSession } from "./mediaSession";
 import { mobileLyricPip } from "./lyricPip";
+import { isAndroid } from "./platform";
 
-/** iOS 使用原生流式引擎，浏览器预览保留原播放器。 */
+/** 移动端使用系统音频引擎，浏览器预览保留原播放器。 */
 export const createNativePlayer = (fallback: PlayerApi): PlayerApi => {
   const listeners = new Set<(event: PlayerEvent) => void>();
   let status: PlayerStatus = {
@@ -71,11 +72,12 @@ export const createNativePlayer = (fallback: PlayerApi): PlayerApi => {
         subscriptions.push(
           await addPluginListener("native-audio", "ended", () => emit({ type: "ended" })),
         );
-        subscriptions.push(
-          await addPluginListener("native-audio", "airplaySession", (value) =>
-            console.info("[airplay] native-session", value),
-          ),
-        );
+        if (import.meta.env.VITE_MOBILE_TARGET !== "android" && !isAndroid)
+          subscriptions.push(
+            await addPluginListener("native-audio", "airplaySession", (value) =>
+              console.info("[airplay] native-session", value),
+            ),
+          );
         subscriptions.push(
           await addPluginListener<{ message: string }>("native-audio", "error", (value) => {
             console.warn("[native-audio] 播放失败", value.message);
@@ -142,9 +144,10 @@ export const createNativePlayer = (fallback: PlayerApi): PlayerApi => {
       const current = ++generation;
       try {
         await initialize();
-        await invoke("plugin:native-audio|siri", {
-          request: JSON.stringify({ action: "interrupt" }),
-        });
+        if (import.meta.env.VITE_MOBILE_TARGET !== "android" && !isAndroid)
+          await invoke("plugin:native-audio|siri", {
+            request: JSON.stringify({ action: "interrupt" }),
+          });
         const value = await invoke<PlayerStatus>("plugin:native-audio|load", {
           source,
           autoPlay: options.autoPlay !== false,

@@ -1,16 +1,24 @@
 {
   "$schema": "../gen/schemas/mobile-schema.json",
-  "identifier": "mobile",
-  "description": "Permissions required by the mobile application",
+  "identifier": "android",
+  "description": "Permissions required by the Android application",
   "windows": ["main"],
-  "platforms": ["iOS"],
+  "platforms": ["android"],
   "permissions": [
     "core:default",
     "deep-link:default",
     "dialog:default",
-    "lyric-pip:default",
-    "ipa-update:default",
-    "native-audio:default",
+    "native-audio:allow-load",
+    "native-audio:allow-control",
+    "native-audio:allow-configure",
+    "native-audio:allow-metadata",
+    "native-audio:allow-status",
+    "native-audio:allow-system-volume",
+    "native-audio:allow-visibility",
+    "native-audio:allow-read-metadata",
+    "native-audio:allow-read-lyric-file",
+    "native-audio:allow-register-listener",
+    "native-audio:allow-remove-listener",
     "fs:default",
     "fs:allow-appcache-read-recursive",
     "fs:allow-appcache-write-recursive",
@@ -21,8 +29,8 @@
     {
       "identifier": "fs:scope",
       "allow": [
-        "$DOCUMENT/Imported Music",
-        "$DOCUMENT/Imported Music/**",
+        "$APPDATA/Imported Files",
+        "$APPDATA/Imported Files/**",
         "$DOCUMENT/Downloads",
         "$DOCUMENT/Downloads/**"
       ]

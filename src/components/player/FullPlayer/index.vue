@@ -16,7 +16,7 @@ import AirPlayControl from "@/components/player/AirPlayControl.vue";
 import PlaylistPickerDialog from "@/components/modals/PlaylistPickerDialog.vue";
 import { useWindowControls } from "@/composables/useWindowControls";
 import * as player from "@/core/player";
-import { isIOS } from "@/utils/config";
+import { isMobile } from "@/utils/config";
 import IconFavorite from "~icons/material-symbols/favorite-rounded";
 import IconFavoriteOutline from "~icons/material-symbols/favorite-outline-rounded";
 import IconLucideListPlus from "~icons/lucide/list-plus";
@@ -235,7 +235,7 @@ const showComments = (): void => {
           class="absolute top-0 inset-x-0 h-14 z-10 app-drag-region transition-opacity duration-400 flex items-center justify-between px-3"
           :class="[
             immersive ? 'opacity-0 pointer-events-none' : 'opacity-100',
-            useMobileLayout || isIOS ? 'safe-full-player-header' : '',
+            useMobileLayout || isMobile ? 'safe-full-player-header' : '',
           ]"
         >
           <div class="app-no-drag flex items-center gap-2">
@@ -261,7 +261,7 @@ const showComments = (): void => {
               <template #icon><IconLucideTextQuote /></template>
             </SButton>
           </div>
-          <div v-if="!useMobileLayout && !isIOS" class="app-no-drag flex items-center gap-3">
+          <div v-if="!useMobileLayout && !isMobile" class="app-no-drag flex items-center gap-3">
             <SButton type="cover" variant="ghost" circle :size="40" @click="toggleFullscreen">
               <template #icon>
                 <IconLucideMinimize v-if="isFullscreen" />
@@ -276,7 +276,7 @@ const showComments = (): void => {
           class="absolute top-14 inset-x-0"
           :class="[
             useMobileLayout ? 'bottom-34 mobile-full-player-main' : 'bottom-20',
-            isIOS && !useMobileLayout ? 'safe-wide-player-main' : '',
+            isMobile && !useMobileLayout ? 'safe-wide-player-main' : '',
           ]"
         >
           <!-- 左侧 -->
@@ -398,7 +398,7 @@ const showComments = (): void => {
           class="absolute bottom-0 inset-x-0 h-20 z-10 flex items-center gap-4 px-4 transition-opacity duration-400"
           :class="[
             immersive ? 'opacity-0 pointer-events-none' : 'opacity-100',
-            isIOS ? 'safe-wide-player-controls' : '',
+            isMobile ? 'safe-wide-player-controls' : '',
           ]"
         >
           <div class="flex-1 min-w-0 flex items-center justify-start gap-2">

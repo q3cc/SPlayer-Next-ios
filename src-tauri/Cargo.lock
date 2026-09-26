@@ -1677,6 +1677,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "http-range"
+version = "0.1.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "21dec9db110f5f872ed9699c3ecf50cf16f423502706ba5c72462e28d3157573"
+
+[[package]]
 name = "httparse"
 version = "1.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2383,17 +2389,6 @@ dependencies = [
  "block2",
  "objc2",
  "objc2-core-foundation",
- "objc2-foundation",
-]
-
-[[package]]
-name = "objc2-avf-audio"
-version = "0.3.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "13a380031deed8e99db00065c45937da434ca987c034e13b87e4441f9e4090be"
-dependencies = [
- "bitflags 2.13.1",
- "objc2",
  "objc2-foundation",
 ]
 
@@ -3920,6 +3915,7 @@ dependencies = [
  "gtk",
  "heck 0.5.0",
  "http",
+ "http-range",
  "jni",
  "libc",
  "log",

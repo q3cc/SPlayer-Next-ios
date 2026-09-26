@@ -16,6 +16,7 @@ fn main() {
         "register_listener",
         "remove_listener",
     ])
+    .android_path("android")
     .ios_path("ios")
     .build();
 }

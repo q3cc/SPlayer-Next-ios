@@ -1,11 +1,13 @@
-# 恢复和移除 iOS 目录书签的权限。
+# Automatically generated - DO NOT EDIT!
+
+"$schema" = "../../schemas/schema.json"
 
 [[permission]]
 identifier = "allow-directory-access"
-description = "Enables restoring and removing saved directory access grants."
+description = "Enables the directory_access command without any pre-configured scope."
 commands.allow = ["directory_access"]
 
 [[permission]]
 identifier = "deny-directory-access"
-description = "Denies restoring and removing saved directory access grants."
+description = "Denies the directory_access command without any pre-configured scope."
 commands.deny = ["directory_access"]

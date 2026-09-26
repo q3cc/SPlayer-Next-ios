@@ -3,7 +3,7 @@ import { LOCALES } from "@shared/types/settings";
 import StorageManager from "@/components/settings/custom/StorageManager.vue";
 import { useUpdateStore } from "@/stores/update";
 import IconLucideCog from "~icons/lucide/cog";
-import { isIOS } from "@/utils/config";
+import { isIOS, isMobile } from "@/utils/config";
 
 const generalCategory: SettingCategory = {
   id: "general",
@@ -21,7 +21,7 @@ const generalCategory: SettingCategory = {
         },
       ],
     },
-    ...(isIOS
+    ...(isMobile
       ? []
       : ([
           {
@@ -129,7 +129,7 @@ const generalCategory: SettingCategory = {
           type: "switch",
           binding: { store: "settings", path: "system.system.diagnosticLogging" },
           defaultValue: false,
-          visible: () => isIOS,
+          visible: () => isMobile,
         },
         {
           key: "showPerformanceMonitor",

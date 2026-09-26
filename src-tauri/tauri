@@ -1,0 +1,3 @@
+// Tauri's generated Android Gradle task runs `node tauri` from this directory.
+// Forward that invocation to the installed CLI used by the main build.
+import "../node_modules/@tauri-apps/cli/tauri.js";

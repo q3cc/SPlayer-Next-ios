@@ -8,6 +8,7 @@ import type { SystemConfig } from "@shared/types/settings";
 import { hasRealWordTiming } from "@windows/desktop-lyric/utils";
 import { colord } from "colord";
 import { getLineText, getLineRomaji, getWordText } from "@shared/utils/lyrics";
+import { isAndroid } from "./platform";
 
 /** 复用已解析的歌词，仅把当前曲目的行文本交给系统画中画。 */
 export const pipContent = (
@@ -109,6 +110,7 @@ const flushAnchor = async (): Promise<void> => {
 
 export const mobileLyricPip = {
   async preview(): Promise<string> {
+    if (isAndroid) return "";
     const value = await snapshot?.();
     if (!value) return "";
     const result = await invoke<{ image: string }>("plugin:lyric-pip|preview", {
@@ -119,6 +121,7 @@ export const mobileLyricPip = {
     return result.image;
   },
   async releasePreview(): Promise<void> {
+    if (isAndroid) return;
     await invoke("plugin:lyric-pip|discard");
   },
   configure(
@@ -134,6 +137,7 @@ export const mobileLyricPip = {
     return () => visibilityListeners.delete(callback);
   },
   sync(status: PlayerStatus, force = false): void {
+    if (isAndroid) return;
     if (!active && !starting) return;
     const now = Date.now();
     if (!force && lastAnchor) {
@@ -154,6 +158,7 @@ export const mobileLyricPip = {
     void flushAnchor();
   },
   async update(): Promise<void> {
+    if (isAndroid) return;
     if ((!active && !starting) || !snapshot) return;
     const token = ++revision;
     const value = await snapshot();
@@ -161,9 +166,11 @@ export const mobileLyricPip = {
     await invoke("plugin:lyric-pip|update", pipContent(value, store.get("desktopLyric")));
   },
   async close(): Promise<void> {
+    if (isAndroid) return;
     await invoke("plugin:lyric-pip|stop");
   },
   async toggle(): Promise<void> {
+    if (isAndroid) return;
     if (starting) return;
     if (active) return mobileLyricPip.close();
     starting = true;

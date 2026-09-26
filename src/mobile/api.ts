@@ -21,6 +21,7 @@ import { mobileStats } from "./stats";
 import { mobileMediaSession } from "./mediaSession";
 import { mobileLyricPip } from "./lyricPip";
 import { mobileUpdate } from "./update";
+import { isAndroid } from "./platform";
 import { mobileCache } from "./cache";
 import type { PluginsApi, PluginInfo, PlaybackEventKind } from "@shared/types/plugin";
 
@@ -297,6 +298,7 @@ const api = {
       const path = await open({
         multiple: false,
         directory: false,
+        ...(isAndroid ? { fileAccessMode: "copy" as const } : {}),
         filters: [{ name: "JSON", extensions: ["json"] }],
       });
       if (!path || Array.isArray(path)) return { ok: false as const, reason: "canceled" as const };
@@ -309,9 +311,9 @@ const api = {
   },
   player: mobilePlayer,
   system: {
-    installType: "ipa",
-    platform: "ios",
-    osInfo: { type: "iOS", arch: "arm64", release: "" },
+    installType: isAndroid ? "apk" : "ipa",
+    platform: isAndroid ? "android" : "ios",
+    osInfo: { type: isAndroid ? "Android" : "iOS", arch: "arm64", release: "" },
     toggleDevTools: async () => undefined,
     showInExplorer: async () => undefined,
     openLogsDir: async () => "",
@@ -544,7 +546,7 @@ const api = {
 
 export const installMobileApi = (): void => {
   window.api = api as unknown as Window["api"];
-  document.documentElement.classList.add("mobile", "ios");
+  document.documentElement.classList.add("mobile", isAndroid ? "android" : "ios");
   // WKWebView 解析首屏模块时调用 deep-link 插件可能阻塞渲染，延后注册原生监听。
   window.setTimeout(initializeDeepLinks, 1_000);
 };

@@ -9,8 +9,15 @@ export const isWin = import.meta.env.MODE !== "mobile" && platform === "win32";
 export const isMac = import.meta.env.MODE !== "mobile" && platform === "darwin";
 /** 是否为 Linux 系统 */
 export const isLinux = import.meta.env.MODE !== "mobile" && platform === "linux";
-/** 是否为 iOS / iPadOS 移动端 */
-export const isIOS = import.meta.env.MODE === "mobile" || platform === "ios";
+/** 是否为移动端 */
+export const isMobile =
+  import.meta.env.MODE === "mobile" || platform === "ios" || platform === "android";
+/** 是否为 iOS / iPadOS */
+export const isIOS =
+  import.meta.env.VITE_MOBILE_TARGET === "android" ? false : platform === "ios";
+/** 是否为 Android */
+export const isAndroid =
+  import.meta.env.VITE_MOBILE_TARGET === "ios" ? false : platform === "android";
 
 /** 应用版本号 */
 export const APP_VERSION = __APP_VERSION__;

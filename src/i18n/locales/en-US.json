@@ -2152,7 +2152,8 @@
     "downloadDir": {
       "label": "Download Folder",
       "change": "Change",
-      "mobile": "Files → On My iPhone / iPad → SPlayer → Downloads"
+      "mobile": "Files → On My iPhone / iPad → SPlayer → Downloads",
+      "android": "Songs are saved in the app's Downloads folder"
     },
     "downloadQuality": {
       "label": "Download Quality",

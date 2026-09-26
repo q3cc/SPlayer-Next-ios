@@ -1,7 +1,7 @@
 import type { SettingCategory, SettingSection } from "@/types/settings-schema";
 import { useSettingsStore } from "@/stores/settings";
 import { useThemeStore } from "@/stores/theme";
-import { isIOS } from "@/utils/config";
+import { isMobile } from "@/utils/config";
 import FontConfig from "@/components/settings/custom/FontConfig.vue";
 import BackgroundImagePicker from "@/components/settings/custom/BackgroundImagePicker.vue";
 import SidebarCustomizeConfig from "@/components/settings/custom/SidebarCustomizeConfig.vue";
@@ -115,7 +115,7 @@ const appearanceCategory: SettingCategory = {
         },
       ],
     },
-    ...(isIOS
+    ...(isMobile
       ? []
       : ([
           {

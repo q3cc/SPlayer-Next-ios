@@ -1,6 +1,6 @@
 import type { SettingCategory, SettingSection } from "@/types/settings-schema";
 import { useSettingsStore } from "@/stores/settings";
-import { isMac, isIOS } from "@/utils/config";
+import { isMac, isMobile } from "@/utils/config";
 import IconLucideMonitor from "~icons/lucide/monitor";
 
 const desktopLyricSection: SettingSection = {
@@ -393,7 +393,7 @@ const externalLyricCategory: SettingCategory = {
   icon: IconLucideMonitor,
   sections: [
     desktopLyricSection,
-    ...(isIOS
+    ...(isMobile
       ? []
       : [
           dynamicIslandSection,

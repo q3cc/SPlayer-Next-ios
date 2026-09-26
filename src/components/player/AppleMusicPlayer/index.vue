@@ -11,7 +11,7 @@ import { useTrackMenu } from "@/composables/useTrackMenu";
 import { getCurrentTime } from "@/services/playback";
 import { formatTime } from "@/utils/time";
 import { getQualityLabel, isLosslessQuality } from "@/utils/quality";
-import { isIOS } from "@/utils/config";
+import { isIOS, isMobile } from "@/utils/config";
 import * as player from "@/core/player";
 import AMLLLyrics from "../Lyrics/AMLLLyrics.vue";
 import PlayerBackground from "../FullPlayer/PlayerBackground.vue";
@@ -80,7 +80,9 @@ const menuItems = computed(() => [
     disabled: !track.value || !favorite.isSupported(track.value),
   },
   ...unref(trackMenuItems),
-  { key: "am-desktop-lyric", label: t("settings.section.desktopLyric"), separator: true },
+  ...(!isMobile || isIOS
+    ? [{ key: "am-desktop-lyric", label: t("settings.section.desktopLyric"), separator: true }]
+    : []),
   {
     key: "am-copy-lyrics",
     label: t("player.copyLyric.title"),

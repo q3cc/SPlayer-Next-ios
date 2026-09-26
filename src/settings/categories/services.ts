@@ -2,7 +2,7 @@ import type { SettingCategory, SettingSection } from "@/types/settings-schema";
 import { useSettingsStore } from "@/stores/settings";
 import { toast } from "@/composables/useToast";
 import i18n from "@/i18n";
-import { isIOS } from "@/utils/config";
+import { isIOS, isMobile } from "@/utils/config";
 import ExternalApiStatusCard from "@/components/settings/custom/ExternalApiStatusCard.vue";
 import LastfmPanel from "@/components/settings/custom/LastfmPanel.vue";
 import IconLucideGlobe from "~icons/lucide/globe";
@@ -90,7 +90,7 @@ const servicesCategory: SettingCategory = {
         },
       ],
     },
-    ...(isIOS
+    ...(isMobile
       ? []
       : ([
           {

@@ -28,13 +28,18 @@ pub fn run() {
     }
     record_boot_stage("native-entry");
 
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
-        .plugin(tauri_plugin_http::init())
+        .plugin(tauri_plugin_http::init());
+    // Keep iOS extensions out of the Android binary.
+    #[cfg(target_os = "ios")]
+    let builder = builder
         .plugin(tauri_plugin_ipa_update::init())
-        .plugin(tauri_plugin_lyric_pip::init())
+        .plugin(tauri_plugin_lyric_pip::init());
+
+    builder
         .plugin(tauri_plugin_native_audio::init())
         .plugin(tauri_plugin_opener::init())
         .setup(|_| {

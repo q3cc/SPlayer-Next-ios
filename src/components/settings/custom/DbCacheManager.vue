@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { isIOS } from "@/utils/config";
+import { isMobile } from "@/utils/config";
 import { dialog } from "@/composables/useDialog";
 import { formatFileSize } from "@/utils/format";
 import type { Component } from "vue";
@@ -97,7 +97,7 @@ const requestClearAll = async (): Promise<void> => {
             <div class="flex-1 min-w-0">
               <div class="text-sm">{{ t(`settings.cacheCategory.${stat.id}`) }}</div>
               <div
-                v-if="!isIOS"
+                v-if="!isMobile"
                 class="text-xs text-on-surface-variant/60 truncate font-mono"
                 :title="stat.path"
               >

@@ -13,7 +13,7 @@ import IconLucideImagePlus from "~icons/lucide/image-plus";
 import IconLucideMusic from "~icons/lucide/music";
 import IconLucideDatabase from "~icons/lucide/database";
 import { useCacheStats } from "@/composables/useCacheStats";
-import { isIOS } from "@/utils/config";
+import { isMobile } from "@/utils/config";
 
 defineOptions({ inheritAttrs: false });
 
@@ -105,7 +105,7 @@ const requestClearAll = async (): Promise<void> => {
   <div class="flex flex-col gap-3">
     <!-- 缓存目录 -->
     <div
-      v-if="!isIOS"
+      v-if="!isMobile"
       class="rounded-xl bg-surface-panel border border-solid border-outline-variant/15 px-4 py-3.5 flex items-center justify-between gap-4"
     >
       <div class="min-w-0 flex-1">
@@ -134,7 +134,7 @@ const requestClearAll = async (): Promise<void> => {
 
     <!-- 占用情况 -->
     <div
-      v-if="!isIOS"
+      v-if="!isMobile"
       class="rounded-xl bg-surface-panel border border-solid border-outline-variant/15 overflow-hidden"
     >
       <div class="px-4 py-2.5 flex items-center gap-3 text-sm">

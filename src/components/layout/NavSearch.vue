@@ -7,7 +7,7 @@ import { songsByIds as getNeteaseSongsByIds } from "@/apis/song/netease";
 import { formatCompact } from "@/utils/format";
 import { navigateToAlbum, navigateToArtist, navigateToPlaylist } from "@/utils/navigate";
 import { parseMusicLink, type LinkType } from "@/utils/link";
-import { isIOS } from "@/utils/config";
+import { isMobile } from "@/utils/config";
 import type { TrackSource } from "@shared/types/player";
 import * as player from "@/core/player";
 import IconLucideMusic from "~icons/lucide/music";
@@ -293,7 +293,7 @@ onMounted(() => {
       </span>
     </div>
     <SButton
-      v-if="!isIOS"
+      v-if="!isMobile"
       class="app-no-drag shrink-0"
       variant="tertiary"
       circle

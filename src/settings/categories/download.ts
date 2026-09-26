@@ -1,5 +1,5 @@
 import type { SettingCategory, SettingSection } from "@/types/settings-schema";
-import { isIOS } from "@/utils/config";
+import { isMobile } from "@/utils/config";
 import DownloadDirConfig from "@/components/settings/custom/DownloadDirConfig.vue";
 import IconLucideDownload from "~icons/lucide/download";
 
@@ -15,7 +15,7 @@ const downloadCategory: SettingCategory = {
           type: "switch",
           binding: { store: "settings", path: "system.download.enabled" },
           defaultValue: false,
-          hideDescription: !isIOS,
+          hideDescription: !isMobile,
           confirm: {
             when: (value) => value === true,
             titleKey: "download.consent.title",
@@ -90,7 +90,7 @@ const downloadCategory: SettingCategory = {
         },
       ],
     },
-    ...(isIOS
+    ...(isMobile
       ? []
       : ([
           {

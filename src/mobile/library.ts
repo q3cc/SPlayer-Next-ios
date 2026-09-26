@@ -5,6 +5,7 @@ import { readDir, remove, stat } from "@tauri-apps/plugin-fs";
 import type { AlbumSummary, ArtistSummary, LibraryApi, ScanProgress } from "@shared/types/library";
 import type { Track } from "@shared/types/player";
 import { startFolderTrace } from "./folderTrace";
+import { isAndroid } from "./platform";
 
 const TRACKS_STORAGE_KEY = "splayer.mobile.library";
 const DIRECTORIES_STORAGE_KEY = "splayer.mobile.scanDirs";
@@ -29,7 +30,7 @@ let directoryGrants: DirectoryGrant[] = [];
 type DirectoryGrant = { directory: string; path: string | null; error: string | null };
 
 const restoreDirectoryGrants = async (): Promise<void> => {
-  if (!isTauri()) return;
+  if (!isTauri() || isAndroid) return;
   const response = await invoke<{ directories: DirectoryGrant[] }>(
     "plugin:dialog|directory_access",
     {
@@ -110,12 +111,15 @@ const listAudioFiles = async (
 
 const trackFromFile = async (path: string): Promise<Track> => {
   const info = await stat(path);
-  const tags = isTauri()
-    ? await invoke<{ title?: string; artist?: string; album?: string; duration?: number }>(
-        "plugin:native-audio|read_metadata",
-        { source: path, autoPlay: false },
-      ).catch(() => ({}) as { title?: string; artist?: string; album?: string; duration?: number })
-    : {};
+  const tags =
+    isTauri()
+      ? await invoke<{ title?: string; artist?: string; album?: string; duration?: number }>(
+          "plugin:native-audio|read_metadata",
+          { source: path, autoPlay: false },
+        ).catch(
+          () => ({}) as { title?: string; artist?: string; album?: string; duration?: number },
+        )
+      : {};
   const fallbackTime = Date.now();
   return {
     id: idFor(path),
@@ -184,7 +188,7 @@ export const resolveMobileAudioSource = (source: string): string => {
   if (source.startsWith("file:")) {
     return convertFileSrc(decodeURIComponent(new URL(source).pathname));
   }
-  if (/^(https?|blob|data|asset):/i.test(source)) return source;
+  if (/^(https?|blob|data|asset|content):/i.test(source)) return source;
   return convertFileSrc(source);
 };
 
@@ -292,6 +296,7 @@ export const mobileLibrary: LibraryApi = {
       const selected = await open({
         multiple: true,
         directory: false,
+        ...(isAndroid ? { fileAccessMode: "copy" as const } : {}),
         filters: [{ name: "Audio", extensions: AUDIO_FILTER_EXTENSIONS }],
       });
       const paths = selected == null ? [] : Array.isArray(selected) ? selected : [selected];
@@ -306,6 +311,7 @@ export const mobileLibrary: LibraryApi = {
     }
   },
   addScanDir: async () => {
+    if (isAndroid) return { success: false, error: "请使用添加歌曲导入音频文件" };
     const trace = startFolderTrace();
     trace.log("add-enter", { busy: addingDirectory, directories: scanDirs.length });
     if (addingDirectory) return { success: false, error: "文件夹选择或导入正在进行中" };
@@ -360,7 +366,7 @@ export const mobileLibrary: LibraryApi = {
     }
   },
   removeScanDir: async (directory) => {
-    if (isTauri()) {
+    if (isTauri() && !isAndroid) {
       await ensureDirectoryGrants();
       await invoke("plugin:dialog|directory_access", { options: { directory } });
       directoryGrants = directoryGrants.filter(
@@ -373,7 +379,7 @@ export const mobileLibrary: LibraryApi = {
     return success();
   },
   getScanDirs: async () => {
-    if (isTauri()) await ensureDirectoryGrants();
+    if (isTauri() && !isAndroid) await ensureDirectoryGrants();
     return success(scanDirs);
   },
   deleteTracks: async (paths) => {

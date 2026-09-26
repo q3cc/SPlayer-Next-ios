@@ -102,6 +102,7 @@ declare module 'vue' {
     IconLucideExternalLink: typeof import('~icons/lucide/external-link')['default']
     IconLucideEye: typeof import('~icons/lucide/eye')['default']
     IconLucideEyeOff: typeof import('~icons/lucide/eye-off')['default']
+    IconLucideFileMusic: typeof import('~icons/lucide/file-music')['default']
     IconLucideFilePlus2: typeof import('~icons/lucide/file-plus2')['default']
     IconLucideFlame: typeof import('~icons/lucide/flame')['default']
     IconLucideFolderOpen: typeof import('~icons/lucide/folder-open')['default']

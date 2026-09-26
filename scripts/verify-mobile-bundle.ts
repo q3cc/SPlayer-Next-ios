@@ -7,6 +7,7 @@ const indexPath = path.join(dist, "index.html");
 const assetsPath = path.join(dist, "assets");
 const tauriConfigPath = path.resolve("src-tauri/tauri.conf.json");
 const iosInfoPath = path.resolve("src-tauri/Info.ios.plist");
+const isAndroidBuild = process.argv.includes("--android");
 
 const fail = (message: string): never => {
   console.error(`[VerifyMobileBundle] ${message}`);
@@ -43,7 +44,7 @@ if (fs.statSync(entryPath).size > 750_000) {
 if (!html.includes("viewport-fit=cover")) fail("缺少 iOS 全屏 viewport-fit=cover");
 if (!html.includes('class="splash-logo"')) fail("缺少内联启动 Logo");
 if (!javascript.includes("splayer.mobile.settings")) fail("移动端 window.api 桥接未进入 bundle");
-if (!javascript.includes("iPhone / iPad")) fail("移动播放器实现未进入 bundle");
+if (!isAndroidBuild && !javascript.includes("iPhone / iPad")) fail("移动播放器实现未进入 bundle");
 if (/\.mobile\s*\{[^}]*display\s*:\s*none/.test(styles)) {
   fail("移动样式错误地隐藏了整个 html.mobile 根节点");
 }
@@ -56,8 +57,27 @@ const tauriConfig = JSON.parse(fs.readFileSync(tauriConfigPath, "utf8")) as {
   app?: { windows?: Array<{ fullscreen?: boolean }> };
 };
 if (tauriConfig.app?.windows?.[0]?.fullscreen !== false) fail("iPad 窗口仍被强制全屏");
-const iosInfo = fs.readFileSync(iosInfoPath, "utf8");
-if (iosInfo.includes("UIRequiresFullScreen")) fail("Info.plist 仍禁止 iPad 动态窗口调度");
+if (isAndroidBuild) {
+  const androidConfig = JSON.parse(
+    fs.readFileSync(path.resolve("src-tauri/tauri.android.conf.json"), "utf8"),
+  ) as { identifier?: string };
+  if (androidConfig.identifier !== "top.imsyy.splayernext")
+    fail("Android 应用标识与签名包配置不一致");
+  const iosCommands = [
+    "plugin:ipa-update|",
+    "plugin:lyric-pip|",
+    "plugin:native-audio|siri",
+    "plugin:native-audio|airplay",
+  ];
+  for (const command of iosCommands) {
+    if (javascript.includes(command)) fail(`Android 包含 iOS 命令 ${command}`);
+  }
+  if (fs.existsSync(path.join(dist, "licenses", "AudioStreaming.txt")))
+    fail("Android 包含 iOS 音频库资源");
+} else {
+  const iosInfo = fs.readFileSync(iosInfoPath, "utf8");
+  if (iosInfo.includes("UIRequiresFullScreen")) fail("Info.plist 仍禁止 iPad 动态窗口调度");
+}
 
 console.log(
   `[VerifyMobileBundle] 通过：${scripts.length} 个 JS 分包，静态入口 ${Math.ceil(fs.statSync(entryPath).size / 1024)} KB`,

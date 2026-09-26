@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { isIOS } from "@/utils/config";
+import { isMobile } from "@/utils/config";
 import type { DownloadTask, DownloadStatus } from "@shared/types/download";
 import type { Track } from "@shared/types/player";
 import { useMediaStore } from "@/stores/media";
@@ -289,7 +289,7 @@ defineExpose({ playAll });
                 variant="ghost"
                 circle
                 size="small"
-                v-if="!isIOS"
+                v-if="!isMobile"
                 :title="t('download.openFolder')"
                 @click="openFolder(item)"
               >

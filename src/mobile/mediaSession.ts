@@ -64,15 +64,16 @@ const prepareArtwork = (value: Track): void => {
 
 /** 复用公共解析结果与音频时间事件，只在显示内容变化时更新系统卡片。 */
 const refresh = (): void => {
-  if (!("mediaSession" in navigator) && !isTauri()) return;
+  const nativeAudio = isTauri();
+  if (!("mediaSession" in navigator) && !nativeAudio) return;
   if (!track || !store.get("media.systemMediaControls")) {
     clearArtwork();
     // 原生模式只更新 MPNowPlayingInfoCenter，不能让 WebKit 的空会话参与系统卡片竞争。
-    if (!isTauri() && "mediaSession" in navigator) navigator.mediaSession.metadata = null;
+    if (!nativeAudio && "mediaSession" in navigator) navigator.mediaSession.metadata = null;
     lastMetadata = null;
     nativeKey = "";
     nativeLyrics = undefined;
-    if (isTauri())
+    if (nativeAudio)
       void invoke("plugin:native-audio|metadata", {
         title: "",
         artist: "",
@@ -82,7 +83,7 @@ const refresh = (): void => {
       }).catch((error) => console.warn("[native-audio] 清除系统卡片失败", error));
     return;
   }
-  if (isTauri()) {
+  if (nativeAudio) {
     const artist = track.artists.map((item) => item.name).join(" / ");
     const dynamic = store.get("media.dynamicLyrics") === true;
     const lines =

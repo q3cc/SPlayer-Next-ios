@@ -2,7 +2,7 @@
 import { useSettingsStore } from "@/stores/settings";
 import { useWindowControls } from "@/composables/useWindowControls";
 import { CURRENT_AGREEMENT_VERSION } from "@shared/constants/agreement";
-import { isIOS } from "@/utils/config";
+import { isMobile } from "@/utils/config";
 
 const router = useRouter();
 const settings = useSettingsStore();
@@ -30,7 +30,7 @@ const onAccept = async (): Promise<void> => {
     <div
       class="agreement-update-titlebar app-drag-region h-16 shrink-0 flex items-center justify-end px-3"
     >
-      <WindowControls v-if="!isIOS" direct-quit />
+      <WindowControls v-if="!isMobile" direct-quit />
     </div>
 
     <div class="agreement-update-content flex-1 min-h-0 flex flex-col items-center px-8 pb-10">

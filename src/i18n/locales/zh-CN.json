@@ -2131,7 +2131,8 @@
     "downloadDir": {
       "label": "下载目录",
       "change": "更换",
-      "mobile": "文件 → 我的 iPhone / iPad → SPlayer → Downloads"
+      "mobile": "文件 → 我的 iPhone / iPad → SPlayer → Downloads",
+      "android": "歌曲保存在应用内的 Downloads 文件夹"
     },
     "downloadQuality": {
       "label": "下载音质",

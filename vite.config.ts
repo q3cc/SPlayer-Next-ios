@@ -13,6 +13,8 @@ import RekaResolver from "reka-ui/resolver";
 import { nodePolyfills } from "vite-plugin-node-polyfills";
 import pkg from "./package.json" with { type: "json" };
 
+const androidBundle = process.env.VITE_MOBILE_TARGET === "android";
+
 const gitValue = (command: string): string => {
   try {
     return execSync(command).toString().trim() || "unknown";
@@ -85,12 +87,42 @@ export default defineConfig(({ mode }) => ({
   },
   plugins: [
     {
+      name: "splayer-android-platform-boundary",
+      enforce: "pre",
+      resolveId(source, importer) {
+        if (!androidBundle) return;
+        if (source === "./update" && importer?.endsWith("/src/mobile/api.ts"))
+          return resolve(__dirname, "src/mobile/androidUpdate.ts");
+        if (/(^|\/)lyricPip(?:\.ts)?$/.test(source))
+          return resolve(__dirname, "src/mobile/androidLyricPip.ts");
+        if (
+          ["AirPlayControl.vue", "SiriSettings.vue", "LyricPipPreview.vue"].some((name) =>
+            source.endsWith(name),
+          )
+        )
+          return resolve(__dirname, "src/mobile/android/EmptyComponent.vue");
+      },
+      generateBundle(_options, bundle) {
+        if (!androidBundle) return;
+        const iosSource =
+          /\/src\/(?:mobile\/(?:siri(?:\/|\.ts$)|update\.ts$|lyricPip\.ts$)|components\/(?:player\/AirPlayControl\.vue|settings\/custom\/(?:SiriSettings|LyricPipPreview)\.vue)|settings\/categories\/siri\.ts)/;
+        for (const artifact of Object.values(bundle)) {
+          if (artifact.type !== "chunk") continue;
+          for (const moduleId of Object.keys(artifact.modules)) {
+            if (iosSource.test(moduleId))
+              this.error(`iOS source entered Android bundle: ${moduleId}`);
+          }
+        }
+      },
+    },
+    {
       name: "splayer-mobile-public-assets",
       generateBundle() {
         if (mode !== "mobile") return;
         const root = resolve(__dirname, "public");
         for (const relative of readdirSync(root, { recursive: true }) as string[]) {
           // iOS 图标由 Asset Catalog 提供，不嵌入 Windows 安装器、托盘和 macOS 图标。
+          if (androidBundle && relative.startsWith("licenses/")) continue;
           if (
             !/^(fonts\/|licenses\/|images\/avatar\.jpg$|icons\/(favicon\.png|logo\.svg)$)/.test(
               relative,
@@ -136,6 +168,7 @@ export default defineConfig(({ mode }) => ({
       customCollections: { sp: FileSystemIconLoader("./src/assets/icons") },
     }),
     Components({
+      dts: androidBundle ? false : "components.d.ts",
       dirs: ["src/components"],
       resolvers: [RekaResolver(), IconsResolver({ prefix: "icon", customCollections: ["sp"] })],
     }),

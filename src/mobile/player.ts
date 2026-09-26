@@ -14,6 +14,7 @@ import { mobileMediaSession } from "./mediaSession";
 import { mobileLyricPip } from "./lyricPip";
 import { isTauri } from "@tauri-apps/api/core";
 import { createNativePlayer } from "./nativePlayer";
+import { isAndroid } from "./platform";
 import { open } from "@tauri-apps/plugin-dialog";
 import type { LyricFormat } from "@shared/types/lyrics";
 
@@ -185,7 +186,11 @@ const load = async (
 };
 
 const ok = (): IpcResponse => ({ success: true });
-const device: AudioDevice = { id: "ios-default", name: "iPhone / iPad", isDefault: true };
+const device: AudioDevice = {
+  id: isAndroid ? "android-default" : "ios-default",
+  name: isAndroid ? "Android" : "iPhone / iPad",
+  isDefault: true,
+};
 const emptyFft = (): FftData => ({ ldata: Array(64).fill(0), rdata: Array(64).fill(0) });
 
 const webPlayer: PlayerApi = {
@@ -251,7 +256,7 @@ const webPlayer: PlayerApi = {
       const selected = await open({
         multiple: false,
         directory: false,
-        fileAccessMode: "scoped",
+        fileAccessMode: isAndroid ? "copy" : "scoped",
         filters: [
           { name: "Lyrics", extensions: ["ttml", "lys", "qrc", "krc", "yrc", "lrc", "ass", "srt"] },
         ],

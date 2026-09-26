@@ -3,7 +3,7 @@ import type { DownloadRequest, DownloadTagOptions, DownloadTask } from "@shared/
 import { QUALITY_LABELS, type QualityLevel } from "@/utils/quality";
 import { useSettingsStore } from "@/stores/settings";
 import { useDownloadStore } from "@/stores/download";
-import { isIOS } from "@/utils/config";
+import { isMobile } from "@/utils/config";
 import { toast } from "@/composables/useToast";
 
 /** 下载选项 */
@@ -45,11 +45,11 @@ export const useDownload = () => {
     const download = useSettingsStore().system.download;
     const level = opts.quality ?? download.quality;
     const tagOptions: DownloadTagOptions = {
-      embedCover: !isIOS && download.embedCover,
-      embedMeta: !isIOS && download.embedMeta,
-      embedLyric: !isIOS && download.embedLyric,
-      writeLrc: !isIOS && download.writeLrc,
-      saveTtml: !isIOS && download.saveTtml,
+      embedCover: !isMobile && download.embedCover,
+      embedMeta: !isMobile && download.embedMeta,
+      embedLyric: !isMobile && download.embedLyric,
+      writeLrc: !isMobile && download.writeLrc,
+      saveTtml: !isMobile && download.saveTtml,
     };
     return {
       taskId: opts.taskId ?? crypto.randomUUID(),
