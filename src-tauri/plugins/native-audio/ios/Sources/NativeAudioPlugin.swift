@@ -703,18 +703,18 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
         DispatchQueue.main.async {
           if action == "play" || (action == "toggle" && player.state != .playing) {
             do {
-          let session = AVAudioSession.sharedInstance()
-          try session.setCategory(.playback, mode: .default, policy: .longFormAudio)
-          try session.setActive(true)
-        }
+              let session = AVAudioSession.sharedInstance()
+              try session.setCategory(.playback, mode: .default, policy: .longFormAudio)
+              try session.setActive(true)
+            }
             catch { self.trigger("error", data: ["message": error.localizedDescription]); return }
             self.autoPlay = true
             if player.state == .stopped, let url = self.sourceURL { player.play(url: url) }
             else {
-          if player.state != .playing { player.volume = 0 }
-          player.resume()
-        }
-        fade(to: 1)
+              if player.state != .playing { player.volume = 0 }
+              player.resume()
+            }
+            self.fade(to: 1)
           }
           else if action == "pause" || action == "toggle" { self.resumeAfterInterruption = false; player.pause() }
           else {

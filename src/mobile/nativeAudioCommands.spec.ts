@@ -9,6 +9,16 @@ const androidOnly = new Set([
   "install_update",
 ]);
 
+it("iOS 系统播放控制的异步闭包显式引用淡入淡出方法", () => {
+  const swift = readFileSync(
+    "src-tauri/plugins/native-audio/ios/Sources/NativeAudioPlugin.swift",
+    "utf8",
+  );
+  const controls = swift.split("private func installControls()")[1];
+  expect(controls).toContain("self.fade(to: 1)");
+  expect(controls).not.toMatch(/(?<![\w.])fade\(to:/);
+});
+
 it("原生音频命令匹配 Tauri 转换后的 Swift 方法名", () => {
   const root = `${process.cwd()}/src-tauri/plugins/native-audio`;
   const commands = readFileSync(`${root}/build.rs`, "utf8")
