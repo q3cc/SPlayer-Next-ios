@@ -1,5 +1,8 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 const call = vi.hoisted(() => vi.fn());
+const native = vi.hoisted(() => vi.fn());
+vi.mock("@tauri-apps/api/core", () => ({ invoke: native }));
+vi.mock("./platform", () => ({ isIOS: true }));
 vi.mock("./providers", () => ({ mobileProviders: { call } }));
 import { mobileRecognition } from "./recognition";
 let workers: MockWorker[] = [];
@@ -29,6 +32,32 @@ it("静音不启动指纹计算", async () => {
   );
   expect(workers).toHaveLength(0);
   off();
+});
+it("iOS 系统音源通过广播采集，再进入指纹计算", async () => {
+  native.mockResolvedValue({ pcm: new Array(64000).fill(0.1) });
+  const task = mobileRecognition.start({ source: "system", durationMs: 8000 });
+  await vi.waitFor(() => expect(workers).toHaveLength(1));
+  expect(native).toHaveBeenCalledWith("plugin:native-audio|recognition_start");
+  await mobileRecognition.cancel();
+  await task;
+});
+
+it("取消广播后不处理迟到的音频", async () => {
+  let resolve!: (result: { pcm: number[] }) => void;
+  native.mockImplementation((command: string) =>
+    command.endsWith("recognition_start")
+      ? new Promise((done) => {
+          resolve = done;
+        })
+      : Promise.resolve(),
+  );
+  const task = mobileRecognition.start({ source: "system", durationMs: 8000 });
+  await vi.waitFor(() => expect(resolve).toBeTypeOf("function"));
+  await mobileRecognition.cancel();
+  resolve({ pcm: new Array(64000).fill(0.1) });
+  await task;
+  expect(native).toHaveBeenCalledWith("plugin:native-audio|recognition_cancel");
+  expect(workers).toHaveLength(0);
 });
 it("识曲输出候选并释放指纹 Worker", async () => {
   call.mockResolvedValue({

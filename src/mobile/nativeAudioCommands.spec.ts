@@ -27,6 +27,7 @@ it("原生音频命令匹配 Tauri 转换后的 Swift 方法名", () => {
     .matchAll(/"([a-z_]+)"/g);
   let swift = readFileSync(`${root}/ios/Sources/NativeAudioPlugin.swift`, "utf8");
   swift += readFileSync(root + "/ios/Sources/LastfmCredentials.swift", "utf8");
+  swift += readFileSync(root + "/ios/Sources/SystemRecognition.swift", "utf8");
   const permissions = readFileSync(`${root}/permissions/default.toml`, "utf8");
   // 监听方法由 Tauri.Plugin 基类提供。
   const inherited = new Set(["register_listener", "remove_listener"]);

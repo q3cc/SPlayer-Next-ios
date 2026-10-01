@@ -7,14 +7,12 @@ import { songsByIds as getNeteaseSongsByIds } from "@/apis/song/netease";
 import { formatCompact } from "@/utils/format";
 import { navigateToAlbum, navigateToArtist, navigateToPlaylist } from "@/utils/navigate";
 import { parseMusicLink, type LinkType } from "@/utils/link";
-import { isMobile } from "@/utils/config";
 import type { TrackSource } from "@shared/types/player";
 import * as player from "@/core/player";
 import IconLucideMusic from "~icons/lucide/music";
 import IconLucideUser from "~icons/lucide/user";
 import IconLucideDisc from "~icons/lucide/disc";
 import IconLucideListMusic from "~icons/lucide/list-music";
-import IconLucideAudioWaveform from "~icons/lucide/audio-waveform";
 
 const { t, locale } = useI18n();
 const router = useRouter();
@@ -293,8 +291,9 @@ onMounted(() => {
       </span>
     </div>
     <SButton
-      v-if="!isMobile"
       class="app-no-drag shrink-0"
+      :aria-label="t('recognition.title')"
+      :title="t('recognition.title')"
       variant="tertiary"
       circle
       :size="40"

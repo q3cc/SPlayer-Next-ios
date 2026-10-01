@@ -8,6 +8,7 @@ import {
 } from "node:fs";
 import { resolve, join } from "node:path";
 import { execFileSync } from "node:child_process";
+import { configureRecognition } from "./configure-ios-recognition.mjs";
 
 const apple = resolve("src-tauri/gen/apple");
 if (existsSync(join(apple, "project.yml"))) {
@@ -25,19 +26,7 @@ if (existsSync(join(apple, "project.yml"))) {
     join(apple, "Sources/SPlayerIntents.swift"),
   );
   if (process.platform === "darwin") {
-    if (process.env.SPLAYER_SIRI_SIMULATOR_ENTITLEMENTS === "1") {
-      // Tauri 不透传外部 xcconfig；测试权限直接交给 XcodeGen，且仅影响模拟器。
-      const project = join(apple, "project.yml");
-      const source = readFileSync(project, "utf8");
-      const marker = "# SPlayer Siri simulator smoke settings";
-      if (!source.includes(marker)) {
-        if (/^settings:/m.test(source)) throw new Error("模拟器测试不能覆盖已有项目级设置");
-        writeFileSync(
-          project,
-          `${source}\n${marker}\nsettings:\n  base:\n    ENABLE_DEBUG_DYLIB: NO\n    OTHER_LDFLAGS[sdk=iphonesimulator*]: $(inherited) -Wl,-sectcreate,__TEXT,__entitlements,$(SRCROOT)/../../../scripts/ios-siri-tests/simulator.entitlements\n`,
-        );
-      }
-    }
+    const recognition = configureRecognition(apple);
     const targets = readdirSync(apple, { withFileTypes: true }).filter(
       (entry) => entry.isDirectory() && entry.name.endsWith("_iOS"),
     );
@@ -60,6 +49,19 @@ if (existsSync(join(apple, "project.yml"))) {
         execFileSync("plutil", ["-insert", key, "-bool", "YES", file], { stdio: "pipe" });
       } catch {
         execFileSync("plutil", ["-replace", key, "-bool", "YES", file]);
+      }
+      if (entry.name === recognition.name) {
+        const groupKey = "com\\.apple\\.security\\.application-groups";
+        try {
+          execFileSync("plutil", ["-remove", groupKey, file], { stdio: "pipe" });
+        } catch {}
+        execFileSync("plutil", [
+          "-insert",
+          groupKey,
+          "-json",
+          JSON.stringify([recognition.group]),
+          file,
+        ]);
       }
     }
   }

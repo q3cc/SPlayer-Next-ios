@@ -227,6 +227,7 @@
     }
   },
   "recognition": {
+    "broadcastHint": "开启屏幕广播后，切换到播放音乐的 App；采集完成后返回查看结果。不保存画面。",
     "title": "听歌识曲",
     "entry": "听歌识曲",
     "description": "识别正在播放的音乐",

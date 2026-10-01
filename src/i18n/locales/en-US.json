@@ -239,6 +239,7 @@
     }
   },
   "recognition": {
+    "broadcastHint": "Start a screen broadcast, switch to the app playing music, then return for results. No video is saved.",
     "title": "Music Recognition",
     "entry": "Recognize",
     "description": "Identify the music currently playing",

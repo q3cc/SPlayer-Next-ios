@@ -57,6 +57,7 @@ private struct PlaybackCompletion {
 }
 
 final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
+  let systemRecognition = SystemRecognition()
   static let shared = NativeAudioPlugin()
   private var player: AudioPlayer?
   private var audioEffects = AudioEffects()

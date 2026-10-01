@@ -46,6 +46,26 @@ vi.mock("~icons/lucide/audio-waveform", () => ({ default: {} }));
 
 beforeEach(() => vi.clearAllMocks());
 
+it("移动端显示听歌识曲入口并打开识别弹窗", async () => {
+  const wrapper = shallowMount(NavSearch, {
+    global: {
+      renderStubDefaultSlot: true,
+      stubs: {
+        RecognitionDialog: {
+          name: "RecognitionDialog",
+          props: ["open"],
+          template: "<div />",
+        },
+      },
+    },
+  });
+  const dialog = wrapper.findComponent({ name: "RecognitionDialog" });
+  expect(dialog.props("open")).toBe(false);
+  await wrapper.get('[aria-label="recognition.title"]').trigger("click");
+  expect(dialog.props("open")).toBe(true);
+  wrapper.unmount();
+});
+
 it("点击歌曲建议记录完整歌名，而不是模糊输入", async () => {
   const wrapper = shallowMount(NavSearch, { global: { renderStubDefaultSlot: true } });
   const vm = wrapper.vm as unknown as {

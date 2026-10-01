@@ -1,24 +1,52 @@
 import type { RecognitionApi, RecognitionEvent } from "@shared/types/recognition";
 import { mobileProviders } from "./providers";
+import { invoke } from "@tauri-apps/api/core";
+import { isIOS } from "./platform";
 
 const listeners = new Set<(event: RecognitionEvent) => void>();
 let generation = 0;
 let cancelFingerprint: (() => void) | undefined;
+let capturingSystem = false;
 const emit = (event: RecognitionEvent) => listeners.forEach((listener) => listener(event));
 
 export const mobileRecognition: RecognitionApi = {
-  // 系统声音采集不可用；界面会使用已有的麦克风采集路径。
-  isSupported: async () => false,
-  start: async () => {
-    emit({ phase: "error", error: { code: "unsupported", message: "请使用麦克风识曲" } });
+  isSupported: async () => isIOS,
+  start: async ({ source }) => {
+    const cancelled = mobileRecognition.cancel();
+    const current = generation;
+    await cancelled;
+    if (current !== generation) return;
+    if (!isIOS || source !== "system") {
+      emit({ phase: "error", error: { code: "unsupported", message: "请使用麦克风识曲" } });
+      return;
+    }
+    capturingSystem = true;
+    emit({ phase: "capturing" });
+    try {
+      const { pcm } = await invoke<{ pcm: number[] }>("plugin:native-audio|recognition_start");
+      if (current !== generation) return;
+      capturingSystem = false;
+      await mobileRecognition.submitPcm(new Float32Array(pcm));
+    } catch (error) {
+      if (current !== generation) return;
+      emit({ phase: "error", error: { code: "capture-failed", message: String(error) } });
+    } finally {
+      if (current === generation) capturingSystem = false;
+    }
   },
   cancel: async () => {
     generation++;
     cancelFingerprint?.();
+    if (capturingSystem) {
+      capturingSystem = false;
+      await invoke("plugin:native-audio|recognition_cancel");
+    }
   },
   submitPcm: async (pcm) => {
-    await mobileRecognition.cancel();
+    const cancelled = mobileRecognition.cancel();
     const current = generation;
+    await cancelled;
+    if (current !== generation) return;
     if (!pcm.length || pcm.length > 8000 * 30 || !pcm.every(Number.isFinite)) {
       emit({ phase: "error", error: { code: "capture-failed", message: "录音数据无效" } });
       return;
