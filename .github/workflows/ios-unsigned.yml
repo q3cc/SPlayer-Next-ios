@@ -107,6 +107,8 @@ jobs:
           node --test scripts/configure-ios-recognition.test.mjs
           swiftc src-tauri/plugins/native-audio/ios/Sources/RecognitionStorage.swift scripts/ios-siri-tests/RecognitionStorageTests.swift -o "$RUNNER_TEMP/splayer-recognition-storage-tests"
           "$RUNNER_TEMP/splayer-recognition-storage-tests"
+          swiftc src-tauri/plugins/native-audio/ios/Sources/RecognitionCaptureExport.swift scripts/ios-siri-tests/RecognitionCaptureExportTests.swift -o "$RUNNER_TEMP/splayer-recognition-export-tests"
+          "$RUNNER_TEMP/splayer-recognition-export-tests"
           swiftc src-tauri/plugins/native-audio/ios/Sources/SiriQueue.swift src-tauri/plugins/native-audio/ios/Sources/SiriSelection.swift scripts/ios-siri-tests/main.swift -o "$RUNNER_TEMP/splayer-siri-tests"
           "$RUNNER_TEMP/splayer-siri-tests"
           swiftc src-tauri/plugins/native-audio/ios/Sources/SiriQueue.swift src-tauri/plugins/native-audio/ios/Sources/SiriRuntime.swift scripts/ios-siri-tests/RuntimeTests.swift -o "$RUNNER_TEMP/splayer-siri-runtime-tests"

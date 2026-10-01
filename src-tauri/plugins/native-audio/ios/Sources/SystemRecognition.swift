@@ -105,6 +105,12 @@ final class SystemRecognition {
     if let data = try? Data(contentsOf: directory.appendingPathComponent("\(session).json")),
        let result = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
       if result["status"] as? String == "done", let pcm = result["pcm"] as? [Double] {
+        do { try RecognitionCaptureExport.save(pcm, source: result["source"] as? [String: Any]) }
+        catch {
+          pending?.reject("采样已完成，但保存试听文件失败：\(error.localizedDescription)")
+          cleanup()
+          return
+        }
         pending?.resolve(["pcm": pcm])
         cleanup()
         return

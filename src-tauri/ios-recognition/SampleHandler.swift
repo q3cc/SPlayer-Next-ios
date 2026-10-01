@@ -11,6 +11,9 @@ final class SampleHandler: RPBroadcastSampleHandler {
   private var inputFormat: AVAudioFormat?
   private var timer: DispatchSourceTimer?
   private var finished = false
+  private var firstInputRate: Double = 0
+  private var firstInputChannels: UInt32 = 0
+  private var formatChanges = 0
 
   override func broadcastStarted(withSetupInfo setupInfo: [String: NSObject]?) {
     queue.async {
@@ -54,6 +57,10 @@ final class SampleHandler: RPBroadcastSampleHandler {
       let status = CMSampleBufferCopyPCMDataIntoAudioBufferList(sampleBuffer, at: 0, frameCount: Int32(frames), into: input.mutableAudioBufferList)
       guard status == noErr else { fail("无法读取系统音频"); return }
       if inputFormat != format {
+        if inputFormat == nil {
+          firstInputRate = format.sampleRate
+          firstInputChannels = format.channelCount
+        } else { formatChanges += 1 }
         converter = AVAudioConverter(from: format, to: outputFormat)
         inputFormat = format
       }
@@ -75,7 +82,10 @@ final class SampleHandler: RPBroadcastSampleHandler {
       let count = min(Int(output.frameLength), 64000 - samples.count)
       samples.append(contentsOf: UnsafeBufferPointer(start: channel, count: count).map { $0.isFinite ? $0 : 0 })
       if samples.count == 64000 {
-        write(["status": "done", "pcm": samples])
+        write(["status": "done", "pcm": samples, "source": [
+          "inputSampleRate": firstInputRate, "inputChannels": firstInputChannels,
+          "formatChanges": formatChanges,
+        ]])
         end("声音采集完成，请返回 SPlayer 查看识别结果")
       }
     }
