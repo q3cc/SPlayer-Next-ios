@@ -37,6 +37,16 @@ it("拒绝远程明文地址与不存在的活动模型", async () => {
   await expect(mobileAiModel.setActive("missing")).rejects.toThrow("不存在");
   expect(mocks.value).toBeNull();
 });
+it("原生对象错误保留可读原因，读取失败不伪装成空配置", async () => {
+  const { mobileAiModel } = await import("./aiModels");
+  mocks.invoke.mockRejectedValue({ message: "读取安全凭证失败：签名缺少钥匙串权限（-34018）" });
+  await expect(mobileAiModel.list()).rejects.toThrow("-34018");
+  await expect(mobileAiModel.save(input)).rejects.toThrow("钥匙串权限");
+  expect(mocks.value).toBeNull();
+  mocks.invoke.mockRejectedValue({ code: "UNKNOWN" });
+  await expect(mobileAiModel.list()).rejects.toThrow("无法访问模型的安全存储");
+});
+
 it("并发保存不会覆盖其他模型", async () => {
   const { mobileAiModel } = await import("./aiModels");
   await Promise.all([mobileAiModel.save(input), mobileAiModel.save({ ...input, name: "第二个" })]);

@@ -9,6 +9,11 @@ const androidOnly = new Set([
   "install_update",
 ]);
 
+it("Android 授权模型配置和 Last.fm 共用的安全凭证命令", () => {
+  const permissions = readFileSync("src-tauri/capabilities/android.json", "utf8");
+  expect(permissions).toContain('"native-audio:allow-lastfm-credentials"');
+});
+
 it("广播选择器在页面显示后打开系统确认窗口，并使用播放器窗口", () => {
   const swift = readFileSync(
     "src-tauri/plugins/native-audio/ios/Sources/SystemRecognition.swift",

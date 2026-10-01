@@ -9,6 +9,7 @@
     "deep-link:default",
     "dialog:default",
     "native-audio:allow-load",
+    "native-audio:allow-lastfm-credentials",
     "native-audio:allow-control",
     "native-audio:allow-configure",
     "native-audio:allow-metadata",

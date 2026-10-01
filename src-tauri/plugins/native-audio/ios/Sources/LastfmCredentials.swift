@@ -9,6 +9,17 @@ private struct LastfmCredentialRequest: Decodable {
 }
 
 extension NativeAudioPlugin {
+  /// 保留系统错误码，便于区分重签名权限缺失和设备锁定，不输出凭证内容。
+  private func credentialError(_ operation: String, _ status: OSStatus) -> String {
+    if status == errSecMissingEntitlement {
+      return "\(operation)失败：应用签名缺少钥匙串权限（\(status)），请检查重签名配置"
+    }
+    if status == errSecInteractionNotAllowed {
+      return "\(operation)失败：钥匙串暂不可用（\(status)），请解锁设备后重试"
+    }
+    let detail = SecCopyErrorMessageString(status, nil) as String? ?? "未知系统错误"
+    return "\(operation)失败（\(status)）：\(detail)"
+  }
   /// Last.fm 会话仅保存在本机钥匙串，不进入设置导出和 WebView 存储。
   @objc func lastfmCredentials(_ invoke: Invoke) throws {
     let request = try invoke.parseArgs(LastfmCredentialRequest.self)
@@ -26,8 +37,9 @@ extension NativeAudioPlugin {
       var item: CFTypeRef?
       let status = SecItemCopyMatching(read as CFDictionary, &item)
       if status == errSecItemNotFound { invoke.resolve(["value": NSNull()]); return }
-      guard status == errSecSuccess, let data = item as? Data,
-            let value = String(data: data, encoding: .utf8) else { invoke.reject("无法读取 Last.fm 凭证"); return }
+      guard status == errSecSuccess else { invoke.reject(credentialError("读取安全凭证", status)); return }
+      guard let data = item as? Data,
+            let value = String(data: data, encoding: .utf8) else { invoke.reject("安全凭证格式无效"); return }
       invoke.resolve(["value": value])
     case "set":
       guard let data = request.value?.data(using: .utf8) else { invoke.reject("缺少 Last.fm 凭证"); return }
@@ -37,11 +49,11 @@ extension NativeAudioPlugin {
       if status == errSecItemNotFound {
         status = SecItemAdd(query.merging(attributes) { _, new in new } as CFDictionary, nil)
       }
-      guard status == errSecSuccess else { invoke.reject("无法保存 Last.fm 凭证"); return }
+      guard status == errSecSuccess else { invoke.reject(credentialError("保存安全凭证", status)); return }
       invoke.resolve()
     case "clear":
       let status = SecItemDelete(query as CFDictionary)
-      guard status == errSecSuccess || status == errSecItemNotFound else { invoke.reject("无法删除 Last.fm 凭证"); return }
+      guard status == errSecSuccess || status == errSecItemNotFound else { invoke.reject(credentialError("删除安全凭证", status)); return }
       invoke.resolve()
     default: invoke.reject("未知凭证操作")
     }

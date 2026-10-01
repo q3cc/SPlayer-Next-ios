@@ -8,7 +8,22 @@ interface SavedState {
 }
 let serial: Promise<unknown> = Promise.resolve();
 const transaction = <T>(run: () => Promise<T>): Promise<T> => {
-  const next = serial.catch(() => {}).then(run);
+  const next = serial
+    .catch(() => {})
+    .then(run)
+    .catch((error: unknown) => {
+      if (error instanceof Error) throw error;
+      const message =
+        typeof error === "string"
+          ? error
+          : error &&
+              typeof error === "object" &&
+              "message" in error &&
+              typeof error.message === "string"
+            ? error.message
+            : "无法访问模型的安全存储，请检查应用签名与钥匙串权限";
+      throw new Error(message);
+    });
   serial = next.then(
     () => undefined,
     () => undefined,
