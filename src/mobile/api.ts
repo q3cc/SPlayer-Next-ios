@@ -6,6 +6,8 @@ import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
 import { defaultHotkeyConfig } from "@shared/defaults/hotkeys";
 import { mobileLastfm, lastfmPlayerEvent, lastfmTrackLoaded } from "./lastfm";
 import { mobileRecognition } from "./recognition";
+import { mobileMcp, mobileExternalApi, restartControlServices } from "./controlServices";
+import { mobileAiModel } from "./aiModels";
 import { mobileOpencc } from "./opencc";
 import { mobileCloud } from "./cloud";
 import { mobileDownload } from "./download";
@@ -284,6 +286,13 @@ const api = {
         if (!result.success) throw new Error(result.error);
       }
       store.set(key, value);
+      if (
+        key === "mcp" ||
+        key === "externalApi" ||
+        key.startsWith("mcp.") ||
+        key.startsWith("externalApi.")
+      )
+        await restartControlServices();
       if (!store.get("download.enabled")) await mobileDownload.cancelAll();
       if (key === "player.equalizer" || key.startsWith("player.equalizer.")) {
         await syncMobileAudioSettings();
@@ -296,6 +305,7 @@ const api = {
     reset: async () => {
       await setDiagnosticsEnabled(false);
       store.clear();
+      await restartControlServices();
       await mobileDownload.cancelAll();
       await syncMobileAudioSettings();
       mobileMediaSession.refresh();
@@ -303,6 +313,7 @@ const api = {
     },
     replaceAll: async (value: unknown) => {
       store.replaceAll(value);
+      await restartControlServices();
       if (!store.get("download.enabled")) await mobileDownload.cancelAll();
       await syncMobileAudioSettings();
       await setDiagnosticsEnabled(store.get("system.diagnosticLogging") === true);
@@ -313,7 +324,12 @@ const api = {
       const path = await save({ defaultPath: "splayer-settings.json" });
       if (!path) return { ok: false, reason: "canceled" as const };
       try {
-        await writeFile(path, new TextEncoder().encode(JSON.stringify(value, null, 2)));
+        const exported = JSON.stringify(
+          value,
+          (key, entry) => (key === "accessKey" ? undefined : entry),
+          2,
+        );
+        await writeFile(path, new TextEncoder().encode(exported));
         return { ok: true };
       } catch {
         return { ok: false, reason: "writeFailed" as const };
@@ -513,25 +529,9 @@ const api = {
   streaming: mobileStreaming,
   recognition: mobileRecognition,
   lastfm: mobileLastfm,
-  externalApi: {
-    restart: async () => ({ running: false }),
-    getStatus: async () => ({ running: false }),
-    onStatus: unsubscribe,
-  },
-  mcp: {
-    restart: async () => ({ running: false }),
-    getStatus: async () => ({ running: false }),
-    getClientConfigParams: async () => ({ port: 0, accessKey: "" }),
-    detectAgents: async () => [],
-    injectAgentConfig: async () => false,
-    onStatus: unsubscribe,
-  },
-  aiModel: {
-    list: async () => ({ models: [], activeModelId: null }),
-    save: async () => ({ models: [], activeModelId: null }),
-    remove: async () => ({ models: [], activeModelId: null }),
-    setActive: async () => ({ models: [], activeModelId: null }),
-  },
+  externalApi: mobileExternalApi,
+  mcp: mobileMcp,
+  aiModel: mobileAiModel,
   update: mobileUpdate,
   stats: mobileStats,
   hotkey: {

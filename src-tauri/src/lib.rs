@@ -1,3 +1,4 @@
+mod control_server;
 mod diagnostics;
 mod opencc;
 
@@ -41,6 +42,7 @@ pub fn run() {
         .plugin(tauri_plugin_lyric_pip::init());
 
     builder
+        .manage(std::sync::Arc::new(control_server::ControlState::default()))
         .plugin(tauri_plugin_native_audio::init())
         .plugin(tauri_plugin_opener::init())
         .setup(|_| {
@@ -51,6 +53,10 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             report_boot_stage,
             opencc::convert_lyrics,
+            control_server::control_start,
+            control_server::control_stop,
+            control_server::control_status,
+            control_server::control_reply,
             diagnostics::append_diagnostic_log,
             diagnostics::set_diagnostic_logging,
             diagnostics::diagnostic_log_path,

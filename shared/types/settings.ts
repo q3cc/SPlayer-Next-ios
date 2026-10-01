@@ -231,6 +231,8 @@ export interface StreamingSettings {
 
 /** 外部 API 服务配置 */
 export interface ExternalApiSettings {
+  /** 移动端访问密钥 */
+  accessKey?: string;
   /** 总开关 */
   enabled: boolean;
   /** WebSocket 子开关 */
@@ -243,6 +245,8 @@ export interface ExternalApiSettings {
 
 /** MCP 服务配置 */
 export interface McpSettings {
+  /** 移动端显式开启局域网访问 */
+  allowLan?: boolean;
   /** 服务开关 */
   enabled: boolean;
   /** 仅本机监听的端口 */
@@ -280,6 +284,7 @@ export interface ExternalApiStatus {
 
 /** MCP 服务运行时状态 */
 export interface McpStatus {
+  host?: string | null;
   /** 是否正在监听 */
   listening: boolean;
   /** 实际监听端口 */
@@ -290,6 +295,7 @@ export interface McpStatus {
 
 /** 生成 AI 客户端配置所需的动态参数 */
 export interface McpClientConfigParams {
+  host?: string;
   /** MCP 服务实际使用或即将使用的端口 */
   port: number;
   /** 本机客户端连接密钥 */

@@ -5,15 +5,17 @@ import Tauri
 private struct LastfmCredentialRequest: Decodable {
   let action: String
   let value: String?
+  let namespace: String?
 }
 
 extension NativeAudioPlugin {
   /// Last.fm 会话仅保存在本机钥匙串，不进入设置导出和 WebView 存储。
   @objc func lastfmCredentials(_ invoke: Invoke) throws {
     let request = try invoke.parseArgs(LastfmCredentialRequest.self)
+    guard request.namespace == nil || request.namespace == "aiModels" else { invoke.reject("未知凭证类型"); return }
     let query: [String: Any] = [
       kSecClass as String: kSecClassGenericPassword,
-      kSecAttrService as String: "splayer.lastfm",
+      kSecAttrService as String: request.namespace == "aiModels" ? "splayer.ai-models" : "splayer.lastfm",
       kSecAttrAccount as String: "session"
     ]
     switch request.action {

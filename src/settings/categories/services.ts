@@ -5,6 +5,7 @@ import i18n from "@/i18n";
 import { isIOS, isMobile } from "@/utils/config";
 import ExternalApiStatusCard from "@/components/settings/custom/ExternalApiStatusCard.vue";
 import LastfmPanel from "@/components/settings/custom/LastfmPanel.vue";
+import MobileControlAccess from "@/components/settings/custom/MobileControlAccess.vue";
 import IconLucideGlobe from "~icons/lucide/globe";
 
 const servicesCategory: SettingCategory = {
@@ -203,6 +204,49 @@ const servicesCategory: SettingCategory = {
             ],
           },
         ] satisfies SettingSection[])),
+    ...(isMobile
+      ? ([
+          {
+            id: "externalApi",
+            tag: { text: "Beta" },
+            items: [
+              {
+                key: "externalApiStatusCard",
+                type: "custom",
+                component: ExternalApiStatusCard,
+                fullWidth: true,
+              },
+              {
+                key: "externalApiEnabled",
+                type: "switch",
+                binding: { store: "settings", path: "system.externalApi.enabled" },
+                defaultValue: false,
+              },
+              {
+                key: "externalApiAllowLan",
+                type: "switch",
+                binding: { store: "settings", path: "system.externalApi.allowLan" },
+                defaultValue: false,
+              },
+              {
+                key: "externalApiPort",
+                type: "number",
+                binding: { store: "settings", path: "system.externalApi.port" },
+                min: 1024,
+                max: 65535,
+                defaultValue: 14558,
+              },
+              {
+                key: "mobileControlAccess",
+                type: "custom",
+                component: MobileControlAccess,
+                fullWidth: true,
+                searchable: false,
+              },
+            ],
+          },
+        ] satisfies SettingSection[])
+      : []),
   ],
 };
 

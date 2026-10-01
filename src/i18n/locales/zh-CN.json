@@ -755,6 +755,13 @@
     "nestedHint": "该目录与已添加目录嵌套，已自动跳过"
   },
   "settings": {
+    "mobileControlHint": "请保持 SPlayer 在前台。局域网控制使用 HTTP，仅在可信网络开启；连接密钥可控制播放，请勿公开。当前支持 REST 控制，不提供 WebSocket 推送。",
+    "mobileControlCopy": "复制外部控制连接配置",
+    "mobileMcpHint": "请保持 SPlayer 在前台。电脑连接手机需开启局域网访问，并使用此处的手机地址。HTTP 连接不加密，仅在可信网络使用，请勿公开密钥。",
+    "mcpAllowLan": {
+      "label": "允许局域网 AI 客户端连接",
+      "description": "仅在可信网络开启，并保持 SPlayer 在前台。HTTP 不加密，请勿公开连接密钥。"
+    },
     "siriSettings": {
       "label": "Siri 语音控制",
       "description": "开启语音控制，设置音乐来源、搜索范围和选歌确认。"

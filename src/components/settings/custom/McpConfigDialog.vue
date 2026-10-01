@@ -4,6 +4,7 @@ import { useCopyText } from "@/composables/useCopyText";
 import { useSettingsStore } from "@/stores/settings";
 import type { McpClientConfigParams, McpAgentApp } from "@shared/types/settings";
 import IconLucideCopy from "~icons/lucide/copy";
+import { isMobile } from "@/utils/config";
 
 defineOptions({ inheritAttrs: false });
 
@@ -25,7 +26,7 @@ const clientConfig = computed(() =>
       mcpServers: {
         "splayer-next": {
           type: "http",
-          url: `http://127.0.0.1:${params.value.port}/mcp`,
+          url: `http://${params.value.host ?? "127.0.0.1"}:${params.value.port}/mcp`,
           headers: { "X-MCP-Key": params.value.accessKey },
         },
       },
@@ -76,6 +77,9 @@ const handleInject = async (agent: McpAgentApp) => {
 
   <SDialog v-model:open="open" :title="t('settings.mcpConfigDetails.label')" width="600px">
     <div class="flex flex-col gap-3">
+      <p v-if="isMobile" class="text-sm text-on-surface-variant">
+        {{ t("settings.mobileMcpHint") }}
+      </p>
       <div class="relative rounded-lg bg-on-surface/5 overflow-hidden">
         <pre
           class="m-0 px-4 py-3.5 pr-14 overflow-x-auto font-sans text-sm leading-6 text-on-surface-variant tabular-nums"

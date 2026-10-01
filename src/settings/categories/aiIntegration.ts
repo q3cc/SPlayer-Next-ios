@@ -3,6 +3,7 @@ import McpConfigDialog from "@/components/settings/custom/McpConfigDialog.vue";
 import McpStatusCard from "@/components/settings/custom/McpStatusCard.vue";
 import AiModelConfig from "@/components/settings/custom/AiModelConfig.vue";
 import IconLucideBot from "~icons/lucide/bot";
+import { isMobile } from "@/utils/config";
 
 const aiIntegrationCategory: SettingCategory = {
   id: "aiIntegration",
@@ -10,7 +11,6 @@ const aiIntegrationCategory: SettingCategory = {
   sections: [
     {
       id: "aiModel",
-      tag: { text: "未实现", type: "warning" },
       items: [
         {
           key: "aiModelConfig",
@@ -39,6 +39,13 @@ const aiIntegrationCategory: SettingCategory = {
           defaultValue: false,
           hideChildren: true,
           children: [
+            {
+              key: "mcpAllowLan",
+              type: "switch",
+              binding: { store: "settings", path: "system.mcp.allowLan" },
+              defaultValue: false,
+              visible: () => isMobile,
+            },
             {
               key: "mcpPort",
               type: "number",

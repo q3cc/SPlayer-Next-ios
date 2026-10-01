@@ -6,6 +6,7 @@ vi.mock("@/i18n", () => ({ default: {} }));
 vi.mock("@/components/settings/custom/DeviceSelector.vue", () => ({ default: {} }));
 vi.mock("@/components/settings/custom/ExternalApiStatusCard.vue", () => ({ default: {} }));
 vi.mock("@/components/settings/custom/LastfmPanel.vue", () => ({ default: {} }));
+vi.mock("@/components/settings/custom/MobileControlAccess.vue", () => ({ default: {} }));
 import player from "./player";
 import services from "./services";
 
@@ -20,9 +21,14 @@ it("移动端显示淡入淡出、标准化及独立频谱设置区", () => {
   );
   expect(player.sections!.some((section) => section.id === "device")).toBe(false);
 });
-it("移动端显示 Last.fm 但不开放仍不支持的桌面服务", () => {
+it("移动端显示 Last.fm 和外部控制，但不开放 Discord 和 WebSocket", () => {
   const ids = services.sections!.map((section) => section.id);
   expect(ids).toContain("lastfm");
   expect(ids).not.toContain("discord");
-  expect(ids).not.toContain("externalApi");
+  expect(ids).toContain("externalApi");
+  expect(
+    services
+      .sections!.find((section) => section.id === "externalApi")!
+      .items.map((item) => item.key),
+  ).not.toContain("externalApiWs");
 });

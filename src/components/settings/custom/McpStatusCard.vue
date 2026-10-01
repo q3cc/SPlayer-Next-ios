@@ -14,7 +14,8 @@ const status = ref<McpStatus>({ listening: false, port: null, error: null });
 const restarting = ref(false);
 
 const address = computed(
-  () => `http://127.0.0.1:${status.value.port ?? settings.system.mcp.port}/mcp`,
+  () =>
+    `http://${status.value.host ?? "127.0.0.1"}:${status.value.port ?? settings.system.mcp.port}/mcp`,
 );
 
 const restart = async (): Promise<void> => {

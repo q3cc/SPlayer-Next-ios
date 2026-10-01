@@ -16,12 +16,13 @@ import javax.crypto.spec.GCMParameterSpec
 class LastfmCredentialArgs {
     lateinit var action: String
     var value: String? = null
+    var namespace: String? = null
 }
 
 /** 密钥留在 Android Keystore，密文不参与系统备份。 */
-internal class LastfmCredentials(context: Context) {
-    private val file = File(context.noBackupFilesDir, "lastfm-session")
-    private val alias = "splayer.lastfm"
+internal class LastfmCredentials(private val context: Context) {
+    private var file = File(context.noBackupFilesDir, "lastfm-session")
+    private var alias = "splayer.lastfm"
     private fun key(): SecretKey {
         val store = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
         val existing = store.getKey(alias, null) as? SecretKey
@@ -32,6 +33,9 @@ internal class LastfmCredentials(context: Context) {
         }.generateKey()
     }
     @Synchronized fun run(args: LastfmCredentialArgs): String? {
+        require(args.namespace == null || args.namespace == "aiModels") { "未知凭证类型" }
+        file = File(context.noBackupFilesDir, if (args.namespace == "aiModels") "ai-models" else "lastfm-session")
+        alias = if (args.namespace == "aiModels") "splayer.ai-models" else "splayer.lastfm"
         when (args.action) {
             "get" -> {
                 if (!file.exists()) return null
@@ -46,7 +50,7 @@ internal class LastfmCredentials(context: Context) {
                 val cipher = Cipher.getInstance("AES/GCM/NoPadding")
                 cipher.init(Cipher.ENCRYPT_MODE, key())
                 val encrypted = cipher.doFinal(value.toByteArray(Charsets.UTF_8))
-                val temporary = File(file.parentFile, "lastfm-session.tmp")
+                val temporary = File(file.parentFile, file.name + ".tmp")
                 temporary.writeText(Base64.encodeToString(cipher.iv, Base64.NO_WRAP) + ":" + Base64.encodeToString(encrypted, Base64.NO_WRAP))
                 check(temporary.renameTo(file)) { "无法保存 Last.fm 凭证" }
             }

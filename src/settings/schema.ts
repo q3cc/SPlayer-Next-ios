@@ -75,7 +75,7 @@ export const settingsSchema: SettingCategory[] = [
   lyricCategory,
   ...(isIOS ? [mobileExternalLyric] : isMobile ? [] : [externalLyricCategory, hotkeysCategory]),
   servicesCategory,
-  ...(isMobile ? [] : [aiIntegrationCategory]),
+  aiIntegrationCategory,
   mediaSourceCategory,
   downloadCategory,
   localCacheCategory,

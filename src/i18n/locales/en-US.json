@@ -767,6 +767,13 @@
     "nestedHint": "Folder is nested with an existing one; skipped"
   },
   "settings": {
+    "mobileControlHint": "Keep SPlayer in the foreground. LAN control uses HTTP: enable only on trusted networks and keep the access key private. REST control is supported; WebSocket push is not available.",
+    "mobileControlCopy": "Copy external control connection settings",
+    "mobileMcpHint": "Keep SPlayer in the foreground. To connect from a computer, enable LAN access and use the phone address shown here. HTTP is unencrypted: use trusted networks only and keep the key private.",
+    "mcpAllowLan": {
+      "label": "Allow AI clients on the local network",
+      "description": "Use only on trusted networks and keep SPlayer in the foreground. HTTP is unencrypted; keep the access key private."
+    },
     "siriSettings": {
       "label": "Siri voice control",
       "description": "Enable voice control and configure the music source, search scope, and song selection."
