@@ -11,7 +11,9 @@
 构建脚本自动增加 `RecognitionBroadcast.appex`，并为主应用和扩展声明同一个 App Group：
 `group.top.imsyy.splayer-next.ios.recognition`。
 
-重签名时必须同时签主应用和广播扩展，为二者配置有效的 App Groups entitlement 和 provisioning profile。仅给主应用签名、移除扩展或删除共享组权限，会使机内识曲不可用。修改 Bundle ID 时也必须同步修改扩展 ID、共享组以及 Swift 中的标识。
+重签名时必须同时签主应用和广播扩展，为二者配置有效的 App Groups entitlement 和 provisioning profile。运行时读取两者实际 Mach-O 签名中的共享组交集，优先使用原始组，否则按固定顺序选择共同授权的组，兼容全能签改写组名。没有共同授权时明确报错，不使用描述文件中的未签入权限。
+
+采样文件只保存在共享容器的 `SPlayerRecognition/<主应用 Bundle ID>/` 子目录，不清理共享组根目录或其他应用的数据。仅给主应用签名、移除扩展或删除共享组权限，仍会使机内识曲不可用。
 
 IPA 检查会验证扩展已嵌入；无签名 IPA 构建成功不代表设备上的广播和共享容器可用。
 

@@ -82,6 +82,10 @@ export function configureRecognition(apple) {
     resolve("src-tauri/ios-recognition/SampleHandler.swift"),
     join(sources, "SampleHandler.swift"),
   );
+  copyFileSync(
+    resolve("src-tauri/plugins/native-audio/ios/Sources/RecognitionStorage.swift"),
+    join(sources, "RecognitionStorage.swift"),
+  );
   writeFileSync(file, JSON.stringify(project, null, 2));
   return result;
 }

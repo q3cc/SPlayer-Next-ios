@@ -59,9 +59,7 @@ final class SystemRecognition {
   private var session: String?
   private var expires = Date.distantPast
   private weak var picker: BroadcastPickerController?
-  private var directory: URL? {
-    FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: "group.top.imsyy.splayer-next.ios.recognition")
-  }
+  private var directory: URL?
 
   func start(_ invoke: Invoke) {
     cancel()
@@ -71,14 +69,12 @@ final class SystemRecognition {
       return
     }
     while let presented = presenter.presentedViewController { presenter = presented }
-    guard let directory = directory else {
-      invoke.reject("无法访问广播共享空间。请确认主应用和广播扩展使用同一 App Groups 签名；麦克风授权不能代替此权限。")
-      return
-    }
     let id = UUID().uuidString
     expires = Date().addingTimeInterval(90)
     do {
-      // 仅清理本功能专用 App Group 中上次未完成的临时采样。
+      let directory = try RecognitionStorage.directory()
+      self.directory = directory
+      // 共享组可能由重签名证书的多个应用共用，只清理本应用子目录。
       for file in try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
         where file.pathExtension == "json" {
         try FileManager.default.removeItem(at: file)
@@ -142,6 +138,7 @@ final class SystemRecognition {
       if let session = session { try? FileManager.default.removeItem(at: directory.appendingPathComponent("\(session).json")) }
     }
     session = nil
+    directory = nil
   }
 }
 

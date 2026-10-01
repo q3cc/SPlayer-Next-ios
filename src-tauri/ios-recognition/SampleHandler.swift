@@ -3,7 +3,7 @@ import AVFoundation
 
 final class SampleHandler: RPBroadcastSampleHandler {
   private let queue = DispatchQueue(label: "splayer.recognition.broadcast")
-  private let directory = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: "group.top.imsyy.splayer-next.ios.recognition")
+  private var directory: URL?
   private var session: String?
   private var deadline = Date.distantPast
   private var samples = [Float]()
@@ -14,6 +14,8 @@ final class SampleHandler: RPBroadcastSampleHandler {
 
   override func broadcastStarted(withSetupInfo setupInfo: [String: NSObject]?) {
     queue.async {
+      do { self.directory = try RecognitionStorage.directory() }
+      catch { self.end(error.localizedDescription); return }
       guard let directory = self.directory,
             let data = try? Data(contentsOf: directory.appendingPathComponent("request.json")),
             let request = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
