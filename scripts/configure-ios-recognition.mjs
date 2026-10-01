@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/explicit-function-return-type -- 此构建脚本由 Node 直接执行，不使用 TypeScript 类型标注。 */
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync, mkdirSync, copyFileSync } from "node:fs";
 import { join, resolve } from "node:path";

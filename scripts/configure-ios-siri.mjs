@@ -54,7 +54,9 @@ if (existsSync(join(apple, "project.yml"))) {
         const groupKey = "com\\.apple\\.security\\.application-groups";
         try {
           execFileSync("plutil", ["-remove", groupKey, file], { stdio: "pipe" });
-        } catch {}
+        } catch {
+          // 首次配置没有共享组条目，直接插入即可。
+        }
         execFileSync("plutil", [
           "-insert",
           groupKey,
