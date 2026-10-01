@@ -23,18 +23,39 @@ export const mobileRecognition: RecognitionApi = {
     capturingSystem = true;
     emit({ phase: "waiting" });
     let subscription: Awaited<ReturnType<typeof addPluginListener>> | undefined;
+    let step = "register-listener";
     try {
+      console.info("[recognition] broadcast-request", {
+        version: __APP_VERSION__,
+        commit: __COMMIT_HASH__,
+      });
       subscription = await addPluginListener("native-audio", "recognitionCaptureStarted", () => {
         if (current === generation) emit({ phase: "capturing" });
       });
       if (current !== generation) return;
+      step = "open-broadcast";
+      console.info("[recognition] open-broadcast");
       const { pcm } = await invoke<{ pcm: number[] }>("plugin:native-audio|recognition_start");
       if (current !== generation) return;
       capturingSystem = false;
       await mobileRecognition.submitPcm(new Float32Array(pcm));
     } catch (error) {
       if (current !== generation) return;
-      emit({ phase: "error", error: { code: "capture-failed", message: String(error) } });
+      // Tauri 的 reject 会返回普通对象，直接 String 会丢失原生错误信息。
+      const detail =
+        error && typeof error === "object"
+          ? (error as { message?: unknown; error?: unknown; code?: unknown })
+          : undefined;
+      const message =
+        [
+          error instanceof Error ? error.message : undefined,
+          typeof error === "string" ? error : undefined,
+          detail?.message,
+          detail?.error,
+        ].find((value): value is string => typeof value === "string" && value.trim().length > 0) ??
+        "无法开启屏幕广播，请导出本次诊断日志以检查具体原因";
+      console.error("[recognition] broadcast-failed", { step, error });
+      emit({ phase: "error", error: { code: "capture-failed", message } });
     } finally {
       await subscription?.unregister();
       if (current === generation) capturingSystem = false;

@@ -36,6 +36,25 @@ it("静音不启动指纹计算", async () => {
   expect(workers).toHaveLength(0);
   off();
 });
+it("原生拒绝对象展示 message，不显示 object Object，并记录失败阶段", async () => {
+  native.mockRejectedValue({ message: "无法访问广播共享空间", code: "NATIVE_ERROR" });
+  const log = vi.spyOn(console, "error").mockImplementation(() => {});
+  const event = vi.fn();
+  const off = mobileRecognition.onEvent(event);
+  await mobileRecognition.start({ source: "system", durationMs: 8000 });
+  expect(event).toHaveBeenLastCalledWith({
+    phase: "error",
+    error: {
+      code: "capture-failed",
+      message: "无法访问广播共享空间",
+    },
+  });
+  expect(log).toHaveBeenCalledWith(
+    "[recognition] broadcast-failed",
+    expect.objectContaining({ step: "open-broadcast" }),
+  );
+  off();
+});
 it("iOS 系统音源通过广播采集，再进入指纹计算", async () => {
   native.mockResolvedValue({ pcm: new Array(64000).fill(0.1) });
   const task = mobileRecognition.start({ source: "system", durationMs: 8000 });
