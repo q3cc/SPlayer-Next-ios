@@ -12,6 +12,7 @@ final class SampleHandler: RPBroadcastSampleHandler {
   private var inputFormat: AVAudioFormat?
   private var timer: DispatchSourceTimer?
   private var finished = false
+  private var completing = false
   private var firstInputRate: Double = 0
   private var firstInputChannels: UInt32 = 0
   private var formatChanges = 0
@@ -53,7 +54,7 @@ final class SampleHandler: RPBroadcastSampleHandler {
     // 不处理画面和麦克风，仅保留短时 App 音频。
     guard sampleBufferType == .audioApp else { return }
     queue.sync {
-      guard !finished, session != nil else { return }
+      guard !finished, !completing, session != nil else { return }
       checkSession()
       guard !finished, CMSampleBufferDataIsReady(sampleBuffer),
             let description = CMSampleBufferGetFormatDescription(sampleBuffer) else { return }
@@ -139,7 +140,7 @@ final class SampleHandler: RPBroadcastSampleHandler {
   }
 
   private func checkSession() {
-    guard !finished, let directory = directory else { return }
+    guard !finished, !completing, let directory = directory else { return }
     let data = try? Data(contentsOf: directory.appendingPathComponent("request.json"))
     let request = data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
     if request?["id"] as? String != session { end("识别已取消"); return }
@@ -150,6 +151,8 @@ final class SampleHandler: RPBroadcastSampleHandler {
   }
 
   private func complete(_ candidates: [[String: Any]], samples: [Float]) {
+    guard !finished, !completing else { return }
+    completing = true
     write(["status": "done", "pcm": samples, "candidates": candidates, "source": [
       "inputSampleRate": firstInputRate, "inputChannels": firstInputChannels,
       "formatChanges": formatChanges, "matchAttempts": attempts,
@@ -160,8 +163,12 @@ final class SampleHandler: RPBroadcastSampleHandler {
       content.body = "\(song["title"] as? String ?? "") · \((song["artists"] as? [String] ?? []).joined(separator: " / "))"
     } else { content.body = "已停止收听，请换一段音乐后重试。" }
     content.sound = .default
-    UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "splayer-recognition-result", content: content, trigger: nil))
-    end(candidates.isEmpty ? "本次未识别到歌曲，已停止收听" : "已识别到歌曲，请返回 SPlayer 查看")
+    let message = candidates.isEmpty ? "本次未识别到歌曲，已停止收听" : "已识别到歌曲，请返回 SPlayer 查看"
+    // 等系统接收通知后再结束扩展，避免广播退出时丢掉尚未提交的通知。
+    UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "splayer-recognition-result", content: content, trigger: nil)) { _ in
+      self.queue.async { self.end(message) }
+    }
+    queue.asyncAfter(deadline: .now() + 2) { [weak self] in self?.end(message) }
   }
 
   private func write(_ value: [String: Any]) {
