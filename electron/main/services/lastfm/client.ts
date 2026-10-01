@@ -68,9 +68,12 @@ const get = async (
   method: string,
   params: Record<string, string> = {},
   signed = false,
+  signal?: AbortSignal,
 ): Promise<LastfmResponse> => {
   const qs = buildParams(method, params, signed);
-  const res = await fetch(`${API_URL}?${qs.toString()}`);
+  const res = await fetch(`${API_URL}?${qs.toString()}`, {
+    signal: signal ?? AbortSignal.timeout(15000),
+  });
   const data = (await res.json()) as LastfmResponse;
   if (data.error) throw new Error(`Last.fm ${data.error}: ${data.message ?? "未知错误"}`);
   return data;
@@ -86,6 +89,7 @@ const post = async (
     method: "POST",
     headers: { "Content-Type": "application/x-www-form-urlencoded" },
     body: body.toString(),
+    signal: AbortSignal.timeout(15000),
   });
   const data = (await res.json()) as LastfmResponse;
   if (data.error) throw new Error(`Last.fm ${data.error}: ${data.message ?? "未知错误"}`);
@@ -104,8 +108,8 @@ export interface LastfmSession {
  * 获取临时授权令牌
  * @returns token 字符串
  */
-export const getToken = async (): Promise<string> => {
-  const data = await get("auth.getToken", {}, true);
+export const getToken = async (signal?: AbortSignal): Promise<string> => {
+  const data = await get("auth.getToken", {}, true, signal);
   if (!data.token) throw new Error("无法获取 Last.fm token");
   return data.token;
 };
@@ -115,8 +119,8 @@ export const getToken = async (): Promise<string> => {
  * @param token - getToken 拿到的令牌
  * @returns 会话信息
  */
-export const getSession = async (token: string): Promise<LastfmSession> => {
-  const data = await get("auth.getSession", { token }, true);
+export const getSession = async (token: string, signal?: AbortSignal): Promise<LastfmSession> => {
+  const data = await get("auth.getSession", { token }, true, signal);
   if (!data.session?.key) throw new Error("尚未授权");
   return { name: data.session.name, key: data.session.key };
 };

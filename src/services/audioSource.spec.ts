@@ -59,4 +59,16 @@ describe("酷狗试听进入播放器", () => {
     expect(await resolveTrackSource(track, { silent: true })).toBeNull();
     expect(resolve).toHaveBeenCalledWith(track, "hq", false);
   });
+
+  it("已下载歌曲在关闭临时歌曲缓存时直接播放本地文件", async () => {
+    settings.system.cache.songCache.enabled = false;
+    window.api.download = {
+      lookup: vi.fn().mockResolvedValue("file:///Documents/Downloads/song.flac"),
+    } as never;
+    const result = await resolveTrackSource(track, { silent: true });
+    expect(result?.source).toBe("file:///Documents/Downloads/song.flac");
+    expect(result?.provider).toBe("download");
+    expect(resolve).not.toHaveBeenCalled();
+    settings.system.cache.songCache.enabled = true;
+  });
 });

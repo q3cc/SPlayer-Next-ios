@@ -71,6 +71,8 @@ export interface DownloadTask {
   errorCode?: string;
   /** 写标签失败但音频已落盘 */
   tagWarning?: boolean;
+  /** 封面或歌词保存失败，但音频下载已完成。 */
+  mediaWarning?: boolean;
   createdAt: number;
   finishedAt?: number;
 }
@@ -107,6 +109,8 @@ export interface EnqueueResult {
 
 /** 渲染端下载 IPC 入口 */
 export interface DownloadApi {
+  /** 移动端查找已下载的音频，独立于可清理的临时缓存。 */
+  lookup?: (track: Track) => Promise<string | null>;
   start: (req: DownloadRequest) => Promise<EnqueueResult>;
   startMany: (reqs: DownloadRequest[]) => Promise<EnqueueResult[]>;
   cancel: (taskId: string) => Promise<void>;

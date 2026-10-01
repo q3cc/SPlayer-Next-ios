@@ -18,7 +18,8 @@ import {
 import type { SystemConfig, LocaleCode } from "@shared/types/settings";
 import { ALL_PLATFORMS } from "@shared/types/platform";
 import { defaultSystemConfig } from "@shared/defaults/settings";
-import { setByPath } from "@shared/utils/path";
+import { toast } from "@/composables/useToast";
+import { getByPath, setByPath } from "@shared/utils/path";
 
 /**
  * 对账有序集合：保留存档中仍有效的项（顺序不变），
@@ -319,11 +320,16 @@ export const useSettingsStore = defineStore(
      * 先就地 mutate 叶子保证 UI 即时反馈，IPC 落盘异步执行
      */
     const setSystem = async (keyPath: string, value: unknown): Promise<void> => {
+      const previous = getByPath(system, keyPath);
       setByPath(system, keyPath, value);
       try {
         await window.api.config.set(keyPath, value);
       } catch (err) {
         console.error("[settings] config.set failed", keyPath, err);
+        if (keyPath === "player.loudnessNormalization") {
+          setByPath(system, keyPath, previous);
+          toast.error(err instanceof Error ? err.message : String(err));
+        }
       }
       if (keyPath === "player.fadeEnabled" || keyPath === "player.fadeDuration") {
         await window.api.player.setFadeDuration(

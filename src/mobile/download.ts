@@ -5,6 +5,12 @@ import type { DownloadApi, DownloadRequest, DownloadTask } from "@shared/types/d
 import { resolveDownloadPayload } from "@/services/download/resolver";
 import { fetchWithProxy } from "./shims/proxy";
 import { store } from "./shims/store";
+import {
+  downloadFileUrl,
+  findDownloadMedia,
+  removeDownloadMedia,
+  saveDownloadMedia,
+} from "./downloadMedia";
 
 const MAX_TASKS = 200;
 const storage = localforage.createInstance({ name: "splayer", storeName: "downloads" });
@@ -144,6 +150,8 @@ const pump = async (): Promise<void> => {
     let target = await join(dir, name + "." + extension);
     if (config.overwritePolicy === "skip" && (await exists(target))) {
       checkCanceled();
+      running.finalizing = true;
+      task.mediaWarning = await saveDownloadMedia(resolved, target).catch(() => true);
       task.filePath = target;
       task.status = "done";
       task.finishedAt = Date.now();
@@ -195,6 +203,10 @@ const pump = async (): Promise<void> => {
     temporary = undefined;
     task.filePath = target;
     task.total = task.received;
+    task.mediaWarning = await saveDownloadMedia(resolved, target).catch((error) => {
+      console.warn("[download] 离线资料保存失败", error);
+      return true;
+    });
     task.status = "done";
     task.finishedAt = Date.now();
     announce(task);
@@ -273,6 +285,22 @@ const cancel: DownloadApi["cancel"] = async (id) => {
 };
 
 export const mobileDownload: DownloadApi & { cancelAll: () => Promise<void> } = {
+  lookup: async (track) => {
+    const media = await findDownloadMedia(track).catch(() => null);
+    if (media) return downloadFileUrl(media.audioPath);
+    await initialize();
+    const completed = tasks.filter(
+      (task) =>
+        task.status === "done" &&
+        task.track.source === track.source &&
+        task.track.id === track.id &&
+        task.track.serverId === track.serverId,
+    );
+    for (const task of completed.reverse()) {
+      if (task.filePath && (await exists(task.filePath))) return downloadFileUrl(task.filePath);
+    }
+    return null;
+  },
   start: enqueue,
   startMany: async (requests) => {
     const results: Awaited<ReturnType<typeof enqueue>>[] = [];
@@ -296,7 +324,9 @@ export const mobileDownload: DownloadApi & { cancelAll: () => Promise<void> } = 
     if (index < 0) return;
     const task = tasks[index];
     if (active(task)) throw new Error("download is finishing");
-    if (task.filePath && (await exists(task.filePath))) await remove(task.filePath);
+    if (task.filePath && (await exists(task.filePath))) {
+      await removeDownloadMedia(task.filePath);
+    }
     tasks.splice(tasks.indexOf(task), 1);
     persist();
   },

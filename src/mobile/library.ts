@@ -6,6 +6,7 @@ import type { AlbumSummary, ArtistSummary, LibraryApi, ScanProgress } from "@sha
 import type { Track } from "@shared/types/player";
 import { startFolderTrace } from "./folderTrace";
 import { isAndroid } from "./platform";
+import { readDownloadMedia } from "./downloadMedia";
 
 const TRACKS_STORAGE_KEY = "splayer.mobile.library";
 const DIRECTORIES_STORAGE_KEY = "splayer.mobile.scanDirs";
@@ -111,6 +112,7 @@ const listAudioFiles = async (
 
 const trackFromFile = async (path: string): Promise<Track> => {
   const info = await stat(path);
+  const downloaded = isTauri() ? await readDownloadMedia(path).catch(() => null) : null;
   const tags = isTauri()
     ? await invoke<{ title?: string; artist?: string; album?: string; duration?: number }>(
         "plugin:native-audio|read_metadata",
@@ -122,10 +124,12 @@ const trackFromFile = async (path: string): Promise<Track> => {
     id: idFor(path),
     source: "local",
     path,
-    title: tags.title || withoutExtension(pathName(path)),
-    artists: [{ name: tags.artist || "Unknown Artist" }],
-    album: tags.album ? { name: tags.album } : undefined,
-    duration: tags.duration ?? 0,
+    title: downloaded?.track.title || tags.title || withoutExtension(pathName(path)),
+    artists: downloaded?.track.artists ?? [{ name: tags.artist || "Unknown Artist" }],
+    album: downloaded?.track.album ?? (tags.album ? { name: tags.album } : undefined),
+    duration: tags.duration || downloaded?.track.duration || 0,
+    cover: downloaded?.coverPath ? convertFileSrc(downloaded.coverPath) : undefined,
+    coverOriginal: downloaded?.coverPath ? convertFileSrc(downloaded.coverPath) : undefined,
     fileSize: info.size,
     mtime: info.mtime?.getTime() ?? fallbackTime,
     ctime: info.birthtime?.getTime() ?? fallbackTime,

@@ -242,7 +242,7 @@ const resolveOnlineUrl = async (
 export interface ResolvedTrackSource {
   source: string;
   fromCache: boolean;
-  provider: "local" | "cache" | "streaming" | "official" | "plugin" | "trial";
+  provider: "local" | "download" | "cache" | "streaming" | "official" | "plugin" | "trial";
   pluginId?: string;
   cacheRequest?: () => Promise<void>;
 }
@@ -269,6 +269,8 @@ export const resolveTrackSource = async (
     const localPath = track.cueAudioPath ?? track.path;
     return localPath ? { source: localPath, fromCache: false, provider: "local" } : null;
   }
+  const downloaded = await window.api.download?.lookup?.(track);
+  if (downloaded) return { source: downloaded, fromCache: true, provider: "download" };
   const settings = useSettingsStore();
   const songLevel = settings.player.songLevel;
   const cacheKey = cacheKeyForTrack(track, songLevel);

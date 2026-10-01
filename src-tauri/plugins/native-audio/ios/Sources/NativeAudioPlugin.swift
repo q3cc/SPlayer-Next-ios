@@ -2,6 +2,7 @@ import AVFoundation
 import AudioStreaming
 import DirectoryAccess
 import MediaPlayer
+import ImageIO
 import Tauri
 import UIKit
 import WebKit
@@ -33,6 +34,11 @@ private struct ControlLyric: Decodable {
   let end: Double
   let text: String
 }
+private struct ProcessingRequest: Decodable {
+  let fadeDuration: Double
+  let normalization: Bool
+  let fftEnabled: Bool
+}
 private struct VisibilityRequest: Decodable { let visible: Bool }
 private struct SiriRequest: Decodable { let request: String }
 private struct SystemVolumeRequest: Decodable {
@@ -54,6 +60,73 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
   static let shared = NativeAudioPlugin()
   private var player: AudioPlayer?
   private var audioEffects = AudioEffects()
+  private var analysis = AudioAnalysis()
+  private var normalizationNode = AVAudioUnitEQ(numberOfBands: 0)
+  private var processing = ProcessingRequest(fadeDuration: 0, normalization: false, fftEnabled: false)
+  private var analysisTimer: Timer?
+  private var analysisTapInstalled = false
+  private var fadeTimer: Timer?
+  private var lastSpectrum: JSObject = ["ldata": Array(repeating: 0.0, count: 64), "rdata": Array(repeating: 0.0, count: 64)]
+
+  @objc func audioProcessing(_ invoke: Invoke) throws {
+    let request = try invoke.parseArgs(ProcessingRequest.self)
+    guard request.fadeDuration.isFinite, (0...2000).contains(request.fadeDuration) else { invoke.reject("淡入淡出时长无效"); return }
+    DispatchQueue.main.async {
+      self.processing = request
+      if !request.normalization { self.normalizationNode.globalGain = 0 }
+      self.updateAnalysis()
+      invoke.resolve()
+    }
+  }
+
+  @objc func fftData(_ invoke: Invoke) {
+    DispatchQueue.main.async { invoke.resolve(self.lastSpectrum) }
+  }
+
+  private func updateAnalysis() {
+    analysis.configure(spectrum: processing.fftEnabled && visible, normalize: processing.normalization)
+    analysisTimer?.invalidate()
+    analysisTimer = nil
+    guard let player = player else { return }
+    if analysisTapInstalled {
+      audioEffects.timePitch.removeTap(onBus: 0)
+      analysisTapInstalled = false
+    }
+    guard processing.normalization || (processing.fftEnabled && visible) else { return }
+    let currentAnalysis = analysis
+    // 在标准化节点之前取样，不受标准化和淡入淡出音量影响。
+    audioEffects.timePitch.installTap(onBus: 0, bufferSize: 1024, format: nil) { buffer, _ in currentAnalysis.process(buffer) }
+    analysisTapInstalled = true
+    let timer = Timer(timeInterval: processing.fftEnabled && visible ? 1.0 / 30 : 0.2, repeats: true) { [weak self, weak player] _ in
+      guard let self = self, self.player === player, player?.state == .playing,
+            let result = self.analysis.consume() else { return }
+      self.normalizationNode.globalGain = self.processing.normalization ? 20 * log10(max(result.gain, 0.001)) : 0
+      if self.visible && self.processing.fftEnabled {
+        self.lastSpectrum = ["ldata": result.left.map(Double.init), "rdata": result.right.map(Double.init)]
+        self.trigger("fftData", data: self.lastSpectrum)
+      }
+    }
+    analysisTimer = timer
+    RunLoop.main.add(timer, forMode: .common)
+  }
+
+  private func fade(to target: Float, completion: (() -> Void)? = nil) {
+    fadeTimer?.invalidate(); fadeTimer = nil
+    guard let player = player else { return }
+    let duration = processing.fadeDuration / 1000
+    guard duration > 0 else { player.volume = target; completion?(); return }
+    let start = Date()
+    let initial = player.volume
+    let timer = Timer(timeInterval: 0.01, repeats: true) { [weak self, weak player] timer in
+      guard let self = self, let player = player, self.player === player else { timer.invalidate(); return }
+      let progress = min(1, Float(Date().timeIntervalSince(start) / duration))
+      player.volume = initial + (target - initial) * progress
+      if progress >= 1 { timer.invalidate(); self.fadeTimer = nil; completion?() }
+    }
+    fadeTimer = timer
+    RunLoop.main.add(timer, forMode: .common)
+  }
+
   private var effects: EffectRequest = {
     if let data = UserDefaults.standard.data(forKey: "splayer.native.audio-effects"),
        let value = try? JSONDecoder().decode(EffectRequest.self, from: data) { return value }
@@ -72,6 +145,7 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
   private var observers: [NSObjectProtocol] = []
   private var resumeAfterInterruption = false
   private var artworkTask: URLSessionDataTask?
+  private let artworkQueue = DispatchQueue(label: "splayer.media-artwork", qos: .utility)
   private var artworkURL = ""
   private var mediaEnabled = true
   private var airPlayPlaybackPrepared = false
@@ -355,6 +429,9 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
       self.loadTimeout?.cancel()
       self.pendingLoad?.reject("已切换歌曲")
       self.pendingLoad = nil
+      self.fadeTimer?.invalidate(); self.fadeTimer = nil
+      self.analysisTimer?.invalidate(); self.analysisTimer = nil
+      if self.analysisTapInstalled { self.audioEffects.timePitch.removeTap(onBus: 0); self.analysisTapInstalled = false }
       self.player?.delegate = nil
       self.player?.stop()
       self.player = nil
@@ -366,15 +443,18 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
         try session.setActive(true)
         let player = AudioPlayer()
         self.audioEffects = AudioEffects()
-        player.attach(nodes: [self.audioEffects.equalizer, self.audioEffects.timePitch])
+        self.analysis = AudioAnalysis()
+        self.normalizationNode = AVAudioUnitEQ(numberOfBands: 0)
+        player.attach(nodes: [self.audioEffects.equalizer, self.audioEffects.timePitch, self.normalizationNode])
         self.player = player
         self.sourceURL = resolved
         self.directoryLease = lease
         self.currentTrackId = trackId
         self.autoPlay = autoPlay
         self.applyEffects()
+        self.updateAnalysis()
         // 预载不应短暂漏出声音，缓冲完成后再恢复目标音量。
-        if !autoPlay { player.volume = 0 }
+        if !autoPlay || self.processing.fadeDuration > 0 { player.volume = 0 }
         self.pendingLoad = invoke
         player.delegate = self
         player.play(url: resolved)
@@ -430,15 +510,28 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
       guard let player = self.player else { throw SiriFailure("请先选择一首歌曲") }
       switch action {
       case "play":
-        do { try AVAudioSession.sharedInstance().setActive(true) }
+        do {
+          let session = AVAudioSession.sharedInstance()
+          try session.setCategory(.playback, mode: .default, policy: .longFormAudio)
+          try session.setActive(true)
+        }
         catch { throw error }
         self.autoPlay = true
         if player.state == .stopped, let url = self.sourceURL { player.play(url: url) }
-        else { player.resume() }
+        else {
+          if player.state != .playing { player.volume = 0 }
+          player.resume()
+        }
+        fade(to: 1)
       case "pause":
         self.resumeAfterInterruption = false
-        player.pause()
+        fade(to: 0) { [weak self, weak player] in
+          player?.pause()
+          player?.volume = 1
+          if let self = self { self.trigger("state", data: self.snapshot()) }
+        }
       case "stop":
+        self.fadeTimer?.invalidate(); self.fadeTimer = nil
         self.pendingLoad?.reject("播放已停止")
         self.pendingLoad = nil
         self.loadTimeout?.cancel()
@@ -489,6 +582,7 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
     let request = try invoke.parseArgs(VisibilityRequest.self)
     DispatchQueue.main.async {
       self.visible = request.visible
+      self.updateAnalysis()
       self.airPlayRoutes.setVisible(request.visible)
       if !request.visible {
         Task { @MainActor in SiriService.shared.checkpoint() }
@@ -556,22 +650,45 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
         self.artworkURL = value.cover
         info.removeValue(forKey: MPMediaItemPropertyArtwork)
         if #available(iOS 26.0, *) { StillArtwork.clear(from: &info) }
-        if let url = URL(string: value.cover), ["https", "http"].contains(url.scheme ?? "") {
+        var coverURL = value.cover.hasPrefix("/") ? URL(fileURLWithPath: value.cover) : URL(string: value.cover)
+        if let url = coverURL, url.scheme == "asset", url.host == "localhost",
+           let encoded = URLComponents(url: url, resolvingAgainstBaseURL: false)?.percentEncodedPath,
+           let path = String(encoded.dropFirst()).removingPercentEncoding {
+          coverURL = URL(fileURLWithPath: path)
+        }
+        if let url = coverURL, url.isFileURL {
+          artworkQueue.async { [weak self] in
+            guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+                  let image = Self.artworkThumbnail(source) else { return }
+            DispatchQueue.main.async { self?.installArtwork(image, cover: value.cover) }
+          }
+        } else if let url = coverURL, ["https", "http"].contains(url.scheme ?? "") {
           self.artworkTask = URLSession.shared.dataTask(with: url) { [weak self] data, _, _ in
-            guard let data = data, let image = UIImage(data: data) else { return }
-            DispatchQueue.main.async {
-              guard let self = self, self.artworkURL == value.cover, self.mediaEnabled else { return }
-              var current = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
-              current[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
-              if #available(iOS 26.0, *) { StillArtwork.install(image: image, id: value.cover, into: &current) }
-              MPNowPlayingInfoCenter.default().nowPlayingInfo = current
-            }
+            guard let data, let source = CGImageSourceCreateWithData(data as CFData, nil),
+                  let image = Self.artworkThumbnail(source) else { return }
+            DispatchQueue.main.async { self?.installArtwork(image, cover: value.cover) }
           }
           self.artworkTask?.resume()
         }
       }
       MPNowPlayingInfoCenter.default().nowPlayingInfo = info
       self.updatePosition()
+  }
+
+  /** 系统卡片只解码缩略图，避免原始封面常驻播放进程。 */
+  private static func artworkThumbnail(_ source: CGImageSource) -> UIImage? {
+    let options: [CFString: Any] = [kCGImageSourceCreateThumbnailFromImageAlways: true,
+      kCGImageSourceCreateThumbnailWithTransform: true, kCGImageSourceThumbnailMaxPixelSize: 1024]
+    guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
+    return UIImage(cgImage: image)
+  }
+
+  private func installArtwork(_ image: UIImage, cover: String) {
+    guard artworkURL == cover, mediaEnabled else { return }
+    var current = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
+    current[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+    if #available(iOS 26.0, *) { StillArtwork.install(image: image, id: cover, into: &current) }
+    MPNowPlayingInfoCenter.default().nowPlayingInfo = current
   }
 
   private func installControls() {
@@ -585,11 +702,19 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
         guard let self = self, let player = self.player else { return .noSuchContent }
         DispatchQueue.main.async {
           if action == "play" || (action == "toggle" && player.state != .playing) {
-            do { try AVAudioSession.sharedInstance().setActive(true) }
+            do {
+          let session = AVAudioSession.sharedInstance()
+          try session.setCategory(.playback, mode: .default, policy: .longFormAudio)
+          try session.setActive(true)
+        }
             catch { self.trigger("error", data: ["message": error.localizedDescription]); return }
             self.autoPlay = true
             if player.state == .stopped, let url = self.sourceURL { player.play(url: url) }
-            else { player.resume() }
+            else {
+          if player.state != .playing { player.volume = 0 }
+          player.resume()
+        }
+        fade(to: 1)
           }
           else if action == "pause" || action == "toggle" { self.resumeAfterInterruption = false; player.pause() }
           else {
@@ -661,6 +786,7 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
       if newState == .playing, player.state == .playing, let pending = self.pendingLoad {
         self.loadTimeout?.cancel()
         if !self.autoPlay { player.pause(); player.volume = 1 }
+        else { self.fade(to: 1) }
         self.pendingLoad = nil
         pending.resolve(self.snapshot())
       }

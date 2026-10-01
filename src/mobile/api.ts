@@ -4,6 +4,10 @@ import { save, open } from "@tauri-apps/plugin-dialog";
 import { readTextFile, writeFile } from "@tauri-apps/plugin-fs";
 import { fetch as tauriFetch } from "@tauri-apps/plugin-http";
 import { defaultHotkeyConfig } from "@shared/defaults/hotkeys";
+import { mobileLastfm, lastfmPlayerEvent, lastfmTrackLoaded } from "./lastfm";
+import { mobileRecognition } from "./recognition";
+import { mobileOpencc } from "./opencc";
+import { mobileCloud } from "./cloud";
 import { mobileDownload } from "./download";
 import type { HotkeyConfig } from "@shared/types/hotkey";
 import type { NowPlayingSnapshot, NowPlayingUpdatePayload } from "@shared/types/nowPlaying";
@@ -88,6 +92,7 @@ const loadPlayer = async (): Promise<PlayerApi> => {
     playerEventsInstalled = true;
     player.onEvent((event) => {
       playerEventListeners.forEach((listener) => listener(event));
+      lastfmPlayerEvent(event);
       if (event.type === "status") {
         emitPluginState(event.data.state, event.data.position);
       } else if (event.type === "ended") {
@@ -100,14 +105,18 @@ const loadPlayer = async (): Promise<PlayerApi> => {
   return player;
 };
 
-/** 设置、恢复备份与重置都同步当前播放中的均衡器。 */
-const syncMobileEqualizer = async (): Promise<void> => {
+/** 设置、恢复备份与重置都同步当前播放中的音效。 */
+const syncMobileAudioSettings = async (): Promise<void> => {
   const player = await loadPlayer();
   const equalizer = store.get("player.equalizer");
   const results = [
     await player.setEqualizerBands([...equalizer.bands]),
     await player.setPreampGain(equalizer.preamp),
     await player.setEqualizerEnabled(equalizer.enabled),
+    await player.setFadeDuration(
+      store.get("player.fadeEnabled") ? store.get("player.fadeDuration") : 0,
+    ),
+    await player.setNormalizationEnabled(store.get("player.loudnessNormalization")),
   ];
   const failed = results.find((result) => !result.success);
   if (failed) throw new Error(failed.error || "音效设置失败");
@@ -122,6 +131,19 @@ const mobilePlayer = new Proxy(
           playerEventListeners.add(listener);
           void loadPlayer();
           return () => playerEventListeners.delete(listener);
+        };
+      }
+      if (property === "load") {
+        return async (...args: Parameters<PlayerApi["load"]>) => {
+          const player = await loadPlayer();
+          const result = await player.load(...args);
+          if (result.success)
+            await lastfmTrackLoaded(
+              args[1]?.meta,
+              result.data?.mediaInfo?.duration ?? args[1]?.meta?.duration ?? 0,
+              args[1]?.autoPlay !== false,
+            );
+          return result;
         };
       }
       if (property === "syncPlayMode" || property === "syncLikeState") {
@@ -188,7 +210,6 @@ const mobileStreaming = new Proxy(
 
 const noop = (): void => undefined;
 const unsubscribe = (): (() => void) => noop;
-const unsupported = async () => ({ ok: false, error: "unsupported on iOS" });
 
 let pendingProtocolUrl: string | null = null;
 let pendingAudioFiles: string[] = [];
@@ -258,10 +279,14 @@ const api = {
     get: async (key: string) => store.get(key as never),
     set: async (key: string, value: unknown) => {
       if (key === "system.diagnosticLogging") await setDiagnosticsEnabled(value === true);
+      if (key === "player.loudnessNormalization") {
+        const result = await mobilePlayer.setNormalizationEnabled(value === true);
+        if (!result.success) throw new Error(result.error);
+      }
       store.set(key, value);
       if (!store.get("download.enabled")) await mobileDownload.cancelAll();
       if (key === "player.equalizer" || key.startsWith("player.equalizer.")) {
-        await syncMobileEqualizer();
+        await syncMobileAudioSettings();
       }
       if (key === "update.channel") void mobileUpdate.check(true);
       if (key.startsWith("media.")) mobileMediaSession.refresh();
@@ -272,14 +297,14 @@ const api = {
       await setDiagnosticsEnabled(false);
       store.clear();
       await mobileDownload.cancelAll();
-      await syncMobileEqualizer();
+      await syncMobileAudioSettings();
       mobileMediaSession.refresh();
       await mobileLyricPip.update();
     },
     replaceAll: async (value: unknown) => {
       store.replaceAll(value);
       if (!store.get("download.enabled")) await mobileDownload.cancelAll();
-      await syncMobileEqualizer();
+      await syncMobileAudioSettings();
       await setDiagnosticsEnabled(store.get("system.diagnosticLogging") === true);
       mobileMediaSession.refresh();
       await mobileLyricPip.update();
@@ -418,13 +443,9 @@ const api = {
   taskbarLyric: { setContentWidth: noop, onLayout: unsubscribe, onConfigChange: unsubscribe },
   plugins: mobilePlugins,
   apis: mobileProviders,
-  cloud: {
-    pickSongs: async () => [],
-    uploadSong: async () => ({ success: false, instant: false, errorCode: -1 }),
-    onUploadProgress: unsubscribe,
-  },
+  cloud: mobileCloud,
   lyrics: mobileLyrics,
-  opencc: { convert: async (text: string) => text, convertBatch: async (texts: string[]) => texts },
+  opencc: mobileOpencc,
   comments: mobileComments,
   download: mobileDownload,
   nowPlaying: {
@@ -490,20 +511,8 @@ const api = {
   },
   cache: mobileCache,
   streaming: mobileStreaming,
-  recognition: {
-    isSupported: async () => false,
-    start: unsupported,
-    cancel: unsupported,
-    submitPcm: unsupported,
-    onEvent: unsubscribe,
-  },
-  lastfm: {
-    connect: async () => ({ connected: false, reason: "error" }),
-    cancelConnect: async () => undefined,
-    disconnect: async () => undefined,
-    getStatus: async () => ({ connected: false, username: "" }),
-    love: async () => undefined,
-  },
+  recognition: mobileRecognition,
+  lastfm: mobileLastfm,
   externalApi: {
     restart: async () => ({ running: false }),
     getStatus: async () => ({ running: false }),

@@ -97,6 +97,24 @@ describe("lyric loader", () => {
     window.api = mockWindowApi;
   });
 
+  it("已下载的在线歌曲直接显示本地歌词，不发网络查询", async () => {
+    const media = useMediaStore();
+    media.track = createTrack("offline");
+    mockWindowApi.player.readLyricFile.mockResolvedValueOnce({
+      success: true,
+      data: "[00:01.00]离线歌词",
+    } as never);
+    await loadForTrack({
+      downloaded: true,
+      quality: { sampleRate: 44100, channels: 2, bitsPerSample: 16, bitRate: 320000, codec: "mp3" },
+      externalLyrics: [{ format: "lrc", path: "/Documents/Downloads/song.mp3.lrc" }],
+    });
+    expect(media.parsedLyric[0].words.map((word) => word.word).join("")).toBe("离线歌词");
+    expect(mockResolveOnlineByPreference).not.toHaveBeenCalled();
+    expect(mockResolveTTMLOverlay).not.toHaveBeenCalled();
+    expect(mockResolvePluginLyric).not.toHaveBeenCalled();
+  });
+
   it("在线多平台并发查询时，先到达的候选歌词立即上屏展示", async () => {
     const media = useMediaStore();
     const track = createTrack("song_1");

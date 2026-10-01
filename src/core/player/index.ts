@@ -43,6 +43,8 @@ interface LoadRuntimeOptions {
   suppressErrorToast?: boolean;
   /** 本次播放的来源上下文 */
   context?: PlaybackContext;
+  /** 本次音源来自持久下载，可等本地歌词详情再加载。 */
+  downloaded?: boolean;
 }
 
 /** 单次音源兜底过程的重试状态 */
@@ -141,7 +143,7 @@ export const load = async (
   resetForLoad(meta?.duration ?? 0);
   // 非本地并行歌词与取色
   const isOnline = meta?.source !== "local";
-  if (isOnline) {
+  if (isOnline && !options.downloaded) {
     void lyricLoader.loadForTrack(null);
     extractColorFromUrl(meta?.cover ?? meta?.coverOriginal ?? null);
     if (meta) void coverLoader.loadCoverForTrack(meta);
@@ -166,7 +168,7 @@ export const load = async (
         queue.updateQueueTracks([enriched]);
       }
       // 避免重复请求
-      if (!isOnline) {
+      if (!isOnline || detail.downloaded || options.downloaded) {
         lyricLoader.loadForTrack(detail);
         extractColorFromUrl(enriched?.cover ?? null);
         if (enriched) void coverLoader.loadCoverForTrack(enriched);
@@ -260,6 +262,7 @@ const loadTrackSourceWithFallback = async (
     const result = await load(resolved.source, autoPlay, track, {
       suppressErrorToast: usingInitial || shouldSuppressLoadError(resolved),
       context,
+      downloaded: resolved.provider === "download",
     });
     if (!shouldContinue()) return { status: "cancelled" };
     // 预载 URL 可能已经过期，非本地来源失败后重新解析一次最新地址
@@ -267,6 +270,7 @@ const loadTrackSourceWithFallback = async (
       usingInitial &&
       !result.ok &&
       resolved.provider !== "local" &&
+      resolved.provider !== "download" &&
       resolved.provider !== "cache"
     ) {
       continue;
@@ -1080,8 +1084,8 @@ export const initPlayer = async (): Promise<void> => {
   // 当前歌曲喜欢状态变化时同步到托盘菜单
   const fav = useFavorite();
   watch(
-    () => fav.isLiked(media.track),
-    (liked) => window.api.player.syncLikeState(liked),
+    () => [fav.isLiked(media.track), fav.isSupported(media.track)] as const,
+    ([liked, supported]) => window.api.player.syncLikeState(liked, supported),
     { immediate: true },
   );
   window.api.nowPlaying.onLyricOffsetChange(({ offsetMs }) => {

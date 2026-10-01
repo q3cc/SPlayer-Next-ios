@@ -33,10 +33,14 @@
     },
     "opener:default",
     "fs:allow-open",
+    "fs:allow-read-text-file",
+    "fs:allow-write-text-file",
     "fs:allow-write",
     "fs:allow-mkdir",
     "fs:allow-exists",
     "fs:allow-rename",
-    "fs:allow-remove"
+    "fs:allow-remove",
+    "fs:allow-read",
+    "fs:allow-seek"
   ]
 }

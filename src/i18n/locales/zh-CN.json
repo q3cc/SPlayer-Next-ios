@@ -691,6 +691,7 @@
     "deleteConfirmTitle": "删除下载文件",
     "deleteConfirmContent": "将从磁盘永久删除该歌曲文件，此操作不可恢复。确认删除？",
     "tagWarning": "标签写入失败，文件已保存",
+    "mediaWarning": "歌曲已下载，但封面或歌词未能保存",
     "resolveFailed": "无法下载：{title}",
     "alreadyQueued": "该歌曲已在下载队列",
     "alreadyDownloaded": "该歌曲已下载",

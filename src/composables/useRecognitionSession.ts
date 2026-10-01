@@ -112,6 +112,7 @@ export const useRecognitionSession = () => {
       }
       await window.api.recognition.submitPcm(pcm);
     } catch (err) {
+      captureHandle?.close();
       captureHandle = null;
       if (signal.aborted) {
         if (resetAfterAbort) reset();

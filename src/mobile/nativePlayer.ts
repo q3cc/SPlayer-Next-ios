@@ -1,5 +1,6 @@
-import { addPluginListener, invoke } from "@tauri-apps/api/core";
+import { addPluginListener, convertFileSrc, invoke } from "@tauri-apps/api/core";
 import type {
+  FftData,
   IpcResponse,
   LoadResult,
   PlayerApi,
@@ -10,6 +11,7 @@ import { mobileMediaSession } from "./mediaSession";
 import { mobileLyricPip } from "./lyricPip";
 import { isAndroid } from "./platform";
 import { neteaseCdnUrl } from "@shared/utils/neteaseCdnUrl";
+import { downloadFileUrl, findDownloadMedia, readDownloadMedia } from "./downloadMedia";
 
 /** 移动端使用系统音频引擎，浏览器预览保留原播放器。 */
 export const createNativePlayer = (fallback: PlayerApi): PlayerApi => {
@@ -35,6 +37,22 @@ export const createNativePlayer = (fallback: PlayerApi): PlayerApi => {
     preamp: 0,
   };
   let ready: Promise<void> | undefined;
+  let processing = { fadeDuration: 0, normalization: false, fftEnabled: false };
+  let processingQueue: Promise<IpcResponse> = Promise.resolve({ success: true });
+  const configureProcessing = (patch: Partial<typeof processing>): Promise<IpcResponse> => {
+    processingQueue = processingQueue.then(async () => {
+      const next = { ...processing, ...patch };
+      try {
+        await initialize();
+        await invoke("plugin:native-audio|audio_processing", next);
+        processing = next;
+        return { success: true };
+      } catch (error) {
+        return { success: false, error: String(error) };
+      }
+    });
+    return processingQueue;
+  };
 
   const emit = (event: PlayerEvent): void => {
     for (const listener of listeners) listener(event);
@@ -53,6 +71,11 @@ export const createNativePlayer = (fallback: PlayerApi): PlayerApi => {
     ready ??= (async () => {
       const subscriptions: Awaited<ReturnType<typeof addPluginListener>>[] = [];
       try {
+        subscriptions.push(
+          await addPluginListener<FftData>("native-audio", "fftData", (data) => {
+            if (!document.hidden && processing.fftEnabled) emit({ type: "fftData", data });
+          }),
+        );
         subscriptions.push(
           await addPluginListener<PlayerStatus>("native-audio", "position", (value) =>
             update(value, true),
@@ -86,8 +109,10 @@ export const createNativePlayer = (fallback: PlayerApi): PlayerApi => {
           }),
         );
         subscriptions.push(
-          await addPluginListener<{ type: "next" | "prev" }>("native-audio", "action", (value) =>
-            emit({ type: value.type }),
+          await addPluginListener<{ type: "next" | "prev" | "toggleLike" }>(
+            "native-audio",
+            "action",
+            (value) => emit({ type: value.type }),
           ),
         );
         await invoke("plugin:native-audio|visibility", { visible: !document.hidden });
@@ -141,6 +166,17 @@ export const createNativePlayer = (fallback: PlayerApi): PlayerApi => {
 
   return {
     ...fallback,
+    setFadeDuration: (fadeDuration) => configureProcessing({ fadeDuration }),
+    getFadeDuration: async () => ({ success: true, data: processing.fadeDuration }),
+    setNormalizationEnabled: (normalization) => configureProcessing({ normalization }),
+    setFftEnabled: (fftEnabled) => configureProcessing({ fftEnabled }),
+    getFftData: async () => {
+      try {
+        return { success: true, data: await invoke<FftData>("plugin:native-audio|fft_data") };
+      } catch (error) {
+        return { success: false, error: String(error) };
+      }
+    },
     load: async (source, options = {}): Promise<IpcResponse<LoadResult>> => {
       const current = ++generation;
       const playbackSource = neteaseCdnUrl(source);
@@ -157,18 +193,31 @@ export const createNativePlayer = (fallback: PlayerApi): PlayerApi => {
       });
       try {
         await initialize();
+        const downloaded = options.meta
+          ? await findDownloadMedia(options.meta).catch(() => null)
+          : await readDownloadMedia(playbackSource).catch(() => null);
+        if (current !== generation) return { success: false, error: "已切换歌曲" };
+        const baseMeta = options.meta ?? downloaded?.track;
+        const meta =
+          baseMeta && downloaded?.coverPath
+            ? {
+                ...baseMeta,
+                cover: convertFileSrc(downloaded.coverPath),
+                coverOriginal: downloadFileUrl(downloaded.coverPath),
+              }
+            : baseMeta;
         if (import.meta.env.VITE_MOBILE_TARGET !== "android" && !isAndroid)
           await invoke("plugin:native-audio|siri", {
             request: JSON.stringify({ action: "interrupt" }),
           });
         const value = await invoke<PlayerStatus>("plugin:native-audio|load", {
-          source: playbackSource,
+          source: downloaded ? downloadFileUrl(downloaded.audioPath) : playbackSource,
           autoPlay: options.autoPlay !== false,
           trackId: options.meta ? `${options.meta.source}:${options.meta.id}` : null,
         });
         if (current !== generation) return { success: false, error: "已切换歌曲" };
-        cover = options.meta?.coverOriginal ?? options.meta?.cover ?? null;
-        mobileMediaSession.setTrack(options.meta ?? null);
+        cover = meta?.coverOriginal ?? meta?.cover ?? null;
+        mobileMediaSession.setTrack(meta ?? null);
         update(value);
         console.info("[native-audio] load-ready", { sourceType, duration: value.duration });
         const quality = options.meta?.quality ?? {
@@ -206,13 +255,17 @@ export const createNativePlayer = (fallback: PlayerApi): PlayerApi => {
                 trackId: null,
               }).catch(() => ({}))
             : {};
+        if (current !== generation) return { success: false, error: "已切换歌曲" };
         return {
           success: true,
           data: {
             detail: {
               quality,
+              downloaded: Boolean(downloaded),
               embeddedLyric: metadata.embeddedLyric,
-              externalLyrics: metadata.externalLyrics ?? [],
+              externalLyrics: downloaded?.externalLyrics.length
+                ? downloaded.externalLyrics
+                : (metadata.externalLyrics ?? []),
             },
             mediaInfo: {
               title: options.meta?.title ?? metadata.title,
@@ -220,7 +273,10 @@ export const createNativePlayer = (fallback: PlayerApi): PlayerApi => {
                 options.meta?.artists ??
                 (metadata.artist ? [{ name: metadata.artist }] : undefined),
               album: options.meta?.album ?? (metadata.album ? { name: metadata.album } : undefined),
-              cover: options.meta?.cover,
+              cover: meta?.cover,
+              coverOriginal: downloaded?.coverPath
+                ? convertFileSrc(downloaded.coverPath)
+                : meta?.coverOriginal,
               duration: value.duration || options.meta?.duration || metadata.duration || 0,
               quality,
             },
@@ -236,6 +292,7 @@ export const createNativePlayer = (fallback: PlayerApi): PlayerApi => {
       }
     },
     play: () => control("play"),
+    syncLikeState: (liked, supported) => mobileMediaSession.setLikeState(liked, supported),
     pause: () => control("pause"),
     stop: () => {
       generation++;

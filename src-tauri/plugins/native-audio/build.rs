@@ -3,6 +3,9 @@ fn main() {
     println!("cargo:rerun-if-changed=../../vendor/AudioStreaming");
     tauri_plugin::Builder::new(&[
         "load",
+        "lastfm_credentials",
+        "audio_processing",
+        "fft_data",
         "control",
         "configure",
         "metadata",

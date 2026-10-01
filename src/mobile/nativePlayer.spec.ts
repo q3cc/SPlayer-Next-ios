@@ -8,14 +8,22 @@ const mocks = vi.hoisted(() => ({
   listener: vi.fn(),
   sync: vi.fn(),
   track: vi.fn(),
+  download: vi.fn(),
+  like: vi.fn(),
+}));
+vi.mock("./downloadMedia", () => ({
+  findDownloadMedia: mocks.download,
+  readDownloadMedia: mocks.download,
+  downloadFileUrl: (path: string) => `file://${path}`,
 }));
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: mocks.invoke,
   addPluginListener: mocks.listener,
+  convertFileSrc: (path: string) => `asset://${path}`,
 }));
 vi.mock("./lyricPip", () => ({ mobileLyricPip: { sync: mocks.sync } }));
 vi.mock("./mediaSession", () => ({
-  mobileMediaSession: { setTrack: mocks.track, setPosition: vi.fn() },
+  mobileMediaSession: { setTrack: mocks.track, setPosition: vi.fn(), setLikeState: mocks.like },
 }));
 const status: PlayerStatus = {
   state: "playing",
@@ -29,6 +37,7 @@ const status: PlayerStatus = {
 beforeEach(() => {
   mocks.invoke.mockReset().mockResolvedValue(status);
   mocks.listener.mockReset().mockResolvedValue({ unregister: vi.fn() });
+  mocks.download.mockReset().mockResolvedValue(null);
 });
 
 it("系统音量命令已注册且默认向移动端开放", () => {
@@ -105,7 +114,7 @@ it("加载前安装原生事件，返回真实进度并同步歌词小窗", asyn
   expect((await player.load("https://example.com/song.mp3", { autoPlay: false })).success).toBe(
     true,
   );
-  expect(mocks.listener).toHaveBeenCalledTimes(7);
+  expect(mocks.listener).toHaveBeenCalledTimes(8);
   expect(mocks.invoke).toHaveBeenCalledWith("plugin:native-audio|load", {
     source: "https://example.com/song.mp3",
     autoPlay: false,
@@ -129,6 +138,52 @@ it("加载时将歌曲身份与音源一起下发，避免后台把进度记到�
     autoPlay: true,
     trackId: "netease:resume",
   });
+});
+
+it("断网播放下载文件时向原生卡片传本地封面并返回本地歌词", async () => {
+  const media = {
+    audioPath: "/Documents/Downloads/song.flac",
+    coverPath: "/Documents/Downloads/song.flac.cover.jpg",
+    externalLyrics: [{ format: "ttml", path: "/Documents/Downloads/song.flac.ttml" }],
+  };
+  mocks.download.mockResolvedValue(media);
+  const player = createNativePlayer({} as PlayerApi);
+  const result = await player.load("file:///Documents/Downloads/song.flac", {
+    meta: {
+      source: "netease",
+      id: "offline",
+      title: "离线歌曲",
+      artists: [],
+      duration: 200000,
+      cover: "https://example.com/remote.jpg",
+    },
+  });
+  expect(mocks.invoke).toHaveBeenCalledWith("plugin:native-audio|load", {
+    source: "file:///Documents/Downloads/song.flac",
+    autoPlay: true,
+    trackId: "netease:offline",
+  });
+  expect(mocks.track).toHaveBeenLastCalledWith(
+    expect.objectContaining({ coverOriginal: "file:///Documents/Downloads/song.flac.cover.jpg" }),
+  );
+  expect(result.data?.detail).toMatchObject({
+    downloaded: true,
+    externalLyrics: media.externalLyrics,
+  });
+});
+
+it("安卓系统收藏操作进入播放器事件并同步按钮状态", async () => {
+  const player = createNativePlayer({} as PlayerApi);
+  const events = vi.fn();
+  player.onEvent(events);
+  await vi.waitFor(() =>
+    expect(mocks.listener.mock.calls.some(([, event]) => event === "action")).toBe(true),
+  );
+  const callback = mocks.listener.mock.calls.find(([, event]) => event === "action")![2];
+  callback({ type: "toggleLike" });
+  expect(events).toHaveBeenCalledWith({ type: "toggleLike" });
+  player.syncLikeState(true, true);
+  expect(mocks.like).toHaveBeenCalledWith(true, true);
 });
 
 it("安卓把旧的网易云 HTTP 音源升级为 HTTPS，不改动签名参数", async () => {
@@ -177,4 +232,35 @@ it("后台定期存档、暂停和退后台保存进度均不依赖 Siri 开关"
     .split("func audioPlayerDidStartPlaying")[0];
   expect(timer).toContain('if self.visible { self.trigger("position", data: self.snapshot()) }');
   expect(timer).toContain("SiriService.shared.checkpoint()");
+});
+
+it("淡入淡出、标准化与频谱合并参数，失败不伪造成功状态", async () => {
+  const player = createNativePlayer({} as PlayerApi);
+  await Promise.all([
+    player.setFadeDuration(300),
+    player.setNormalizationEnabled(true),
+    player.setFftEnabled(true),
+  ]);
+  expect(mocks.invoke).toHaveBeenLastCalledWith("plugin:native-audio|audio_processing", {
+    fadeDuration: 300,
+    normalization: true,
+    fftEnabled: true,
+  });
+  mocks.invoke.mockRejectedValueOnce(new Error("permission denied"));
+  expect((await player.setFadeDuration(500)).success).toBe(false);
+  expect(await player.getFadeDuration()).toEqual({ success: true, data: 300 });
+});
+it("只有开启频谱且页面可见时转发真实频谱", async () => {
+  const player = createNativePlayer({} as PlayerApi);
+  const event = vi.fn();
+  player.onEvent(event);
+  await player.setFftEnabled(true);
+  const callback = mocks.listener.mock.calls.find(([, name]) => name === "fftData")![2];
+  const data = { ldata: [0.4], rdata: [0.6] };
+  callback(data);
+  expect(event).toHaveBeenLastCalledWith({ type: "fftData", data });
+  await player.setFftEnabled(false);
+  event.mockClear();
+  callback(data);
+  expect(event).not.toHaveBeenCalled();
 });

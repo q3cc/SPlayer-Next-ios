@@ -102,7 +102,16 @@ export const useMediaStore = defineStore("media", () => {
           : track.value.artists,
       album: track.value.album ?? info.album,
       duration: track.value.duration > 0 ? track.value.duration : info.duration,
-      cover: isStreaming ? track.value.cover : (track.value.cover ?? info.cover),
+      cover:
+        newDetail?.downloaded && info.cover
+          ? info.cover
+          : isStreaming
+            ? track.value.cover
+            : (track.value.cover ?? info.cover),
+      coverOriginal:
+        newDetail?.downloaded && info.coverOriginal
+          ? info.coverOriginal
+          : track.value.coverOriginal,
       quality: track.value.quality ?? info.quality,
     };
     if (newDetail) detail.value = newDetail;

@@ -703,6 +703,7 @@
     "deleteConfirmTitle": "Delete downloaded file",
     "deleteConfirmContent": "This permanently deletes the song file from disk and cannot be undone. Delete it?",
     "tagWarning": "Failed to write tags; file saved",
+    "mediaWarning": "Song downloaded, but the cover or lyrics could not be saved",
     "resolveFailed": "Cannot download: {title}",
     "alreadyQueued": "Already in the download queue",
     "alreadyDownloaded": "Already downloaded",

@@ -1,0 +1,8 @@
+<resources>
+    <string name="media_previous">上一首</string>
+    <string name="media_play">播放</string>
+    <string name="media_pause">暂停</string>
+    <string name="media_next">下一首</string>
+    <string name="media_favorite">收藏</string>
+    <string name="media_unfavorite">取消收藏</string>
+</resources>

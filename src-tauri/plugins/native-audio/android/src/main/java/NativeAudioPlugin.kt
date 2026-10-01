@@ -15,6 +15,8 @@ import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.media.MediaMetadataRetriever
 import android.media.MediaMetadata
+import android.media.MediaDescription
+import android.media.browse.MediaBrowser
 import android.media.MediaPlayer
 import android.media.PlaybackParams
 import android.media.audiofx.Equalizer
@@ -24,6 +26,7 @@ import android.media.session.MediaSession
 import android.media.session.PlaybackState
 import android.net.Uri
 import android.os.Build
+import android.os.Bundle
 import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
@@ -95,6 +98,8 @@ class MetadataArgs {
     var dynamic: Boolean = false
     var offset: Long = 0
     var lines: Array<LyricLineArgs> = emptyArray()
+    var liked: Boolean = false
+    var favoriteSupported: Boolean = false
 }
 
 @InvokeArg
@@ -106,6 +111,11 @@ class VolumeArgs {
 @InvokeArg
 class KeepAwakeArgs {
     var enabled: Boolean = false
+}
+
+@InvokeArg
+class VisibilityArgs {
+    var visible: Boolean = true
 }
 
 @InvokeArg
@@ -125,6 +135,9 @@ internal class AudioEngine private constructor(private val context: Context) {
     private val handler = Handler(Looper.getMainLooper())
     private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
     private val session = MediaSession(context, "SPlayer Next")
+    private val artwork = MediaArtwork(context)
+    val sessionToken: MediaSession.Token get() = session.sessionToken
+    private var mediaEnabled = true
     private var player: MediaPlayer? = null
     private var equalizer: Equalizer? = null
     private var loudness: LoudnessEnhancer? = null
@@ -137,6 +150,61 @@ internal class AudioEngine private constructor(private val context: Context) {
     private var effects = EffectArgs()
     private var metadata: MetadataArgs? = null
     private var displayedTitle = ""
+    var visible = true
+        set(value) { field = value; updateAnalysis() }
+    private var processing = ProcessingArgs()
+    private var analysis: AudioAnalysis? = null
+    private var normalizationGain = 1.0
+    private var fadeGain = 1.0
+    private var fadeTask: Runnable? = null
+
+    fun processing(args: ProcessingArgs) {
+        require(args.fadeDuration.isFinite() && args.fadeDuration in 0.0..2000.0)
+        val previous = processing
+        processing = args
+        try { updateAnalysis() } catch (error: Exception) {
+            processing = previous
+            updateAnalysis()
+            throw error
+        }
+        if (!args.normalization) { normalizationGain = 1.0; applyEffects() }
+    }
+
+    fun fftData(): JSObject = analysis?.latest ?: JSObject().apply {
+        put("ldata", org.json.JSONArray(List(64) { 0.0 })); put("rdata", org.json.JSONArray(List(64) { 0.0 }))
+    }
+
+    private fun updateAnalysis() {
+        val current = player ?: return
+        if (!prepared) return
+        val fft = processing.fftEnabled && visible && state == "playing"
+        val normalizing = processing.normalization && state == "playing"
+        if (!fft && !normalizing) { analysis?.configure(false, false); return }
+        if (analysis == null) analysis = AudioAnalysis(current.audioSessionId,
+            { data -> if (visible && state == "playing") emit?.invoke("fftData", data) },
+            { gain -> normalizationGain = gain; applyEffects() })
+        analysis?.configure(normalizing, fft)
+    }
+
+    private fun fade(target: Double, completion: (() -> Unit)? = null) {
+        fadeTask?.let(handler::removeCallbacks)
+        fadeTask = null
+        if (processing.fadeDuration <= 0) { fadeGain = target; applyEffects(); completion?.invoke(); return }
+        val started = android.os.SystemClock.elapsedRealtime()
+        val initial = fadeGain
+        val task = object : Runnable {
+            override fun run() {
+                val progress = ((android.os.SystemClock.elapsedRealtime() - started) / processing.fadeDuration).coerceIn(0.0, 1.0)
+                fadeGain = initial + (target - initial) * progress
+                applyEffects()
+                if (progress < 1) handler.postDelayed(this, 10)
+                else { fadeTask = null; completion?.invoke() }
+            }
+        }
+        fadeTask = task
+        handler.post(task)
+    }
+
     private var pending: Invoke? = null
     private var loadTimeout: Runnable? = null
     private var focusRequest: AudioFocusRequest? = null
@@ -151,7 +219,7 @@ internal class AudioEngine private constructor(private val context: Context) {
     private val positionTicker = object : Runnable {
         override fun run() {
             if (state != "playing") return
-            emit?.invoke("position", snapshot())
+            if (visible) emit?.invoke("position", snapshot())
             publishMetadata()
             handler.postDelayed(this, 1000)
         }
@@ -166,8 +234,18 @@ internal class AudioEngine private constructor(private val context: Context) {
             override fun onSeekTo(pos: Long) { controlFromSystem("seek", pos.toDouble()) }
             override fun onSkipToNext() { emit?.invoke("action", JSObject().apply { put("type", "next") }) }
             override fun onSkipToPrevious() { emit?.invoke("action", JSObject().apply { put("type", "prev") }) }
+            override fun onPlayFromMediaId(mediaId: String?, extras: Bundle?) {
+                if (mediaId == "splayer-current" && hasSource()) controlFromSystem("play")
+            }
+            override fun onCustomAction(action: String, extras: Bundle?) {
+                if (action == NativeAudioService.FAVORITE) toggleFavorite()
+            }
         }, handler)
-        session.isActive = true
+        val launch = context.packageManager.getLaunchIntentForPackage(context.packageName)
+        launch?.let {
+            session.setSessionActivity(PendingIntent.getActivity(context, 0, it,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
+        }
         context.contentResolver.registerContentObserver(Settings.System.CONTENT_URI, true,
             object : ContentObserver(handler) {
                 override fun onChange(selfChange: Boolean) {
@@ -223,7 +301,7 @@ internal class AudioEngine private constructor(private val context: Context) {
         put("isFinished", finished)
     }
 
-    private fun publishState() {
+    private fun publishState(emitUpdate: Boolean = true) {
         val nativeState = when (state) {
             "playing" -> PlaybackState.STATE_PLAYING
             "paused" -> PlaybackState.STATE_PAUSED
@@ -231,16 +309,24 @@ internal class AudioEngine private constructor(private val context: Context) {
             "stopped" -> PlaybackState.STATE_STOPPED
             else -> PlaybackState.STATE_NONE
         }
-        session.setPlaybackState(PlaybackState.Builder()
+        val builder = PlaybackState.Builder()
             .setActions(PlaybackState.ACTION_PLAY or PlaybackState.ACTION_PAUSE or
                 PlaybackState.ACTION_PLAY_PAUSE or PlaybackState.ACTION_STOP or
                 PlaybackState.ACTION_SEEK_TO or PlaybackState.ACTION_SKIP_TO_NEXT or
-                PlaybackState.ACTION_SKIP_TO_PREVIOUS)
+                PlaybackState.ACTION_SKIP_TO_PREVIOUS or PlaybackState.ACTION_PLAY_FROM_MEDIA_ID)
             .setState(nativeState, position(), if (state == "playing") speed.toFloat() else 0f)
-            .build())
-        emit?.invoke("state", snapshot())
-        handler.removeCallbacks(positionTicker)
-        if (state == "playing") handler.postDelayed(positionTicker, 1000)
+        metadata?.takeIf { it.favoriteSupported }?.let {
+            builder.addCustomAction(NativeAudioService.FAVORITE,
+                context.getString(if (it.liked) R.string.media_unfavorite else R.string.media_favorite),
+                if (it.liked) R.drawable.ic_media_favorite_filled else R.drawable.ic_media_favorite)
+        }
+        session.isActive = mediaEnabled && hasSource()
+        session.setPlaybackState(builder.build())
+        if (emitUpdate) {
+            emit?.invoke("state", snapshot())
+            handler.removeCallbacks(positionTicker)
+            if (state == "playing") handler.postDelayed(positionTicker, 1000)
+        }
         if (state == "playing" || state == "paused") NativeAudioService.current?.updateNotification()
     }
 
@@ -250,6 +336,11 @@ internal class AudioEngine private constructor(private val context: Context) {
     }
 
     private fun reset() {
+        fadeTask?.let(handler::removeCallbacks); fadeTask = null
+        fadeGain = 1.0
+        analysis?.release(); analysis = null
+        normalizationGain = 1.0
+
         loadTimeout?.let(handler::removeCallbacks)
         loadTimeout = null
         pending?.reject("已切换歌曲")
@@ -326,6 +417,7 @@ internal class AudioEngine private constructor(private val context: Context) {
                 if (player !== it) return@setOnCompletionListener
                 state = "stopped"
                 finished = true
+                updateAnalysis()
                 publishState()
                 emit?.invoke("ended", JSObject())
                 NativeAudioService.current?.stopPlayback()
@@ -375,19 +467,28 @@ internal class AudioEngine private constructor(private val context: Context) {
                     if (state != "playing") {
                         if (!requestFocus()) throw IllegalStateException("音频设备暂时不可用")
                         applyPlaybackParams()
+                        fadeGain = if (processing.fadeDuration > 0) 0.0 else 1.0
+                        applyEffects()
                         current.start()
                         state = "playing"
                         finished = false
                         service(NativeAudioService.START)
                     }
+                    fade(1.0)
                 }
             }
             "pause" -> {
                 if (state == "loading") playOnPrepared = false
                 else if (prepared && current != null && state == "playing") {
-                    current.pause()
-                    state = "paused"
-                    abandonFocus()
+                    fade(0.0) {
+                        current.pause()
+                        state = "paused"
+                        fadeGain = 1.0
+                        applyEffects()
+                        updateAnalysis()
+                        publishState()
+                        abandonFocus()
+                    }
                 }
             }
             "stop" -> {
@@ -403,6 +504,7 @@ internal class AudioEngine private constructor(private val context: Context) {
             }
             else -> throw IllegalArgumentException("未知播放操作")
         }
+        updateAnalysis()
         publishState()
         return snapshot()
     }
@@ -444,9 +546,9 @@ internal class AudioEngine private constructor(private val context: Context) {
 
     private fun applyEffects() {
         if (!prepared) return
-        val preamp = if (effects.enabled) effects.preamp else 0.0
+        val preamp = (if (effects.enabled) effects.preamp else 0.0) + 20 * kotlin.math.log10(normalizationGain.coerceAtLeast(0.001))
         val attenuation = Math.pow(10.0, preamp.coerceAtMost(0.0) / 20.0)
-        val volume = (effects.volume * attenuation).toFloat().coerceIn(0f, 1f)
+        val volume = (effects.volume * attenuation * fadeGain).toFloat().coerceIn(0f, 1f)
         player?.setVolume(volume, volume)
         loudness?.setTargetGain((preamp.coerceAtLeast(0.0) * 1000).toInt())
         equalizer?.let { effect ->
@@ -469,8 +571,25 @@ internal class AudioEngine private constructor(private val context: Context) {
         doubleArrayOf(32.0, 64.0, 125.0, 250.0, 500.0, 1000.0, 2000.0, 4000.0, 8000.0, 16000.0)[index]
 
     fun setMetadata(args: MetadataArgs) {
+        mediaEnabled = args.enabled
         metadata = if (args.enabled) args else null
+        artwork.load(metadata?.cover.orEmpty()) { publishMetadata(true) }
         publishMetadata(true)
+        publishState(false)
+    }
+
+    fun toggleFavorite() {
+        if (metadata?.favoriteSupported == true)
+            emit?.invoke("action", JSObject().apply { put("type", "toggleLike") })
+    }
+
+    fun currentMediaItem(): MediaBrowser.MediaItem? {
+        val info = metadata ?: return null
+        if (!hasSource()) return null
+        val description = MediaDescription.Builder().setMediaId("splayer-current")
+            .setTitle(info.title).setSubtitle(info.artist).setDescription(info.album)
+            .setIconBitmap(artwork.bitmap).build()
+        return MediaBrowser.MediaItem(description, MediaBrowser.MediaItem.FLAG_PLAYABLE)
     }
 
     private fun publishMetadata(force: Boolean = false) {
@@ -491,6 +610,10 @@ internal class AudioEngine private constructor(private val context: Context) {
             builder.putString(MediaMetadata.METADATA_KEY_ALBUM, if (lyric != null) "" else info.album)
             builder.putLong(MediaMetadata.METADATA_KEY_DURATION, duration())
             if (info.cover.isNotBlank()) builder.putString(MediaMetadata.METADATA_KEY_ART_URI, info.cover)
+            artwork.bitmap?.let {
+                builder.putBitmap(MediaMetadata.METADATA_KEY_ART, it)
+                builder.putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, it)
+            }
         }
         session.setMetadata(builder.build())
         if (state == "playing" || state == "paused") NativeAudioService.current?.updateNotification()
@@ -516,20 +639,26 @@ internal class AudioEngine private constructor(private val context: Context) {
         val content = launch?.let { PendingIntent.getActivity(context, 0, it,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE) }
         val info = metadata
-        return builder
-            .setSmallIcon(android.R.drawable.ic_media_play)
+        builder
+            .setSmallIcon(R.drawable.ic_media_music)
+            .setLargeIcon(artwork.bitmap)
             .setContentTitle(displayedTitle.ifBlank { "SPlayer Next" })
             .setContentText(info?.artist ?: "")
             .setContentIntent(content)
             .setVisibility(Notification.VISIBILITY_PUBLIC)
             .setOnlyAlertOnce(true)
-            .addAction(action("Previous", android.R.drawable.ic_media_previous, NativeAudioService.PREV))
-            .addAction(action(if (state == "playing") "Pause" else "Play",
-                if (state == "playing") android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play,
+            .addAction(action(context.getString(R.string.media_previous), R.drawable.ic_media_previous, NativeAudioService.PREV))
+            .addAction(action(context.getString(if (state == "playing") R.string.media_pause else R.string.media_play),
+                if (state == "playing") R.drawable.ic_media_pause else R.drawable.ic_media_play,
                 if (state == "playing") NativeAudioService.PAUSE else NativeAudioService.PLAY))
-            .addAction(action("Next", android.R.drawable.ic_media_next, NativeAudioService.NEXT))
-            .setStyle(Notification.MediaStyle().setMediaSession(session.sessionToken).setShowActionsInCompactView(0, 1, 2))
-            .build()
+            .addAction(action(context.getString(R.string.media_next), R.drawable.ic_media_next, NativeAudioService.NEXT))
+        if (info?.favoriteSupported == true) builder.addAction(action(
+            context.getString(if (info.liked) R.string.media_unfavorite else R.string.media_favorite),
+            if (info.liked) R.drawable.ic_media_favorite_filled else R.drawable.ic_media_favorite,
+            NativeAudioService.FAVORITE))
+        builder.setStyle(Notification.MediaStyle().setMediaSession(session.sessionToken)
+            .setShowActionsInCompactView(0, 1, 2))
+        return builder.build()
     }
 
     fun readMetadata(source: String): JSObject {
@@ -560,6 +689,7 @@ class NativeAudioService : Service() {
         const val PAUSE = "splayer.audio.PAUSE"
         const val NEXT = "splayer.audio.NEXT"
         const val PREV = "splayer.audio.PREV"
+        const val FAVORITE = "splayer.audio.FAVORITE"
         var current: NativeAudioService? = null
     }
 
@@ -584,6 +714,7 @@ class NativeAudioService : Service() {
             PAUSE -> engine.controlFromSystem("pause")
             NEXT -> engine.emit?.invoke("action", JSObject().apply { put("type", "next") })
             PREV -> engine.emit?.invoke("action", JSObject().apply { put("type", "prev") })
+            FAVORITE -> engine.toggleFavorite()
         }
         return START_NOT_STICKY
     }
@@ -605,9 +736,19 @@ class NativeAudioService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 }
 
-@TauriPlugin
+@TauriPlugin(permissions = [app.tauri.annotation.Permission(strings = ["android.permission.RECORD_AUDIO"], alias = "audio-analysis")])
 class NativeAudioPlugin(private val activity: Activity) : Plugin(activity) {
     private val engine by lazy { AudioEngine.get(activity) }
+    private val lastfmCredentials by lazy { LastfmCredentials(activity) }
+
+    @Command
+    fun lastfmCredentials(invoke: Invoke) {
+        try {
+            val value = lastfmCredentials.run(invoke.parseArgs(LastfmCredentialArgs::class.java))
+            invoke.resolve(JSObject().apply { put("value", value ?: org.json.JSONObject.NULL) })
+        } catch (_: Exception) { invoke.reject("无法访问 Last.fm 安全凭证") }
+    }
+
     private val handler = Handler(Looper.getMainLooper())
 
     override fun load(webView: android.webkit.WebView) {
@@ -636,13 +777,44 @@ class NativeAudioPlugin(private val activity: Activity) : Plugin(activity) {
         }
     }
 
+    @Command fun audioProcessing(invoke: Invoke) {
+        val args = invoke.parseArgs(ProcessingArgs::class.java)
+        if ((args.normalization || args.fftEnabled) &&
+            getPermissionState("audio-analysis") != app.tauri.PermissionState.GRANTED) {
+            requestPermissionForAlias("audio-analysis", invoke, "audioAnalysisPermission")
+            return
+        }
+        applyProcessing(invoke)
+    }
+
+    @app.tauri.annotation.PermissionCallback
+    fun audioAnalysisPermission(invoke: Invoke) {
+        if (getPermissionState("audio-analysis") != app.tauri.PermissionState.GRANTED) {
+            invoke.reject("请允许音频采集权限以使用频谱与响度标准化"); return
+        }
+        applyProcessing(invoke)
+    }
+
+    private fun applyProcessing(invoke: Invoke) {
+        val args = invoke.parseArgs(ProcessingArgs::class.java)
+        handler.post {
+            try { engine.processing(args); invoke.resolve() }
+            catch (_: Exception) { invoke.reject("此设备不支持音频分析") }
+        }
+    }
+
+    @Command fun fftData(invoke: Invoke) { handler.post { invoke.resolve(engine.fftData()) } }
+
     @Command fun metadata(invoke: Invoke) {
         val args = invoke.parseArgs(MetadataArgs::class.java)
         handler.post { engine.setMetadata(args); invoke.resolve() }
     }
 
     @Command fun status(invoke: Invoke) { handler.post { invoke.resolve(engine.snapshot()) } }
-    @Command fun visibility(invoke: Invoke) { invoke.resolve() }
+    @Command fun visibility(invoke: Invoke) {
+        val args = invoke.parseArgs(VisibilityArgs::class.java)
+        handler.post { engine.visible = args.visible; invoke.resolve() }
+    }
 
     @Command fun keepAwake(invoke: Invoke) {
         val args = invoke.parseArgs(KeepAwakeArgs::class.java)

@@ -15,6 +15,7 @@ class MicrophoneCaptureProcessor extends AudioWorkletProcessor {
     this.port.onmessage = (event) => {
       if (event.data && event.data.type === 'flush') {
         this.emitChunk();
+        this.port.postMessage({ type: 'flushed' });
       }
     };
   }

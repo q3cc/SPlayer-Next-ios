@@ -14,6 +14,16 @@ const mocks = vi.hoisted(() => ({
   resolve: vi.fn(),
   write: vi.fn(),
   failRemove: false,
+  media: vi.fn(),
+}));
+vi.mock("./downloadMedia", () => ({
+  saveDownloadMedia: mocks.media,
+  findDownloadMedia: vi.fn().mockResolvedValue(null),
+  downloadFileUrl: (path: string) => `file://${path}`,
+  removeDownloadMedia: async (path: string) => {
+    if (mocks.failRemove) throw new Error("permission denied");
+    mocks.files.delete(path);
+  },
 }));
 vi.mock("@tauri-apps/api/path", () => ({
   documentDir: async () => "/Documents",
@@ -100,6 +110,7 @@ beforeEach(() => {
   mocks.fetch.mockReset().mockImplementation(async () => audio());
   mocks.resolve.mockReset().mockResolvedValue({ url: "https://music.test/audio" });
   mocks.write.mockClear();
+  mocks.media.mockReset().mockResolvedValue(false);
 });
 
 describe("iOS 下载", () => {
@@ -110,6 +121,10 @@ describe("iOS 下载", () => {
     expect(await mobileDownload.start(request())).toEqual({ ok: true });
     await vi.waitFor(async () => expect((await mobileDownload.list())[0].status).toBe("done"));
     expect(mocks.resolve).toHaveBeenCalledOnce();
+    expect(mocks.media).toHaveBeenCalledWith(
+      expect.objectContaining({ track: request().track }),
+      "/Documents/Downloads/Artist - Song.flac",
+    );
     expect(mocks.files.get("/Documents/Downloads/Artist - Song.flac")).toEqual([1, 2, 3, 4, 5]);
     expect(mocks.write).toHaveBeenCalledTimes(3);
     expect(progress).toHaveBeenCalled();
@@ -230,6 +245,25 @@ describe("iOS 下载", () => {
     const { mobileDownload } = await import("./download");
     expect((await mobileDownload.list())[0].status).toBe("interrupted");
     expect(mocks.files.size).toBe(0);
+    expect(mocks.fetch).not.toHaveBeenCalled();
+  });
+
+  it("旧下载记录没有附属索引时仍能离线读取已经完成的音频", async () => {
+    mocks.saved = [
+      {
+        ...request(),
+        status: "done",
+        received: 5,
+        total: 5,
+        createdAt: 1,
+        filePath: "Artist - Song.flac",
+      },
+    ];
+    mocks.files.set("/Documents/Downloads/Artist - Song.flac", [1]);
+    const { mobileDownload } = await import("./download");
+    expect(await mobileDownload.lookup!(request().track)).toBe(
+      "file:///Documents/Downloads/Artist - Song.flac",
+    );
     expect(mocks.fetch).not.toHaveBeenCalled();
   });
 

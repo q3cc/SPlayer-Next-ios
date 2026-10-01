@@ -198,9 +198,9 @@ defineExpose({ playAll });
                   {{ item.track.title }}
                 </span>
                 <IconLucideTriangleAlert
-                  v-if="item.tagWarning"
+                  v-if="item.tagWarning || item.mediaWarning"
                   class="size-3.5 shrink-0 self-center text-amber-500"
-                  :title="t('download.tagWarning')"
+                  :title="t(item.mediaWarning ? 'download.mediaWarning' : 'download.tagWarning')"
                 />
               </div>
               <div

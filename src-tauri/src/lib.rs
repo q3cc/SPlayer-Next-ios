@@ -1,4 +1,5 @@
 mod diagnostics;
+mod opencc;
 
 fn record_boot_stage(stage: &str) {
     eprintln!("[splayer-boot] {stage}");
@@ -49,6 +50,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             report_boot_stage,
+            opencc::convert_lyrics,
             diagnostics::append_diagnostic_log,
             diagnostics::set_diagnostic_logging,
             diagnostics::diagnostic_log_path,

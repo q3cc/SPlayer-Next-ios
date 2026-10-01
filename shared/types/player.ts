@@ -148,6 +148,8 @@ export interface PlaybackQueueItem {
 
 /** 歌曲详细信息 */
 export interface TrackDetail {
+  /** 当前从用户下载的音频播放，附属封面与歌词应优先本地读取。 */
+  downloaded?: boolean;
   quality: AudioQuality;
   embeddedLyric?: string;
   /** 外部歌词文件列表 */
@@ -166,6 +168,8 @@ export interface MediaInfo {
   duration: number;
   /** 缩略封面（cache:// URL 或 base64） */
   cover?: string;
+  /** 原始封面或可供原生控件读取的本地文件 URL。 */
+  coverOriginal?: string;
   /** 音质信息 */
   quality?: AudioQuality;
 }
@@ -303,8 +307,8 @@ export interface PlayerApi {
   getSelectedDeviceName: () => Promise<IpcResponse<string | null>>;
   /** 同步播放模式到托盘 */
   syncPlayMode: (repeatMode: string, shuffleMode: string) => void;
-  /** 同步当前歌曲喜欢状态到托盘 */
-  syncLikeState: (liked: boolean) => void;
+  /** 同步当前歌曲收藏状态和可用性到系统控件。 */
+  syncLikeState: (liked: boolean, supported?: boolean) => void;
   /** 广播播放控制事件 */
   dispatch: (type: string) => void;
   /** 订阅播放事件 */

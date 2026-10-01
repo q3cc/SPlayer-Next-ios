@@ -1,0 +1,8 @@
+<resources>
+    <string name="media_previous">Previous</string>
+    <string name="media_play">Play</string>
+    <string name="media_pause">Pause</string>
+    <string name="media_next">Next</string>
+    <string name="media_favorite">Favorite</string>
+    <string name="media_unfavorite">Remove from favorites</string>
+</resources>

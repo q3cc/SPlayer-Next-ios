@@ -379,6 +379,11 @@ export const loadForTrack = async (detail: TrackDetail | null): Promise<void> =>
       commit(token, null, null);
       return;
     }
+    if (detail?.downloaded) {
+      const local = await readLocal(detail);
+      if (token !== currentToken) return;
+      if (local && commitAndHasParsed(token, local.source, { content: local.content })) return;
+    }
     const preloaded = await consumePreloadedLyric(track);
     if (token !== currentToken) return;
     if (preloaded.hit) {
@@ -451,6 +456,11 @@ const refreshPreference = async (): Promise<void> => {
   const media = useMediaStore();
   const track = media.track;
   if (!track) return;
+  if (media.detail?.downloaded) {
+    const local = await readLocal(media.detail);
+    if (token !== currentToken) return;
+    if (local && commitAndHasParsed(token, local.source, { content: local.content })) return;
+  }
   // 本地 TTML 歌词库最高优先
   if (await tryLocalRepo(token, track)) return;
   if (token !== currentToken) return;

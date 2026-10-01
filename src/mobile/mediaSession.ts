@@ -18,6 +18,9 @@ let artworkSize = "";
 let pendingArtwork: HTMLImageElement | null = null;
 let nativeKey = "";
 let nativeLyrics: NowPlayingUpdatePayload["lyric"] | undefined;
+let liked = false;
+let favoriteSupported = false;
+let nativeCleared = false;
 
 /** 只保留当前歌曲的一次高清封面加载，切歌后释放旧图片请求。 */
 const clearArtwork = (): void => {
@@ -74,7 +77,8 @@ const refresh = (): void => {
     lastMetadata = null;
     nativeKey = "";
     nativeLyrics = undefined;
-    if (nativeAudio)
+    if (nativeAudio && !nativeCleared) {
+      nativeCleared = true;
       void invoke("plugin:native-audio|metadata", {
         title: "",
         artist: "",
@@ -82,9 +86,11 @@ const refresh = (): void => {
         cover: "",
         enabled: false,
       }).catch((error) => console.warn("[native-audio] 清除系统卡片失败", error));
+    }
     return;
   }
   if (nativeAudio) {
+    nativeCleared = false;
     const artist = track.artists.map((item) => item.name).join(" / ");
     const dynamic = store.get("media.dynamicLyrics") === true;
     const lines =
@@ -101,6 +107,8 @@ const refresh = (): void => {
       cover,
       dynamic,
       offset,
+      liked,
+      favoriteSupported,
     ]);
     if (key === nativeKey && lines === nativeLyrics) return;
     nativeKey = key;
@@ -113,6 +121,8 @@ const refresh = (): void => {
       enabled: true,
       dynamic,
       offset,
+      liked,
+      favoriteSupported,
       lines: dynamic
         ? (lines ?? [])
             .filter((line) => !line.isBG)
@@ -176,6 +186,11 @@ const refresh = (): void => {
 
 export const mobileMediaSession = {
   refresh,
+  setLikeState(value: boolean, supported = false): void {
+    liked = value;
+    favoriteSupported = supported;
+    refresh();
+  },
   setTrack(value: Track | null): void {
     track = value;
     position = 0;
