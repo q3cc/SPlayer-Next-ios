@@ -30,6 +30,10 @@ test("广播扩展嵌入应用并共享 App Group，重复配置不增加依赖"
     "com.apple.broadcast-services-upload",
   );
   assert.equal(extension.type, "app-extension");
+  assert.equal(
+    extension.info.properties.NSExtension.RPBroadcastProcessMode,
+    "RPBroadcastProcessModeSampleBuffer",
+  );
 });
 
 test("没有 iOS 应用时拒绝生成孤立扩展", () => {

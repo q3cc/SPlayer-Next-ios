@@ -9,6 +9,7 @@ with zipfile.ZipFile(sys.argv[1]) as archive:
     info = plistlib.loads(archive.read(info_path))
     broadcast = plistlib.loads(archive.read(root + "PlugIns/RecognitionBroadcast.appex/Info.plist"))
     assert broadcast["NSExtension"]["NSExtensionPointIdentifier"] == "com.apple.broadcast-services-upload", "缺少听歌识曲广播扩展"
+    assert broadcast["NSExtension"]["RPBroadcastProcessMode"] == "RPBroadcastProcessModeSampleBuffer", "广播扩展未配置音频样本模式"
     assert info.get("NSMicrophoneUsageDescription"), "缺少麦克风权限说明"
     assert info.get("AVInitialRouteSharingPolicy") == "LongFormAudio", "缺少 AirPlay 音乐路由策略"
     assert info.get("NSSiriUsageDescription"), "缺少 Siri 权限说明"

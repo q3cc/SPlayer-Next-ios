@@ -41,7 +41,7 @@ export function addRecognitionTarget(project) {
         NSExtension: {
           NSExtensionPointIdentifier: "com.apple.broadcast-services-upload",
           NSExtensionPrincipalClass: "$(PRODUCT_MODULE_NAME).SampleHandler",
-          NSExtensionAttributes: { RPBroadcastProcessMode: "RPBroadcastProcessModeSampleBuffer" },
+          RPBroadcastProcessMode: "RPBroadcastProcessModeSampleBuffer",
         },
       },
     },
