@@ -19,7 +19,9 @@ const emit = defineEmits<{ "update:open": [value: boolean] }>();
 const session = useRecognitionSession();
 const { phase, level, candidates, error, supported, source } = session;
 
-const isBusy = computed(() => ["capturing", "fingerprinting", "matching"].includes(phase.value));
+const isBusy = computed(() =>
+  ["waiting", "capturing", "fingerprinting", "matching"].includes(phase.value),
+);
 const trackCache = shallowRef(new Map<string, Track>());
 const playingId = ref<string | null>(null);
 
@@ -30,7 +32,11 @@ watch(candidates, () => {
 
 watch(phase, (value) => {
   if (value === "error") {
-    toast.error(t(`recognition.error.${error.value?.code ?? "unknown"}`));
+    toast.error(
+      isIOS && source.value === "system" && error.value?.message
+        ? error.value.message
+        : t(`recognition.error.${error.value?.code ?? "unknown"}`),
+    );
     session.reset();
     return;
   }

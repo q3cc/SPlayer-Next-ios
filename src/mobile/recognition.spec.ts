@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 const call = vi.hoisted(() => vi.fn());
 const native = vi.hoisted(() => vi.fn());
-vi.mock("@tauri-apps/api/core", () => ({ invoke: native }));
+const listener = vi.hoisted(() => vi.fn());
+const unregister = vi.hoisted(() => vi.fn());
+vi.mock("@tauri-apps/api/core", () => ({ invoke: native, addPluginListener: listener }));
 vi.mock("./platform", () => ({ isIOS: true }));
 vi.mock("./providers", () => ({ mobileProviders: { call } }));
 import { mobileRecognition } from "./recognition";
@@ -17,6 +19,7 @@ class MockWorker {
 }
 beforeEach(() => {
   workers = [];
+  listener.mockResolvedValue({ unregister });
   vi.stubGlobal("Worker", MockWorker);
 });
 afterEach(async () => {
@@ -58,6 +61,41 @@ it("取消广播后不处理迟到的音频", async () => {
   await task;
   expect(native).toHaveBeenCalledWith("plugin:native-audio|recognition_cancel");
   expect(workers).toHaveLength(0);
+  expect(unregister).toHaveBeenCalledOnce();
+});
+
+it("系统确认前保持等待，收到广播启动事件后才显示采集", async () => {
+  let started!: () => void;
+  let reject!: (reason: string) => void;
+  listener.mockImplementation(async (_plugin, _event, callback) => {
+    started = callback;
+    return { unregister };
+  });
+  native.mockImplementation((command: string) =>
+    command.endsWith("recognition_start")
+      ? new Promise((_resolve, fail) => {
+          reject = fail;
+        })
+      : Promise.resolve(),
+  );
+  const event = vi.fn();
+  const off = mobileRecognition.onEvent(event);
+  const task = mobileRecognition.start({ source: "system", durationMs: 8000 });
+  await vi.waitFor(() => expect(reject).toBeTypeOf("function"));
+  expect(event).toHaveBeenLastCalledWith({ phase: "waiting" });
+  started();
+  expect(event).toHaveBeenLastCalledWith({ phase: "capturing" });
+  reject("广播共享空间不可用");
+  await task;
+  expect(event).toHaveBeenLastCalledWith({
+    phase: "error",
+    error: {
+      code: "capture-failed",
+      message: "广播共享空间不可用",
+    },
+  });
+  expect(unregister).toHaveBeenCalledOnce();
+  off();
 });
 it("识曲输出候选并释放指纹 Worker", async () => {
   call.mockResolvedValue({

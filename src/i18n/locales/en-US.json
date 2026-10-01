@@ -254,6 +254,7 @@
       "microphone": "Microphone"
     },
     "phase": {
+      "waiting": "Start broadcasting in the system dialog…",
       "capturing": "Listening…",
       "fingerprinting": "Generating fingerprint…",
       "matching": "Matching library…"

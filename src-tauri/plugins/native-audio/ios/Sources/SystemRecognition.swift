@@ -2,9 +2,21 @@ import Foundation
 import ReplayKit
 import UIKit
 import Tauri
+import WebKit
 
 private final class BroadcastPickerController: UIViewController {
   var cancelled: (() -> Void)?
+  private var broadcastPicker: RPSystemBroadcastPickerView?
+  private var opened = false
+
+  override func viewDidAppear(_ animated: Bool) {
+    super.viewDidAppear(animated)
+    guard !opened else { return }
+    opened = true
+    // 转发用户的开始操作到系统按钮；是否广播仍由系统确认窗口决定。
+    broadcastPicker?.subviews.compactMap { $0 as? UIButton }.first?
+      .sendActions(for: .touchUpInside)
+  }
 
   override func viewDidLoad() {
     super.viewDidLoad()
@@ -16,6 +28,7 @@ private final class BroadcastPickerController: UIViewController {
     let picker = RPSystemBroadcastPickerView(frame: CGRect(x: 0, y: 0, width: 60, height: 60))
     picker.preferredExtension = "top.imsyy.splayer-next.ios.RecognitionBroadcast"
     picker.showsMicrophoneButton = false
+    broadcastPicker = picker
     let close = UIButton(type: .system)
     close.setTitle("取消识别", for: .normal)
     close.addTarget(self, action: #selector(cancel), for: .touchUpInside)
@@ -38,17 +51,28 @@ private final class BroadcastPickerController: UIViewController {
 }
 
 final class SystemRecognition {
+  weak var webView: WKWebView?
+  var didStartCapture: (() -> Void)?
+  private var startedCapture = false
   private var pending: Invoke?
   private var timer: Timer?
   private var session: String?
   private var expires = Date.distantPast
   private weak var picker: BroadcastPickerController?
-  private let directory = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: "group.top.imsyy.splayer-next.ios.recognition")
+  private var directory: URL? {
+    FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: "group.top.imsyy.splayer-next.ios.recognition")
+  }
 
-  func start(_ invoke: Invoke, presenter: UIViewController?) {
+  func start(_ invoke: Invoke) {
     cancel()
-    guard let directory = directory, let presenter = presenter else {
-      invoke.reject("无法启动屏幕广播，请检查 App Groups 签名权限")
+    // 使用实际承载播放器的窗口，避免 iPad 浮层或系统窗口抢占 keyWindow。
+    guard var presenter = webView?.window?.rootViewController else {
+      invoke.reject("播放器窗口尚未就绪，请返回播放器重试")
+      return
+    }
+    while let presented = presenter.presentedViewController { presenter = presented }
+    guard let directory = directory else {
+      invoke.reject("无法访问广播共享空间。请确认主应用和广播扩展使用同一 App Groups 签名；麦克风授权不能代替此权限。")
       return
     }
     let id = UUID().uuidString
@@ -94,7 +118,11 @@ final class SystemRecognition {
         cleanup()
         return
       }
-      if result["status"] as? String == "capturing" { picker?.dismiss(animated: true) }
+      if result["status"] as? String == "capturing", !startedCapture {
+        startedCapture = true
+        didStartCapture?()
+        picker?.dismiss(animated: true)
+      }
     }
     if Date() >= expires {
       pending?.reject("屏幕广播等待超时，请重新识别")
@@ -108,6 +136,7 @@ final class SystemRecognition {
     picker?.dismiss(animated: true)
     picker = nil
     pending = nil
+    startedCapture = false
     if let directory = directory {
       try? FileManager.default.removeItem(at: directory.appendingPathComponent("request.json"))
       if let session = session { try? FileManager.default.removeItem(at: directory.appendingPathComponent("\(session).json")) }
@@ -119,15 +148,10 @@ final class SystemRecognition {
 extension NativeAudioPlugin {
   @objc func recognitionStart(_ invoke: Invoke) {
     DispatchQueue.main.async {
-      guard var presenter = UIApplication.shared.connectedScenes
-        .compactMap({ $0 as? UIWindowScene })
-        .filter({ $0.activationState == .foregroundActive })
-        .flatMap({ $0.windows }).first(where: { $0.isKeyWindow })?.rootViewController else {
-        invoke.reject("播放器尚未显示")
-        return
+      self.systemRecognition.didStartCapture = { [weak self] in
+        self?.trigger("recognitionCaptureStarted", data: [:])
       }
-      while let presented = presenter.presentedViewController { presenter = presented }
-      self.systemRecognition.start(invoke, presenter: presenter)
+      self.systemRecognition.start(invoke)
     }
   }
 

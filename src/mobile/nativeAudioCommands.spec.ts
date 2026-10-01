@@ -9,6 +9,18 @@ const androidOnly = new Set([
   "install_update",
 ]);
 
+it("广播选择器在页面显示后打开系统确认窗口，并使用播放器窗口", () => {
+  const swift = readFileSync(
+    "src-tauri/plugins/native-audio/ios/Sources/SystemRecognition.swift",
+    "utf8",
+  );
+  expect(swift).toContain("override func viewDidAppear");
+  expect(swift).toContain(".sendActions(for: .touchUpInside)");
+  expect(swift).toContain("webView?.window?.rootViewController");
+  expect(swift).not.toContain("isKeyWindow");
+  expect(swift).toContain('result["status"] as? String == "capturing", !startedCapture');
+});
+
 it("iOS 系统播放控制的异步闭包显式引用淡入淡出方法", () => {
   const swift = readFileSync(
     "src-tauri/plugins/native-audio/ios/Sources/NativeAudioPlugin.swift",

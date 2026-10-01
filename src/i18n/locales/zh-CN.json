@@ -242,6 +242,7 @@
       "microphone": "麦克风"
     },
     "phase": {
+      "waiting": "请在系统窗口中开始广播…",
       "capturing": "正在收听…",
       "fingerprinting": "正在生成指纹…",
       "matching": "正在匹配曲库…"

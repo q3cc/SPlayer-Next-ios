@@ -8,7 +8,7 @@ const mocks = vi.hoisted(() => ({
   start: vi.fn(),
   submit: vi.fn(),
 }));
-vi.mock("@/utils/config", () => ({ isMobile: true }));
+vi.mock("@/utils/config", () => ({ isMobile: true, isIOS: true }));
 vi.mock("@/core/player", () => ({ pause: vi.fn(), play: vi.fn() }));
 vi.mock("@/stores/status", () => ({ useStatusStore: () => ({ isPlaying: false }) }));
 vi.mock("@/services/recognition/microphoneCapture", () => ({

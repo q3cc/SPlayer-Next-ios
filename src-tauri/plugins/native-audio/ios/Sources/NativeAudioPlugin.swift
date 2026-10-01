@@ -203,6 +203,7 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
 
   override func load(webview: WKWebView) {
     super.load(webview: webview)
+    systemRecognition.webView = webview
     volumeWebView = webview
     DispatchQueue.main.async {
       // 在音量和路由控件创建前声明长音频用途，但启动应用时不抢占其他应用的音频。

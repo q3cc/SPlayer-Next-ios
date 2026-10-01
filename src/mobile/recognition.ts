@@ -1,6 +1,6 @@
 import type { RecognitionApi, RecognitionEvent } from "@shared/types/recognition";
 import { mobileProviders } from "./providers";
-import { invoke } from "@tauri-apps/api/core";
+import { addPluginListener, invoke } from "@tauri-apps/api/core";
 import { isIOS } from "./platform";
 
 const listeners = new Set<(event: RecognitionEvent) => void>();
@@ -21,8 +21,13 @@ export const mobileRecognition: RecognitionApi = {
       return;
     }
     capturingSystem = true;
-    emit({ phase: "capturing" });
+    emit({ phase: "waiting" });
+    let subscription: Awaited<ReturnType<typeof addPluginListener>> | undefined;
     try {
+      subscription = await addPluginListener("native-audio", "recognitionCaptureStarted", () => {
+        if (current === generation) emit({ phase: "capturing" });
+      });
+      if (current !== generation) return;
       const { pcm } = await invoke<{ pcm: number[] }>("plugin:native-audio|recognition_start");
       if (current !== generation) return;
       capturingSystem = false;
@@ -31,6 +36,7 @@ export const mobileRecognition: RecognitionApi = {
       if (current !== generation) return;
       emit({ phase: "error", error: { code: "capture-failed", message: String(error) } });
     } finally {
+      await subscription?.unregister();
       if (current === generation) capturingSystem = false;
     }
   },
