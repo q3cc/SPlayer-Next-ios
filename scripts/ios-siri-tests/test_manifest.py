@@ -22,6 +22,7 @@ class SiriManifestTests(unittest.TestCase):
                 root = "Payload/SPlayer.app/"
                 archive.writestr(root + "Info.plist", plistlib.dumps(info))
                 if include_broadcast:
+                    archive.writestr(root + "PlugIns/RecognitionBroadcast.appex/afp-runtime.js", " " * 100001)
                     archive.writestr(root + "PlugIns/RecognitionBroadcast.appex/Info.plist", plistlib.dumps({
                         "NSExtension": {
                             "NSExtensionPointIdentifier": "com.apple.broadcast-services-upload",

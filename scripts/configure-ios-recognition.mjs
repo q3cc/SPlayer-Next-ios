@@ -86,6 +86,9 @@ export function configureRecognition(apple) {
     resolve("src-tauri/plugins/native-audio/ios/Sources/RecognitionStorage.swift"),
     join(sources, "RecognitionStorage.swift"),
   );
+  for (const name of ["BackgroundRecognitionMatcher.swift", "afp-runtime.js"]) {
+    copyFileSync(resolve("src-tauri/ios-recognition", name), join(sources, name));
+  }
   writeFileSync(file, JSON.stringify(project, null, 2));
   return result;
 }

@@ -1,5 +1,6 @@
 import ReplayKit
 import AVFoundation
+import UserNotifications
 
 final class SampleHandler: RPBroadcastSampleHandler {
   private let queue = DispatchQueue(label: "splayer.recognition.broadcast")
@@ -14,6 +15,14 @@ final class SampleHandler: RPBroadcastSampleHandler {
   private var firstInputRate: Double = 0
   private var firstInputChannels: UInt32 = 0
   private var formatChanges = 0
+  private let matcher = BackgroundRecognitionMatcher()
+  private var matching = false
+  private var writeIndex = 0
+  private var samplesSinceMatch = 0
+  private var attempts = 0
+  private var heardAudio = false
+  private var lastError: String?
+  private var lastWindow = [Float]()
 
   override func broadcastStarted(withSetupInfo setupInfo: [String: NSObject]?) {
     queue.async {
@@ -29,8 +38,8 @@ final class SampleHandler: RPBroadcastSampleHandler {
         return
       }
       self.session = id
-      self.deadline = Date().addingTimeInterval(20)
-      self.samples.reserveCapacity(64000)
+      self.deadline = Date().addingTimeInterval(120)
+      self.samples.reserveCapacity(96000)
       self.write(["status": "capturing"])
       let timer = DispatchSource.makeTimerSource(queue: self.queue)
       timer.schedule(deadline: .now() + 1, repeating: 1)
@@ -79,14 +88,37 @@ final class SampleHandler: RPBroadcastSampleHandler {
       guard result != .error, error == nil, let channel = output.floatChannelData?[0] else {
         fail("无法转换系统音频"); return
       }
-      let count = min(Int(output.frameLength), 64000 - samples.count)
-      samples.append(contentsOf: UnsafeBufferPointer(start: channel, count: count).map { $0.isFinite ? $0 : 0 })
-      if samples.count == 64000 {
-        write(["status": "done", "pcm": samples, "source": [
-          "inputSampleRate": firstInputRate, "inputChannels": firstInputChannels,
-          "formatChanges": formatChanges,
-        ]])
-        end("声音采集完成，请返回 SPlayer 查看识别结果")
+      let count = Int(output.frameLength)
+      guard count > 0 else { return }
+      if !heardAudio {
+        let energy = (0..<count).reduce(0.0) { $0 + Double(channel[$1]) * Double(channel[$1]) }
+        guard energy / Double(count) > 0.00001 else { return }
+        heardAudio = true
+      }
+      for index in 0..<count {
+        let value = channel[index].isFinite ? channel[index] : 0
+        if samples.count < 96000 { samples.append(value) }
+        else { samples[writeIndex] = value; writeIndex = (writeIndex + 1) % 96000 }
+      }
+      samplesSinceMatch += count
+      if samples.count == 96000, !matching, attempts == 0 || samplesSinceMatch >= 48000 {
+        matching = true
+        attempts += 1
+        samplesSinceMatch = 0
+        let window = Array(samples[writeIndex...]) + Array(samples[..<writeIndex])
+        lastWindow = window
+        matcher.match(window) { result in
+          self.queue.async {
+            guard !self.finished else { return }
+            self.matching = false
+            switch result {
+            case .success(let candidates):
+              self.lastError = nil
+              if !candidates.isEmpty { self.complete(candidates, samples: window) }
+            case .failure(let error): self.lastError = error.localizedDescription
+            }
+          }
+        }
       }
     }
   }
@@ -102,6 +134,7 @@ final class SampleHandler: RPBroadcastSampleHandler {
       self.timer?.cancel()
       self.timer = nil
       self.samples.removeAll()
+      self.matcher.cancel()
     }
   }
 
@@ -110,7 +143,25 @@ final class SampleHandler: RPBroadcastSampleHandler {
     let data = try? Data(contentsOf: directory.appendingPathComponent("request.json"))
     let request = data.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
     if request?["id"] as? String != session { end("识别已取消"); return }
-    if Date() >= deadline { fail("未采集到足够的声音，请播放音乐后重试") }
+    if Date() >= deadline {
+      if let lastError = lastError { fail(lastError) }
+      else { complete([], samples: lastWindow.isEmpty ? samples : lastWindow) }
+    }
+  }
+
+  private func complete(_ candidates: [[String: Any]], samples: [Float]) {
+    write(["status": "done", "pcm": samples, "candidates": candidates, "source": [
+      "inputSampleRate": firstInputRate, "inputChannels": firstInputChannels,
+      "formatChanges": formatChanges, "matchAttempts": attempts,
+    ]])
+    let content = UNMutableNotificationContent()
+    content.title = candidates.isEmpty ? "本次未识别到歌曲" : "识别到歌曲"
+    if let song = candidates.first {
+      content.body = "\(song["title"] as? String ?? "") · \((song["artists"] as? [String] ?? []).joined(separator: " / "))"
+    } else { content.body = "已停止收听，请换一段音乐后重试。" }
+    content.sound = .default
+    UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "splayer-recognition-result", content: content, trigger: nil))
+    end(candidates.isEmpty ? "本次未识别到歌曲，已停止收听" : "已识别到歌曲，请返回 SPlayer 查看")
   }
 
   private func write(_ value: [String: Any]) {
@@ -132,6 +183,8 @@ final class SampleHandler: RPBroadcastSampleHandler {
     timer = nil
     samples.removeAll()
     converter = nil
+    lastWindow.removeAll()
+    matcher.cancel()
     // ReplayKit 扩展只能通过此接口主动结束广播；不继续后台监听。
     finishBroadcastWithError(NSError(domain: "SPlayerRecognition", code: 1, userInfo: [NSLocalizedDescriptionKey: message]))
   }

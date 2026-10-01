@@ -1,4 +1,8 @@
-import type { RecognitionApi, RecognitionEvent } from "@shared/types/recognition";
+import type {
+  RecognitionApi,
+  RecognitionEvent,
+  RecognitionCandidate,
+} from "@shared/types/recognition";
 import { mobileProviders } from "./providers";
 import { addPluginListener, invoke } from "@tauri-apps/api/core";
 import { isIOS } from "./platform";
@@ -35,10 +39,14 @@ export const mobileRecognition: RecognitionApi = {
       if (current !== generation) return;
       step = "open-broadcast";
       console.info("[recognition] open-broadcast");
-      const { pcm } = await invoke<{ pcm: number[] }>("plugin:native-audio|recognition_start");
+      const result = await invoke<{ pcm?: number[]; candidates?: RecognitionCandidate[] }>(
+        "plugin:native-audio|recognition_start",
+      );
       if (current !== generation) return;
       capturingSystem = false;
-      await mobileRecognition.submitPcm(new Float32Array(pcm));
+      if (result.candidates) emit({ phase: "done", candidates: result.candidates });
+      else if (result.pcm) await mobileRecognition.submitPcm(new Float32Array(result.pcm));
+      else throw new Error("广播识曲未返回有效结果");
     } catch (error) {
       if (current !== generation) return;
       // Tauri 的 reject 会返回普通对象，直接 String 会丢失原生错误信息。

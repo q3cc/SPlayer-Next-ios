@@ -36,6 +36,17 @@ it("静音不启动指纹计算", async () => {
   expect(workers).toHaveLength(0);
   off();
 });
+it("后台广播已完成匹配时直接展示结果，不再启动前台指纹 Worker", async () => {
+  const candidates = [{ songId: "42", title: "测试歌曲", artists: ["歌手"] }];
+  native.mockResolvedValue({ candidates });
+  const event = vi.fn();
+  const off = mobileRecognition.onEvent(event);
+  await mobileRecognition.start({ source: "system", durationMs: 8000 });
+  expect(event).toHaveBeenLastCalledWith({ phase: "done", candidates });
+  expect(workers).toHaveLength(0);
+  expect(call).not.toHaveBeenCalled();
+  off();
+});
 it("原生拒绝对象展示 message，不显示 object Object，并记录失败阶段", async () => {
   native.mockRejectedValue({ message: "无法访问广播共享空间", code: "NATIVE_ERROR" });
   const log = vi.spyOn(console, "error").mockImplementation(() => {});

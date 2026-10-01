@@ -20,6 +20,7 @@ export default defineConfig(
     "**/.vitepress/",
     "native/*/index.d.ts",
     "src-tauri/plugins/native-audio/ios/Sources/Resources/siri-background.js",
+    "src-tauri/ios-recognition/afp-runtime.js",
     ".github/scripts/",
   ]),
   tseslint.configs.recommended,

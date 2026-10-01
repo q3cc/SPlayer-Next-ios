@@ -26,6 +26,7 @@ on:
       - "scripts/ios-siri-tests/**"
       - "scripts/configure-ios-siri.mjs"
       - "scripts/configure-ios-recognition*"
+      - "scripts/build-recognition-runtime.mjs"
       - "scripts/publish-action-update.cjs"
       - "scripts/optimize-ios-ipa.py"
       - "src-tauri/**"
@@ -109,6 +110,9 @@ jobs:
           "$RUNNER_TEMP/splayer-recognition-storage-tests"
           swiftc src-tauri/plugins/native-audio/ios/Sources/RecognitionCaptureExport.swift scripts/ios-siri-tests/RecognitionCaptureExportTests.swift -o "$RUNNER_TEMP/splayer-recognition-export-tests"
           "$RUNNER_TEMP/splayer-recognition-export-tests"
+          node scripts/ios-siri-tests/recognition-runtime.test.mjs
+          swiftc src-tauri/ios-recognition/BackgroundRecognitionMatcher.swift scripts/ios-siri-tests/RecognitionRuntimeTests.swift -o "$RUNNER_TEMP/splayer-recognition-runtime-tests"
+          "$RUNNER_TEMP/splayer-recognition-runtime-tests" src-tauri/ios-recognition/afp-runtime.js
           swiftc src-tauri/plugins/native-audio/ios/Sources/SiriQueue.swift src-tauri/plugins/native-audio/ios/Sources/SiriSelection.swift scripts/ios-siri-tests/main.swift -o "$RUNNER_TEMP/splayer-siri-tests"
           "$RUNNER_TEMP/splayer-siri-tests"
           swiftc src-tauri/plugins/native-audio/ios/Sources/SiriQueue.swift src-tauri/plugins/native-audio/ios/Sources/SiriRuntime.swift scripts/ios-siri-tests/RuntimeTests.swift -o "$RUNNER_TEMP/splayer-siri-runtime-tests"

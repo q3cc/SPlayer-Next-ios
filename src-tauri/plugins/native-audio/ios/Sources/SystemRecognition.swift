@@ -3,6 +3,7 @@ import ReplayKit
 import UIKit
 import Tauri
 import WebKit
+import UserNotifications
 
 private final class BroadcastPickerController: UIViewController {
   var cancelled: (() -> Void)?
@@ -22,7 +23,7 @@ private final class BroadcastPickerController: UIViewController {
     super.viewDidLoad()
     view.backgroundColor = .systemBackground
     let label = UILabel()
-    label.text = "点击下方按钮，选择 SPlayer 并开始广播。然后切换到播放音乐的 App，采集完成后返回查看结果。只识别声音，不保存画面。"
+    label.text = "选择 SPlayer 并开始广播，然后切换到音乐 App。最多收听 2 分钟，识别成功即停止并通知你（需允许通知）。只识别声音，不保存画面。"
     label.numberOfLines = 0
     label.textAlignment = .center
     let picker = RPSystemBroadcastPickerView(frame: CGRect(x: 0, y: 0, width: 60, height: 60))
@@ -60,6 +61,21 @@ final class SystemRecognition {
   private var expires = Date.distantPast
   private weak var picker: BroadcastPickerController?
   private var directory: URL?
+  private var permissionPending: Invoke?
+  private var permissionGeneration = 0
+
+  func requestStart(_ invoke: Invoke) {
+    cancel()
+    permissionPending = invoke
+    let current = permissionGeneration
+    UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in
+      DispatchQueue.main.async {
+        guard current == self.permissionGeneration else { return }
+        self.permissionPending = nil
+        self.start(invoke)
+      }
+    }
+  }
 
   func start(_ invoke: Invoke) {
     cancel()
@@ -70,7 +86,7 @@ final class SystemRecognition {
     }
     while let presented = presenter.presentedViewController { presenter = presented }
     let id = UUID().uuidString
-    expires = Date().addingTimeInterval(90)
+    expires = Date().addingTimeInterval(180)
     do {
       let directory = try RecognitionStorage.directory()
       self.directory = directory
@@ -96,6 +112,9 @@ final class SystemRecognition {
   }
 
   func cancel() {
+    permissionGeneration += 1
+    permissionPending?.reject("识别已取消")
+    permissionPending = nil
     pending?.reject("识别已取消")
     cleanup()
   }
@@ -111,7 +130,7 @@ final class SystemRecognition {
           cleanup()
           return
         }
-        pending?.resolve(["pcm": pcm])
+        pending?.resolve(["candidates": result["candidates"] as? [[String: Any]] ?? []])
         cleanup()
         return
       }
@@ -154,7 +173,7 @@ extension NativeAudioPlugin {
       self.systemRecognition.didStartCapture = { [weak self] in
         self?.trigger("recognitionCaptureStarted", data: [:])
       }
-      self.systemRecognition.start(invoke)
+      self.systemRecognition.requestStart(invoke)
     }
   }
 
