@@ -30,6 +30,7 @@ test("广播扩展嵌入应用并共享 App Group，重复配置不增加依赖"
   );
   assert.equal(extension.deploymentTarget, config.bundle.iOS.minimumSystemVersion);
   assert.equal(extension.settings.base.MARKETING_VERSION, config.version);
+  assert.equal(extension.info.properties.CFBundleShortVersionString, config.version);
   assert.deepEqual(
     extension.entitlements.properties["com.apple.security.application-groups"],
     app.entitlements.properties["com.apple.security.application-groups"],

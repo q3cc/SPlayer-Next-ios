@@ -45,6 +45,7 @@ export function addRecognitionTarget(project) {
       path: "RecognitionBroadcast/Info.plist",
       properties: {
         CFBundleDisplayName: "SPlayer 听歌识曲",
+        CFBundleShortVersionString: config.version,
         NSExtension: {
           NSExtensionPointIdentifier: "com.apple.broadcast-services-upload",
           NSExtensionPrincipalClass: "$(PRODUCT_MODULE_NAME).SampleHandler",

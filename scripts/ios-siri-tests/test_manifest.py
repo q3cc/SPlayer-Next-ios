@@ -18,7 +18,7 @@ class SiriManifestTests(unittest.TestCase):
         self.info["CFBundleShortVersionString"] = self.config["version"]
         self.info["MinimumOSVersion"] = self.config["bundle"]["iOS"]["minimumSystemVersion"]
 
-    def check_package(self, info, include_broadcast=True, sample_mode="RPBroadcastProcessModeSampleBuffer"):
+    def check_package(self, info, include_broadcast=True, sample_mode="RPBroadcastProcessModeSampleBuffer", broadcast_version=None):
         # 用最小安装包验证检查器，避免把源 plist 正确误当成最终包正确。
         with tempfile.TemporaryDirectory() as directory:
             path = pathlib.Path(directory) / "test.ipa"
@@ -28,7 +28,7 @@ class SiriManifestTests(unittest.TestCase):
                 if include_broadcast:
                     archive.writestr(root + "PlugIns/RecognitionBroadcast.appex/afp-runtime.js", " " * 100001)
                     archive.writestr(root + "PlugIns/RecognitionBroadcast.appex/Info.plist", plistlib.dumps({
-                        "CFBundleShortVersionString": self.config["version"],
+                        "CFBundleShortVersionString": broadcast_version or self.config["version"],
                         "MinimumOSVersion": self.config["bundle"]["iOS"]["minimumSystemVersion"],
                         "NSExtension": {
                             "NSExtensionPointIdentifier": "com.apple.broadcast-services-upload",
@@ -63,6 +63,11 @@ class SiriManifestTests(unittest.TestCase):
     def test_wrong_release_version_is_rejected(self):
         self.info["CFBundleShortVersionString"] = "0.0.0"
         self.assertNotEqual(self.check_package(self.info).returncode, 0)
+
+    def test_stale_broadcast_version_is_rejected(self):
+        result = self.check_package(self.info, broadcast_version="1.0")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("安装包版本", result.stderr)
 
     def test_wrong_media_category_is_rejected(self):
         self.info["INSupportedMediaCategories"] = ["INMediaCategoryPodcasts"]
