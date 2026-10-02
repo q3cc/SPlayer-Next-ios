@@ -173,6 +173,8 @@ export type PluginStatus =
 
 /** 插件脚本自己上报的更新信息 */
 export interface PluginUpdateInfo {
+  /** 宿主标记 LX 运行时通知；下载页不等同于可直接替换的脚本。 */
+  manual?: boolean;
   /** 新版本号（若脚本提供） */
   version?: string;
   /** 人类可读的更新说明 */

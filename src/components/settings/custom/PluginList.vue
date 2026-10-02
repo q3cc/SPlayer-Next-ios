@@ -98,6 +98,11 @@ const updateDialogInfo = computed(() => {
 
 /** 更新地址（用于「查看更新」外链） */
 const updateDialogUrl = computed(() => updateDialogInfo.value?.updateInfo?.updateUrl ?? "");
+const canApplyUpdate = computed(
+  () =>
+    Boolean(updateDialogInfo.value?.manifest.updateUrl) &&
+    !updateDialogInfo.value?.updateInfo?.manual,
+);
 
 /** 打开某插件详情弹窗 */
 const openDetailDialog = (id: string): void => {
@@ -343,6 +348,9 @@ const refreshMarket = async (): Promise<void> => {
         >
           {{ updateDialogInfo.updateInfo.log || t("settings.plugins.noChangelog") }}
         </div>
+        <p v-if="!canApplyUpdate" class="text-sm text-on-surface-variant">
+          {{ t("settings.plugins.manualUpdateHint") }}
+        </p>
       </div>
       <template #footer="{ close }">
         <SButton variant="secondary" @click="close">{{ t("common.cancel") }}</SButton>
@@ -354,6 +362,7 @@ const refreshMarket = async (): Promise<void> => {
           {{ t("settings.plugins.openUpdateUrl") }}
         </SButton>
         <SButton
+          v-if="canApplyUpdate"
           variant="secondary"
           type="primary"
           :loading="updatingId === updateDialogId"

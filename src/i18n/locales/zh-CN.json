@@ -2015,7 +2015,7 @@
       "marketError": "加载失败",
       "publishHint": "想分享你的插件？",
       "publishAction": "前往发布",
-      "importSuccess": "插件导入成功",
+      "importSuccess": "已导入，请查看加载状态",
       "importFailed": "插件导入失败",
       "empty": "暂无已安装的插件",
       "emptyHint": "从本地或在线导入插件以启用扩展能力",
@@ -2030,6 +2030,7 @@
       "pendingUpdate": "待更新",
       "noChangelog": "暂无更新说明",
       "openUpdateUrl": "查看更新",
+      "manualUpdateHint": "请打开更新链接，下载新版脚本后重新导入。",
       "checkUpdate": "检查更新",
       "checkUpdateFailed": "检查更新失败",
       "updateFound": "发现新版本",
@@ -2038,11 +2039,11 @@
       "updateSuccess": "插件已更新",
       "updateFailed": "更新失败，可点「查看更新」手动安装",
       "status": {
-        "ready": "已就绪",
-        "loading": "加载中",
-        "error": "错误",
+        "ready": "可用",
+        "loading": "正在加载",
+        "error": "加载失败",
         "disabled": "已禁用",
-        "unloaded": "未加载"
+        "unloaded": "已导入"
       },
       "sectionSource": "音源插件",
       "sectionControl": "控制插件",

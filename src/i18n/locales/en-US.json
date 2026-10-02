@@ -2036,7 +2036,7 @@
       "marketError": "Failed to load",
       "publishHint": "Made a plugin?",
       "publishAction": "Publish",
-      "importSuccess": "Plugin imported",
+      "importSuccess": "Imported. Check the loading status in the list.",
       "importFailed": "Failed to import plugin",
       "empty": "No plugins installed",
       "emptyHint": "Install a plugin from local file or URL to enable extended features",
@@ -2051,6 +2051,7 @@
       "pendingUpdate": "Update",
       "noChangelog": "No release notes",
       "openUpdateUrl": "Open update page",
+      "manualUpdateHint": "Open the update link, download the new script, and import it again.",
       "checkUpdate": "Check update",
       "checkUpdateFailed": "Update check failed",
       "updateFound": "New version available",
@@ -2059,11 +2060,11 @@
       "updateSuccess": "Plugin updated",
       "updateFailed": "Update failed, use \"Open update page\" to install manually",
       "status": {
-        "ready": "Ready",
+        "ready": "Available",
         "loading": "Loading",
-        "error": "Error",
+        "error": "Failed to load",
         "disabled": "Disabled",
-        "unloaded": "Unloaded"
+        "unloaded": "Imported"
       },
       "sectionSource": "Source Plugins",
       "sectionControl": "Control Plugins",

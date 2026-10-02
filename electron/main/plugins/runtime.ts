@@ -21,7 +21,10 @@ interface RuntimeTransport {
 }
 
 /** 各平台仅提供消息通道与隔离执行方式，共享插件 API 和 LX 兼容行为。 */
-export const createPluginRuntime = (parentPort: RuntimeTransport): void => {
+export const createPluginRuntime = (
+  parentPort: RuntimeTransport,
+  environment: "desktop" | "mobile" = "desktop",
+): void => {
   /**
    * 深度剥离不可克隆字段
    * 保留 string/number/bool/null/Uint8Array/纯字典/数组；丢函数/symbol；
@@ -100,6 +103,8 @@ export const createPluginRuntime = (parentPort: RuntimeTransport): void => {
     immediates: Set<NodeJS.Immediate>;
     callSeq: number;
     disposed: boolean;
+    nativeRegistered: boolean;
+    ready: boolean;
   }
 
   const plugins = new Map<string, PluginContextRecord>();
@@ -110,6 +115,7 @@ export const createPluginRuntime = (parentPort: RuntimeTransport): void => {
     method: HostCallMethod,
     args: unknown[],
   ): Promise<unknown> => {
+    if (record.disposed) return Promise.reject(new Error("插件已停止"));
     const callId = `c${++record.callSeq}`;
     return new Promise<unknown>((resolve, reject) => {
       record.hostCallWaiters.set(callId, { resolve, reject });
@@ -188,6 +194,8 @@ export const createPluginRuntime = (parentPort: RuntimeTransport): void => {
       hostCall(record, "request", [url, opts ?? {}]) as Promise<HostRequestResult>,
 
     register: (args: RegisterArgs) => {
+      if (record.disposed) return;
+      record.nativeRegistered = true;
       if (args.sources) {
         record.registeredSources = { ...record.registeredSources, ...args.sources };
         send({
@@ -219,6 +227,8 @@ export const createPluginRuntime = (parentPort: RuntimeTransport): void => {
       action: A,
       handler: (req: ActionIO[A]["req"]) => Promise<ActionIO[A]["res"]>,
     ) => {
+      if (record.disposed) return;
+      record.nativeRegistered = true;
       record.handlers.set(action, handler as (req: unknown) => Promise<unknown>);
     },
 
@@ -405,8 +415,26 @@ export const createPluginRuntime = (parentPort: RuntimeTransport): void => {
       immediates: new Set(),
       callSeq: 0,
       disposed: false,
+      nativeRegistered: false,
+      ready: false,
     };
     plugins.set(spec.pluginId, record);
+
+    const markReady = (): void => {
+      if (record.disposed || record.ready) return;
+      record.ready = true;
+      send({ kind: "ready", pluginId: spec.pluginId, sources: record.registeredSources });
+    };
+    const failInitialization = (error: Error): void => {
+      if (record.disposed || record.ready) return;
+      disposeRecord(record);
+      plugins.delete(spec.pluginId);
+      send({
+        kind: "fatal",
+        pluginId: spec.pluginId,
+        error: { code: "PLUGIN_SCRIPT_ERROR", message: error.message },
+      });
+    };
 
     const splayer = buildSplayer(record, spec);
     (splayer as any).utils = buildUtils();
@@ -430,14 +458,32 @@ export const createPluginRuntime = (parentPort: RuntimeTransport): void => {
         debug: splayer.log.debug,
         warn: splayer.log.warn,
         error: splayer.log.error,
+        group: splayer.log.info,
+        groupCollapsed: splayer.log.info,
+        groupEnd: () => {},
+        table: splayer.log.info,
+        dir: splayer.log.info,
+        dirxml: splayer.log.info,
+        trace: splayer.log.debug,
+        clear: () => {},
+        // 仅兼容诊断调用，不为第三方脚本保留无界计时器或计数器标签。
+        time: () => {},
+        timeEnd: () => {},
+        timeLog: () => {},
+        count: () => {},
+        countReset: () => {},
+        assert: (condition: unknown, ...args: unknown[]) => {
+          if (!condition) splayer.log.error(...args);
+        },
       },
     };
 
-    installLxShim(
+    const lxInitialization = installLxShim(
       sandboxGlobal,
       splayer,
       record.handlers,
       (sources) => {
+        if (record.disposed) return;
         record.registeredSources = { ...record.registeredSources, ...sources };
         send({
           kind: "sourcesUpdate",
@@ -446,6 +492,7 @@ export const createPluginRuntime = (parentPort: RuntimeTransport): void => {
         });
       },
       (info) => {
+        if (record.disposed) return;
         send({ kind: "updateAvailable", pluginId: record.pluginId, info });
       },
       {
@@ -456,9 +503,12 @@ export const createPluginRuntime = (parentPort: RuntimeTransport): void => {
         homepage: spec.scriptInfo.homepage,
         rawScript: spec.source,
       },
+      environment,
     );
+    void lxInitialization.then(markReady, failInitialization);
 
     sandboxGlobal.globalThis = sandboxGlobal;
+    sandboxGlobal.self = sandboxGlobal;
     const compatibilityHandlers = new Map(record.handlers);
 
     try {
@@ -493,10 +543,9 @@ export const createPluginRuntime = (parentPort: RuntimeTransport): void => {
       }
     }
 
-    // 脚本同步部分执行完，再 microtask 后上报 ready（兼容 lx 异步 inited）
+    // 原生插件维持同步注册约定；LX 插件必须等到 inited 与请求处理器均就绪。
     queueMicrotask(() => {
-      if (record.disposed) return;
-      send({ kind: "ready", pluginId: spec.pluginId, sources: record.registeredSources });
+      if (record.nativeRegistered) markReady();
     });
   };
 

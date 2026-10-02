@@ -20,15 +20,30 @@ Scripts distributed with a `gz_` prefix are detected and decompressed automatica
 - A control plugin can expose settings from its plugin card.
 - **Uninstalling deletes the script and its local data and cannot be undone.**
 
-States are **Ready**, **Loading**, **Error** (with a reason), and **Disabled**.
+States are **Imported**, **Loading**, **Available**, **Failed to load** (with a reason), and **Disabled**. Importing saves the script; a script that initializes over the network remains loading until initialization completes.
 
 ## LX plugin compatibility
 
 SPlayer-Next supports [lx-music-desktop](https://github.com/lyswhut/lx-music-desktop) `user_api` scripts. Most public LX scripts can be imported directly, though scripts using uncommon or newer LX APIs may fail to load.
 
+### Custom sources on iOS / Android
+
+Use **Settings → Plugin Management** to import a local script or an HTTPS script URL, not a GitHub repository or preview page. Local development URLs may use HTTP.
+
+[pdone/lx-music-source](https://github.com/pdone/lx-music-source) lists several independent scripts and their direct URLs. They are not bundled or automatically installed. Check their provenance and usage requirements before importing.
+
+- Playback integration covers NetEase, QQ Music, and Kugou tracks. Additional platforms declared by a script do not add search providers.
+- Multiple sources remain supported: official full tracks first, enabled plugins in the configured order next, and permitted previews last.
+- **Available** means initialization completed, not that every remote service, track, or quality works.
+- LX update alerts never replace code automatically. Open the update page and import the new script manually. Reimporting the same identity preserves its enabled state and settings.
+- Mobile scripts receive `lx.env = "mobile"`; the protocol version stays `2.0.0`. Running custom sources inside Siri's background runtime is not included.
+
+Initialization timeouts can indicate an unreachable script service. Invalid keys, rate limits, and unavailable services must be resolved with the source author; reimporting cannot repair those services.
+
 ## Troubleshooting
 
-**Why is the plugin in Error state?**  
+**Why does the plugin show Failed to load?**
+
 Read the error shown on its card. Common causes are syntax/runtime errors or an API level newer than the installed app supports.
 
 **Can a plugin crash the app?**  
