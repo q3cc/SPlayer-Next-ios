@@ -9,6 +9,13 @@ export function addRecognitionTarget(project) {
   );
   if (!entry) throw new Error("未找到 iOS 应用目标");
   const [name, app] = entry;
+  const config = JSON.parse(readFileSync(resolve("src-tauri/tauri.conf.json"), "utf8"));
+  const minimumSystemVersion = config.bundle.iOS.minimumSystemVersion;
+  // 重新生成工程时沿用 Tauri 部署版本，避免采用当前 SDK 的默认版本。
+  app.deploymentTarget = minimumSystemVersion;
+  app.settings ??= {};
+  app.settings.base ??= {};
+  app.settings.base.IPHONEOS_DEPLOYMENT_TARGET = minimumSystemVersion;
   const bundle = "top.imsyy.splayer-next.ios";
   const group = `group.${bundle}.recognition`;
   app.dependencies ??= [];
@@ -21,7 +28,7 @@ export function addRecognitionTarget(project) {
   project.targets.RecognitionBroadcast = {
     type: "app-extension",
     platform: "iOS",
-    deploymentTarget: "16.0",
+    deploymentTarget: minimumSystemVersion,
     sources: ["RecognitionBroadcast"],
     settings: {
       base: {
@@ -30,8 +37,7 @@ export function addRecognitionTarget(project) {
         TARGETED_DEVICE_FAMILY: "1,2",
         SKIP_INSTALL: "YES",
         APPLICATION_EXTENSION_API_ONLY: "YES",
-        MARKETING_VERSION: JSON.parse(readFileSync(resolve("src-tauri/tauri.conf.json"), "utf8"))
-          .version,
+        MARKETING_VERSION: config.version,
         CURRENT_PROJECT_VERSION: app.settings?.base?.CURRENT_PROJECT_VERSION ?? "1",
       },
     },

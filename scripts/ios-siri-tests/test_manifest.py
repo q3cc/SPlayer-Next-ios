@@ -1,4 +1,5 @@
 import copy
+import json
 import pathlib
 import plistlib
 import subprocess
@@ -13,6 +14,9 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 class SiriManifestTests(unittest.TestCase):
     def setUp(self):
         self.info = plistlib.loads((ROOT / "src-tauri/Info.ios.plist").read_bytes())
+        self.config = json.loads((ROOT / "src-tauri/tauri.conf.json").read_text())
+        self.info["CFBundleShortVersionString"] = self.config["version"]
+        self.info["MinimumOSVersion"] = self.config["bundle"]["iOS"]["minimumSystemVersion"]
 
     def check_package(self, info, include_broadcast=True, sample_mode="RPBroadcastProcessModeSampleBuffer"):
         # 用最小安装包验证检查器，避免把源 plist 正确误当成最终包正确。
@@ -24,6 +28,8 @@ class SiriManifestTests(unittest.TestCase):
                 if include_broadcast:
                     archive.writestr(root + "PlugIns/RecognitionBroadcast.appex/afp-runtime.js", " " * 100001)
                     archive.writestr(root + "PlugIns/RecognitionBroadcast.appex/Info.plist", plistlib.dumps({
+                        "CFBundleShortVersionString": self.config["version"],
+                        "MinimumOSVersion": self.config["bundle"]["iOS"]["minimumSystemVersion"],
                         "NSExtension": {
                             "NSExtensionPointIdentifier": "com.apple.broadcast-services-upload",
                             "RPBroadcastProcessMode": sample_mode,
@@ -47,6 +53,16 @@ class SiriManifestTests(unittest.TestCase):
                 info = copy.deepcopy(self.info)
                 info.pop(key)
                 self.assertNotEqual(self.check_package(info).returncode, 0)
+
+    def test_sdk_default_deployment_target_is_rejected(self):
+        self.info["MinimumOSVersion"] = "26.2"
+        result = self.check_package(self.info)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("最低系统版本", result.stderr)
+
+    def test_wrong_release_version_is_rejected(self):
+        self.info["CFBundleShortVersionString"] = "0.0.0"
+        self.assertNotEqual(self.check_package(self.info).returncode, 0)
 
     def test_wrong_media_category_is_rejected(self):
         self.info["INSupportedMediaCategories"] = ["INMediaCategoryPodcasts"]

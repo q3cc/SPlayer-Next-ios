@@ -1,6 +1,10 @@
+import json
+import pathlib
 import plistlib
 import sys
 import zipfile
+
+config = json.loads((pathlib.Path(__file__).resolve().parents[2] / "src-tauri/tauri.conf.json").read_text())
 
 with zipfile.ZipFile(sys.argv[1]) as archive:
     names = archive.namelist()
@@ -8,6 +12,9 @@ with zipfile.ZipFile(sys.argv[1]) as archive:
     root = info_path.removesuffix("Info.plist")
     info = plistlib.loads(archive.read(info_path))
     broadcast = plistlib.loads(archive.read(root + "PlugIns/RecognitionBroadcast.appex/Info.plist"))
+    for bundle in [info, broadcast]:
+        assert bundle.get("CFBundleShortVersionString") == config["version"], "安装包版本与 Tauri 配置不一致"
+        assert bundle.get("MinimumOSVersion") == config["bundle"]["iOS"]["minimumSystemVersion"], "安装包最低系统版本与 Tauri 配置不一致"
     assert broadcast["NSExtension"]["NSExtensionPointIdentifier"] == "com.apple.broadcast-services-upload", "缺少听歌识曲广播扩展"
     assert broadcast["NSExtension"]["RPBroadcastProcessMode"] == "RPBroadcastProcessModeSampleBuffer", "广播扩展未配置音频样本模式"
     assert len(archive.read(root + "PlugIns/RecognitionBroadcast.appex/afp-runtime.js")) > 100000, "后台指纹模块未打包"
