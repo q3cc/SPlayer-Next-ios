@@ -25,7 +25,9 @@ beforeEach(() => {
   mocks.get.mockImplementation((key) => (key === "update.autoCheck" ? true : "stable"));
 });
 
-const release = (tag = "ios-v2.1.0", extra = {}) => ({
+const [major, minor] = __APP_VERSION__.split(".").map(Number);
+const nextVersion = `${major}.${minor + 1}.0`;
+const release = (tag = `ios-v${nextVersion}`, extra = {}) => ({
   tag_name: tag,
   draft: false,
   prerelease: false,
@@ -213,7 +215,7 @@ describe("iOS 检查当前仓库更新", () => {
         manual: true,
         canInstall: true,
         meta: {
-          version: "2.1.0",
+          version: nextVersion,
           releaseNotes: "更新说明",
           releaseDate: "2026-09-05T00:00:00Z",
           size: 1234,
@@ -222,21 +224,24 @@ describe("iOS 检查当前仓库更新", () => {
     ]);
     await mobileUpdate.openDownloadPage();
     expect(mocks.open).toHaveBeenCalledWith(
-      "https://github.com/q3cc/SPlayer-Next-ios/releases/tag/ios-v2.1.0",
+      `https://github.com/q3cc/SPlayer-Next-ios/releases/tag/ios-v${nextVersion}`,
     );
     stop();
     await mobileUpdate.check(true);
     expect(events).toHaveLength(2);
   });
 
-  it.each(["ios-v2.0.0", "ios-v1.0.0", "ios-v0.1.0"])("同版或旧版 %s 不提示更新", async (tag) => {
-    const { mobileUpdate } = await import("./update");
-    const listener = vi.fn();
-    mobileUpdate.onEvent(listener);
-    mocks.fetch.mockResolvedValue(Response.json([release(tag)]));
-    await mobileUpdate.check(true);
-    expect(listener).toHaveBeenLastCalledWith({ type: "notAvailable", manual: true });
-  });
+  it.each([`ios-v${__APP_VERSION__}`, "ios-v2.0.0", "ios-v1.0.0", "ios-v0.1.0"])(
+    "同版或旧版 %s 不提示更新",
+    async (tag) => {
+      const { mobileUpdate } = await import("./update");
+      const listener = vi.fn();
+      mobileUpdate.onEvent(listener);
+      mocks.fetch.mockResolvedValue(Response.json([release(tag)]));
+      await mobileUpdate.check(true);
+      expect(listener).toHaveBeenLastCalledWith({ type: "notAvailable", manual: true });
+    },
+  );
 
   it("正式通道忽略预发布、草稿和没有 IPA 的版本，按数字比较版本", async () => {
     const { mobileUpdate } = await import("./update");
