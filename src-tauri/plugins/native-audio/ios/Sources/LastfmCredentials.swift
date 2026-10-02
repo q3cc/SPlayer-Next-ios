@@ -20,8 +20,8 @@ extension NativeAudioPlugin {
     let detail = SecCopyErrorMessageString(status, nil) as String? ?? "未知系统错误"
     return "\(operation)失败（\(status)）：\(detail)"
   }
-  /// Last.fm 会话仅保存在本机钥匙串，不进入设置导出和 WebView 存储。
-  @objc func lastfmCredentials(_ invoke: Invoke) throws {
+  /// Last.fm 会话与模型密钥仅保存在本机钥匙串，不进入设置导出和 WebView 存储。
+  func handleLastfmCredentials(_ invoke: Invoke) throws {
     let request = try invoke.parseArgs(LastfmCredentialRequest.self)
     guard request.namespace == nil || request.namespace == "aiModels" else { invoke.reject("未知凭证类型"); return }
     let query: [String: Any] = [

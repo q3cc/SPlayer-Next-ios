@@ -17,6 +17,14 @@ const input = {
   model: "test",
   apiKey: "private-test-key",
 };
+it("首次打开模型配置时通过原生命令读取独立凭证，未配置则返回空列表", async () => {
+  const { mobileAiModel } = await import("./aiModels");
+  expect(await mobileAiModel.list()).toEqual({ models: [], activeModelId: null });
+  expect(mocks.invoke).toHaveBeenCalledExactlyOnceWith("plugin:native-audio|lastfm_credentials", {
+    action: "get",
+    namespace: "aiModels",
+  });
+});
 it("安全保存模型，不向界面返回密钥；编辑时保留原密钥", async () => {
   const { mobileAiModel } = await import("./aiModels");
   const saved = await mobileAiModel.save(input);

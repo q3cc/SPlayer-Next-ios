@@ -69,6 +69,11 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
   private var fadeTimer: Timer?
   private var lastSpectrum: JSObject = ["ldata": Array(repeating: 0.0, count: 64), "rdata": Array(repeating: 0.0, count: 64)]
 
+  /// 命令入口保留在主类中，直接引用实现，避免静态链接遗漏仅由运行时查找的扩展。
+  @objc func lastfmCredentials(_ invoke: Invoke) throws {
+    try handleLastfmCredentials(invoke)
+  }
+
   @objc func audioProcessing(_ invoke: Invoke) throws {
     let request = try invoke.parseArgs(ProcessingRequest.self)
     guard request.fadeDuration.isFinite, (0...2000).contains(request.fadeDuration) else { invoke.reject("淡入淡出时长无效"); return }

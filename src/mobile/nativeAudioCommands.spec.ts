@@ -14,6 +14,17 @@ it("Android 授权模型配置和 Last.fm 共用的安全凭证命令", () => {
   expect(permissions).toContain('"native-audio:allow-lastfm-credentials"');
 });
 
+it("iOS 凭证命令入口随插件主类链接，并直接引用独立文件的实现", () => {
+  const root = "src-tauri/plugins/native-audio/ios/Sources";
+  const plugin = readFileSync(`${root}/NativeAudioPlugin.swift`, "utf8");
+  const credentials = readFileSync(`${root}/LastfmCredentials.swift`, "utf8");
+  expect(plugin).toMatch(
+    /@objc func lastfmCredentials\(_ invoke: Invoke\) throws \{\s*try handleLastfmCredentials\(invoke\)\s*\}/,
+  );
+  expect(credentials).toContain("func handleLastfmCredentials(_ invoke: Invoke) throws");
+  expect(credentials).not.toContain("@objc func lastfmCredentials");
+});
+
 it("广播选择器在页面显示后打开系统确认窗口，并使用播放器窗口", () => {
   const swift = readFileSync(
     "src-tauri/plugins/native-audio/ios/Sources/SystemRecognition.swift",
