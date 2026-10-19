@@ -99,6 +99,7 @@ defineExpose({
     :align-position="settings.lyric.alignPosition"
     :word-fade-width="settings.lyric.wordFadeWidth"
     :spring-config="springConfig"
+    :alignment="settings.lyric.alignment"
     :inactive-alpha="settings.lyric.inactiveAlpha"
     :hide-passed-lines="settings.lyric.hidePassedLines"
     :enable-blur="settings.lyric.enableBlur"

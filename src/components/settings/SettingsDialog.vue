@@ -2,8 +2,11 @@
 import { useSettingsDialog } from "@/settings/useSettingsDialog";
 import { isIOS } from "@/utils/config";
 
+const SettingsContent = defineAsyncComponent(() => import("./SettingsContent.vue"));
+
 const dialog = useSettingsDialog();
 const { open } = dialog;
+const { t } = useI18n();
 
 const unsubscribe = window.api.system.onOpenSettings(({ category, highlight }) => {
   dialog.show(category, highlight);
@@ -27,6 +30,14 @@ const onOpenAutoFocus = (event: Event): void => {
     destroy-on-close
     @open-auto-focus="onOpenAutoFocus"
   >
-    <SettingsContent class="h-full" />
+    <Suspense>
+      <SettingsContent class="h-full" />
+      <template #fallback>
+        <div class="h-full flex items-center justify-center gap-2 text-on-surface-variant">
+          <SLoading class="size-5 text-primary" />
+          {{ t("common.loading") }}
+        </div>
+      </template>
+    </Suspense>
   </SDialog>
 </template>

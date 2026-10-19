@@ -138,8 +138,9 @@ const validateManifests = (outDir, version, channel) => {
  * @param {string} srcDir - 构建产物目录
  * @param {string} outDir - 发布资源目录
  * @param {string} version - 应用版本
+ * @param {string} [releaseNotes] - 与发布页共用的更新说明
  */
-const prepareReleaseAssets = (srcDir, outDir, version) => {
+const prepareReleaseAssets = (srcDir, outDir, version, releaseNotes) => {
   const channel = resolveChannel(version);
   fs.mkdirSync(outDir, { recursive: true });
 
@@ -165,18 +166,34 @@ const prepareReleaseAssets = (srcDir, outDir, version) => {
     console.log(`合并清单 ${name}（files: ${merged.files.length}）`);
   }
 
+  if (releaseNotes !== undefined) {
+    for (const suffix of MANIFEST_SUFFIXES) {
+      const manifest = path.join(outDir, `${channel}${suffix}.yml`);
+      const doc = yaml.load(fs.readFileSync(manifest, "utf8"));
+      doc.releaseNotes = releaseNotes;
+      fs.writeFileSync(manifest, yaml.dump(doc, { lineWidth: -1 }));
+    }
+  }
+
   createChannelAliases(outDir, channel);
   validateManifests(outDir, version, channel);
   console.log(`release-assets 校验完成，共 ${fs.readdirSync(outDir).length} 个文件`);
 };
 
 if (require.main === module) {
-  const [srcDir, outDir, version] = process.argv.slice(2);
+  const [srcDir, outDir, version, notesFile] = process.argv.slice(2);
   if (!srcDir || !outDir || !version) {
-    console.error("用法: node prepare-release-assets.cjs <artifactsDir> <outDir> <version>");
+    console.error(
+      "用法: node prepare-release-assets.cjs <artifactsDir> <outDir> <version> [releaseNotesFile]",
+    );
     process.exit(1);
   }
-  prepareReleaseAssets(srcDir, outDir, version);
+  prepareReleaseAssets(
+    srcDir,
+    outDir,
+    version,
+    notesFile ? fs.readFileSync(notesFile, "utf8") : undefined,
+  );
 }
 
 module.exports = { mergeManifests, prepareReleaseAssets, resolveChannel };

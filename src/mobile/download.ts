@@ -105,7 +105,12 @@ const pump = async (): Promise<void> => {
       ? request
       : { ...request, ...(await resolveDownloadPayload(request)) };
     checkCanceled();
-    const url = new URL(resolved.url!);
+    const source = resolved.url!;
+    const url = new URL(
+      source.startsWith("streaming://")
+        ? await (await import("./streaming")).resolveMobileStreamingDownload(source)
+        : source,
+    );
     if (!["http:", "https:"].includes(url.protocol)) throw new Error("unsupported download URL");
     const response = await fetchWithProxy(url, { signal: controller.signal });
     reader = response.body?.getReader();

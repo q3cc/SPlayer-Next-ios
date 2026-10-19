@@ -82,10 +82,10 @@
     "font-list": "^2.1.0",
     "hono": "^4.13.0",
     "set-cookie-parser": "^3.1.2",
+    "lyric-kit": "^0.6.1",
     "undici": "^8.10.0",
     "ws": "^8.21.2",
-    "zod": "^4.4.3",
-    "lyric-kit": "^0.5.4"
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@applemusic-like-lyrics/core": "^0.5.2",
@@ -126,6 +126,7 @@
     "eslint-plugin-vue": "^10.10.0",
     "happy-dom": "^20.11.1",
     "localforage": "^1.10.0",
+    "lyric-dom": "^0.2.1",
     "marked": "^18.0.9",
     "pinia": "^4.0.2",
     "pinia-plugin-persistedstate": "^4.7.1",
@@ -145,12 +146,12 @@
     "vite": "^7.3.6",
     "vite-plugin-node-polyfills": "^0.24.0",
     "vitepress": "2.0.0-alpha.15",
+    "vitepress-plugin-llms": "1.14.0",
     "vitest": "^4.1.10",
     "vue": "^3.5.41",
     "vue-eslint-parser": "^10.4.0",
     "vue-i18n": "^11.4.8",
     "vue-router": "^5.2.0",
-    "vue-tsc": "^3.3.9",
-    "lyric-dom": "^0.1.2"
+    "vue-tsc": "^3.3.9"
   }
 }

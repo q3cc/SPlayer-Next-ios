@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { UpdateEvent } from "@shared/types/update";
+import type { NativeUpdateEvent as UpdateEvent } from "./updateState";
 
 const mocks = vi.hoisted(() => ({
   fetch: vi.fn(),
@@ -56,7 +56,7 @@ describe("Android 应用内更新", () => {
     ["x86_64", "x64"],
   ])("为 %s 选择 %s APK，回报下载进度并交给系统安装", async (abi, arch) => {
     mocks.invoke.mockResolvedValueOnce(abi);
-    const { androidUpdate } = await import("./androidUpdate");
+    const { nativeUpdater: androidUpdate } = await import("./androidUpdate");
     const events: UpdateEvent[] = [];
     androidUpdate.onEvent((event) => events.push(event));
     await androidUpdate.check(true);
@@ -85,7 +85,7 @@ describe("Android 应用内更新", () => {
     older.name = older.name.replace("abcdef0", "abcdef1");
     older.browser_download_url = older.browser_download_url.replace("abcdef0", "abcdef1");
     mocks.fetch.mockResolvedValue(Response.json({ ...release(), assets: [older, asset("arm32")] }));
-    const { androidUpdate } = await import("./androidUpdate");
+    const { nativeUpdater: androidUpdate } = await import("./androidUpdate");
     await androidUpdate.check(true);
     await androidUpdate.download();
     expect(mocks.invoke).toHaveBeenCalledWith("plugin:native-audio|download_update", {
@@ -102,7 +102,7 @@ describe("Android 应用内更新", () => {
     mocks.fetch.mockResolvedValue(
       Response.json({ ...release("1234567" + "0".repeat(33)), assets: [current] }),
     );
-    const { androidUpdate } = await import("./androidUpdate");
+    const { nativeUpdater: androidUpdate } = await import("./androidUpdate");
     const events: UpdateEvent[] = [];
     androidUpdate.onEvent((event) => events.push(event));
     await androidUpdate.check(true);
@@ -119,7 +119,7 @@ describe("Android 应用内更新", () => {
         { ...release(), tag_name: "android-v5.0.0", prerelease: false, assets: [asset("arm64")] },
       ]),
     );
-    const { androidUpdate } = await import("./androidUpdate");
+    const { nativeUpdater: androidUpdate } = await import("./androidUpdate");
     const events: UpdateEvent[] = [];
     androidUpdate.onEvent((event) => events.push(event));
     await androidUpdate.check(true);
@@ -127,7 +127,7 @@ describe("Android 应用内更新", () => {
   });
 
   it("下载失败时保留可重试的更新并注销进度监听", async () => {
-    const { androidUpdate } = await import("./androidUpdate");
+    const { nativeUpdater: androidUpdate } = await import("./androidUpdate");
     const events: UpdateEvent[] = [];
     androidUpdate.onEvent((event) => events.push(event));
     await androidUpdate.check(true);
@@ -140,7 +140,7 @@ describe("Android 应用内更新", () => {
   });
 
   it("安装权限需要手动允许时保留已下载状态并说明原因", async () => {
-    const { androidUpdate } = await import("./androidUpdate");
+    const { nativeUpdater: androidUpdate } = await import("./androidUpdate");
     const events: UpdateEvent[] = [];
     androidUpdate.onEvent((event) => events.push(event));
     await androidUpdate.check(true);
@@ -154,7 +154,7 @@ describe("Android 应用内更新", () => {
     mocks.fetch.mockResolvedValue(
       Response.json({ ...release(), assets: [asset("arm64"), asset("x64")] }),
     );
-    const { androidUpdate } = await import("./androidUpdate");
+    const { nativeUpdater: androidUpdate } = await import("./androidUpdate");
     const events: UpdateEvent[] = [];
     androidUpdate.onEvent((event) => events.push(event));
     await androidUpdate.check(true);

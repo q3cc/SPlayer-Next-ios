@@ -69,3 +69,8 @@ describe("移动端网易请求", () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 });
+
+vi.mock("@main/apis/netease/core/webClient", () => ({
+  requestWithWebClient: vi.fn(),
+  resetWebClientSession: vi.fn(),
+}));

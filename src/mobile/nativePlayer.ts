@@ -1,3 +1,5 @@
+import { streamingSourceForTrack } from "@shared/utils/streamingSource";
+import type { StreamingPlaybackSession } from "@main/services/streaming/playbackSession";
 import { addPluginListener, convertFileSrc, invoke } from "@tauri-apps/api/core";
 import type {
   FftData,
@@ -25,6 +27,7 @@ export const createNativePlayer = (fallback: PlayerApi): PlayerApi => {
     isFinished: false,
   };
   let generation = 0;
+  let streamingSession: StreamingPlaybackSession | undefined;
   let cover: string | null = null;
   let configuring: Promise<IpcResponse> = Promise.resolve({ success: true });
   let effects = {
@@ -59,6 +62,8 @@ export const createNativePlayer = (fallback: PlayerApi): PlayerApi => {
   };
   const update = (value: PlayerStatus, positionOnly = false): void => {
     status = value;
+    streamingSession?.state(value.state === "playing");
+    streamingSession?.position(value.position);
     mobileMediaSession.setPosition(value.position);
     mobileLyricPip.sync(value);
     emit(
@@ -94,7 +99,11 @@ export const createNativePlayer = (fallback: PlayerApi): PlayerApi => {
           ),
         );
         subscriptions.push(
-          await addPluginListener("native-audio", "ended", () => emit({ type: "ended" })),
+          await addPluginListener("native-audio", "ended", () => {
+            void streamingSession?.stop();
+            streamingSession = undefined;
+            emit({ type: "ended" });
+          }),
         );
         if (import.meta.env.VITE_MOBILE_TARGET !== "android" && !isAndroid)
           subscriptions.push(
@@ -179,7 +188,7 @@ export const createNativePlayer = (fallback: PlayerApi): PlayerApi => {
     },
     load: async (source, options = {}): Promise<IpcResponse<LoadResult>> => {
       const current = ++generation;
-      const playbackSource = neteaseCdnUrl(source);
+      let playbackSource = neteaseCdnUrl(source);
       const sourceType = /^(https?):/i.test(source)
         ? "http"
         : source.startsWith("content:")
@@ -198,6 +207,28 @@ export const createNativePlayer = (fallback: PlayerApi): PlayerApi => {
           : await readDownloadMedia(playbackSource).catch(() => null);
         if (current !== generation) return { success: false, error: "已切换歌曲" };
         const baseMeta = options.meta ?? downloaded?.track;
+        const streamingIdentity =
+          baseMeta?.source === "streaming"
+            ? streamingSourceForTrack(baseMeta)
+            : source.startsWith("streaming://")
+              ? source
+              : undefined;
+        const localSource = downloaded
+          ? downloadFileUrl(downloaded.audioPath)
+          : !source.startsWith("streaming://")
+            ? playbackSource
+            : undefined;
+        const prepared = streamingIdentity
+          ? await (
+              await import("./streaming")
+            ).prepareMobileStreamingPlayback(
+              streamingIdentity,
+              baseMeta?.duration ?? 0,
+              localSource,
+            )
+          : undefined;
+        if (current !== generation) return { success: false, error: "已切换歌曲" };
+        if (prepared) playbackSource = prepared.source;
         const meta =
           baseMeta && downloaded?.coverPath
             ? {
@@ -210,12 +241,15 @@ export const createNativePlayer = (fallback: PlayerApi): PlayerApi => {
           await invoke("plugin:native-audio|siri", {
             request: JSON.stringify({ action: "interrupt" }),
           });
+        void streamingSession?.stop();
+        streamingSession = undefined;
         const value = await invoke<PlayerStatus>("plugin:native-audio|load", {
           source: downloaded ? downloadFileUrl(downloaded.audioPath) : playbackSource,
           autoPlay: options.autoPlay !== false,
           trackId: options.meta ? `${options.meta.source}:${options.meta.id}` : null,
         });
         if (current !== generation) return { success: false, error: "已切换歌曲" };
+        streamingSession = prepared?.session;
         cover = meta?.coverOriginal ?? meta?.cover ?? null;
         mobileMediaSession.setTrack(meta ?? null);
         update(value);
@@ -296,9 +330,15 @@ export const createNativePlayer = (fallback: PlayerApi): PlayerApi => {
     pause: () => control("pause"),
     stop: () => {
       generation++;
+      void streamingSession?.stop();
+      streamingSession = undefined;
       return control("stop");
     },
-    seek: (position) => control("seek", position),
+    seek: async (position) => {
+      const result = await control("seek", position);
+      if (result.success) streamingSession?.seek(position);
+      return result;
+    },
     getStatus: async () => {
       try {
         return { success: true, data: await invoke<PlayerStatus>("plugin:native-audio|status") };

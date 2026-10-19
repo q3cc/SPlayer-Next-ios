@@ -6,6 +6,7 @@ import {
   type Contributor,
 } from "@/apis/github";
 import { useCopyText } from "@/composables/useCopyText";
+import { updateSection } from "@/settings/sections/update";
 import { useUpdateStore } from "@/stores/update";
 import { toast } from "@/composables/useToast";
 import { openExternal } from "@/utils/url";
@@ -22,11 +23,22 @@ import {
   COMMIT_HASH,
   COMMIT_DATE,
 } from "@/utils/config";
-import IconLucideRefreshCw from "~icons/lucide/refresh-cw";
 import IconLucideGithub from "~icons/lucide/github";
 import IconLucideRss from "~icons/lucide/rss";
 import IconLucideArrowUpRight from "~icons/lucide/arrow-up-right";
 import IconLucideChevronDown from "~icons/lucide/chevron-down";
+
+const props = defineProps<{ highlightKey?: string }>();
+
+/**
+ * 与通用设置区块保持相同的入场节奏，搜索定位时取消延迟
+ * @param index - 标题或内容组在页面中的动画顺序
+ * @returns 入场动画的延迟和填充方式
+ */
+const itemStyle = (index: number) => ({
+  animationDelay: props.highlightKey ? "0s" : `${index * 0.03}s`,
+  animationFillMode: "backwards" as const,
+});
 
 const { t } = useI18n();
 const { copy } = useCopyText();
@@ -41,15 +53,6 @@ const osInfo = window.api.system.osInfo;
 
 /** 检查更新中 */
 const checking = computed(() => update.phase === "checking");
-
-/** 触发更新检查 */
-const handleCheckUpdate = (): void => {
-  if (update.hasUpdate) {
-    update.openDialog();
-    return;
-  }
-  update.checkManually();
-};
 
 /** 打开日志目录 */
 const handleOpenLogs = (): void => {
@@ -94,7 +97,7 @@ const handleCopyEnvInfo = (): void => {
 
 interface Dependency {
   name: string;
-  description: string;
+  descriptionKey: string;
   url: string;
 }
 
@@ -102,17 +105,17 @@ interface Dependency {
 const dependencies: Dependency[] = [
   {
     name: "SPlayer-Next",
-    description: "原版项目与桌面端实现",
+    descriptionKey: "settings.about.originalProject",
     url: "https://github.com/SPlayer-Dev/SPlayer-Next",
   },
   {
     name: "applemusic-like-lyrics",
-    description: "类 Apple Music 歌词显示组件库",
+    descriptionKey: "settings.about.dependencies.lyrics",
     url: "https://github.com/Steve-xmh/applemusic-like-lyrics",
   },
   {
     name: "NeteaseCloudMusicApiEnhanced",
-    description: "网易云音乐 API 备份 + 增强",
+    descriptionKey: "settings.about.dependencies.neteaseApi",
     url: "https://github.com/neteasecloudmusicapienhanced/api-enhanced",
   },
 ];
@@ -174,7 +177,10 @@ onMounted(async () => {
   <div class="flex flex-col gap-8">
     <!-- 关于软件 -->
     <section>
-      <h3 class="flex items-center gap-2 text-lg font-semibold text-on-surface mb-3 px-1">
+      <h3
+        class="animate-slide-in-item flex items-center gap-2 text-lg font-semibold text-on-surface mb-3 px-1"
+        :style="itemStyle(0)"
+      >
         <span class="w-0.75 h-4 rounded-full bg-primary" />
         {{ t("settings.section.aboutApp") }}
       </h3>
@@ -182,7 +188,8 @@ onMounted(async () => {
         variant="settings"
         :bordered="false"
         radius="xl"
-        class="flex flex-wrap items-center gap-4"
+        class="animate-slide-in-item flex flex-wrap items-center gap-4"
+        :style="itemStyle(1)"
       >
         <SLogo :size="34" />
         <div class="flex items-center gap-2 mr-auto">
@@ -193,14 +200,21 @@ onMounted(async () => {
           </STag>
         </div>
         <div class="flex items-center gap-2">
-          <SButton variant="secondary" :loading="checking" @click="handleCheckUpdate">
+          <SButton
+            variant="secondary"
+            :loading="checking"
+            :disabled="['checking', 'cancelling', 'installing'].includes(update.phase)"
+            @click="update.checkManually()"
+          >
             <template #icon><IconLucideRefreshCw /></template>
             {{
-              update.hasUpdate
-                ? t("settings.about.newVersion")
-                : checking
-                  ? t("settings.about.checking")
-                  : t("settings.about.checkUpdate")
+              IS_APPX
+                ? t("update.goStore")
+                : update.hasUpdate
+                  ? t("settings.about.newVersion")
+                  : checking
+                    ? t("settings.about.checking")
+                    : t("settings.about.checkUpdate")
             }}
           </SButton>
           <SButton v-if="!isMobile || isAndroid" variant="secondary" @click="handleOpenLogs">
@@ -209,14 +223,22 @@ onMounted(async () => {
         </div>
       </SCard>
     </section>
-
+    <SettingsSection
+      class="!mb-0"
+      :section="updateSection"
+      :highlight-key="highlightKey"
+      :start-index="2"
+    />
     <!-- 特别致谢 -->
     <section>
-      <h3 class="flex items-center gap-2 text-lg font-semibold text-on-surface mb-3 px-1">
+      <h3
+        class="animate-slide-in-item flex items-center gap-2 text-lg font-semibold text-on-surface mb-3 px-1"
+        :style="itemStyle(5)"
+      >
         <span class="w-0.75 h-4 rounded-full bg-primary" />
         {{ t("settings.section.specialThanks") }}
       </h3>
-      <div class="grid grid-cols-3 gap-2.5">
+      <div class="animate-slide-in-item grid grid-cols-3 gap-2.5" :style="itemStyle(6)">
         <SCard
           v-for="dep in dependencies"
           :key="dep.name"
@@ -233,7 +255,7 @@ onMounted(async () => {
             />
           </div>
           <div class="text-xs text-on-surface-variant/70 mt-0.5 line-clamp-1">
-            {{ dep.description }}
+            {{ t(dep.descriptionKey) }}
           </div>
         </SCard>
       </div>
@@ -346,11 +368,14 @@ onMounted(async () => {
 
     <!-- 社区与资讯 -->
     <section>
-      <h3 class="flex items-center gap-2 text-lg font-semibold text-on-surface mb-3 px-1">
+      <h3
+        class="animate-slide-in-item flex items-center gap-2 text-lg font-semibold text-on-surface mb-3 px-1"
+        :style="itemStyle(9)"
+      >
         <span class="w-0.75 h-4 rounded-full bg-primary" />
         {{ t("settings.section.community") }}
       </h3>
-      <div class="grid grid-cols-3 gap-2.5">
+      <div class="animate-slide-in-item grid grid-cols-3 gap-2.5" :style="itemStyle(10)">
         <SCard
           v-for="item in community"
           :key="item.name"
@@ -368,7 +393,10 @@ onMounted(async () => {
 
     <!-- 环境信息 -->
     <section>
-      <div class="flex items-center justify-between mb-3 px-1">
+      <div
+        class="animate-slide-in-item flex items-center justify-between mb-3 px-1"
+        :style="itemStyle(11)"
+      >
         <h3 class="flex items-center gap-2 text-lg font-semibold text-on-surface">
           <span class="w-0.75 h-4 rounded-full bg-primary" />
           {{ t("settings.section.envInfo") }}
@@ -381,7 +409,8 @@ onMounted(async () => {
         variant="settings"
         :bordered="false"
         radius="xl"
-        class="break-all select-text space-y-1.5"
+        class="animate-slide-in-item break-all select-text space-y-1.5"
+        :style="itemStyle(12)"
       >
         <div
           v-for="item in envItems"

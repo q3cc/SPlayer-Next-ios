@@ -8,7 +8,8 @@ const boot = async (): Promise<void> => {
     reportBootStage("mobile-bootstrap-ready");
   }
   reportBootStage("application-import-start");
-  await import("./main");
+  const { bootstrap } = await import("./bootstrap");
+  await bootstrap();
   reportBootStage("application-import-ready");
 };
 

@@ -61,3 +61,8 @@ it("注册成功保存真实游客令牌", async () => {
     expect.objectContaining({ MUSIC_A: "test-token" }),
   );
 });
+
+vi.mock("@main/apis/netease/core/webClient", () => ({
+  requestWithWebClient: vi.fn(),
+  resetWebClientSession: vi.fn(),
+}));

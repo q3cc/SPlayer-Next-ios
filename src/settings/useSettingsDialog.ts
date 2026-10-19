@@ -1,9 +1,8 @@
-import { settingsSchema } from "@/settings/schema";
 import { useStatusStore } from "@/stores/status";
-import { isIOS, isMobile } from "@/utils/config";
+import { isIOS } from "@/utils/config";
 
 const open = ref(false);
-const initialCategory = ref(settingsSchema[0].id);
+const initialCategory = ref("general");
 const initialHighlight = ref<string>();
 
 /**
@@ -21,10 +20,8 @@ export const useSettingsDialog = () => ({
    * @param highlight - 需高亮定位的设置项 key
    */
   show: (category?: string, highlight?: string) => {
-    initialCategory.value = category ?? (useStatusStore().settingsCategory || settingsSchema[0].id);
+    initialCategory.value = category ?? (useStatusStore().settingsCategory || "general");
     if (isIOS && initialCategory.value === "externalLyric") initialCategory.value = "desktopLyric";
-    if (isMobile && !settingsSchema.some((item) => item.id === initialCategory.value))
-      initialCategory.value = settingsSchema[0].id;
     initialHighlight.value = highlight;
     open.value = true;
   },

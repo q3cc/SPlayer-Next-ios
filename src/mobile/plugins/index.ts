@@ -14,6 +14,7 @@ import {
 } from "@shared/defaults/plugin-api";
 import type {
   ActionIO,
+  PluginGrant,
   HostRequestOptions,
   MarketPlugin,
   PlaybackEventKind,
@@ -30,6 +31,9 @@ import type {
 import type { NowPlayingSnapshot } from "@shared/types/nowPlaying";
 import { pickBestCandidate } from "@main/apis/common/lyric/utils";
 import { fetchPluginScript, requestPlugin } from "./network";
+import { pluginSearchSchema, normalizePluginSearch } from "@shared/utils/pluginSearch";
+import { requiredPluginGrant } from "@shared/utils/pluginSecurity";
+import { dispatchMobilePluginHost } from "./host";
 import { store } from "../shims/store";
 import { pluginLog } from "../shims/logger";
 
@@ -83,6 +87,19 @@ const stop = (id: string, error = new Error("插件已停止")): void => {
   runtime.pending.clear();
 };
 
+/** 每次调用读取当前权限，兼容既有声明且不额外授予新能力 */
+const allowed = (info: PluginInfo, grant: PluginGrant): boolean =>
+  info.manifest.grant.includes(grant) &&
+  store.get("plugins.permissions")[info.manifest.id]?.[grant] !== false;
+
+/** 将当前权限设置附到插件卡片 */
+const refreshPermissions = (info: PluginInfo): void => {
+  info.permissions = Object.fromEntries(
+    info.manifest.grant.map((grant) => [grant, allowed(info, grant)]),
+  );
+};
+
+/** 校验当前会话和权限后执行宿主方法，完成时再次校验 */
 const hostCall = async (
   info: PluginInfo,
   runtime: Runtime,
@@ -91,6 +108,12 @@ const hostCall = async (
   const { method, args, callId } = message;
   const id = info.manifest.id;
   try {
+    const required = requiredPluginGrant(method);
+    const checkPermission = (): void => {
+      if (runtimes.get(id) !== runtime || !info.enabled) throw new Error("插件已停止");
+      if (required && !allowed(info, required)) throw new Error(`插件权限已关闭：${required}`);
+    };
+    checkPermission();
     let result: unknown;
     if (method === "request") {
       if (!info.manifest.grant.includes("network")) throw new Error("插件未声明联网权限");
@@ -140,22 +163,23 @@ const hostCall = async (
           throw new Error("插件数据总量超过大小限制");
         await data.setItem(key, args[1]);
       }
-    } else if (method.startsWith("player.")) {
-      if (!info.manifest.grant.includes("control")) throw new Error("插件未声明播放控制权限");
-      const { mobilePlayer } = await import("../player");
-      if (method === "player.getPosition")
-        result = (await mobilePlayer.getStatus()).data?.position ?? 0;
-      else if (method === "player.seek") await mobilePlayer.seek(Number(args[0]));
-      else if (method === "player.setVolume") await mobilePlayer.setVolume(Number(args[0]));
-      else mobilePlayer.dispatch(method.slice(7) as "play" | "pause" | "next" | "prev");
-    } else throw new Error("未知插件操作");
+    } else {
+      result = await dispatchMobilePluginHost(
+        method,
+        args,
+        info.manifest.name,
+        playbackSnapshotProvider,
+        checkPermission,
+      );
+    }
+    checkPermission();
     if (runtimes.get(id) === runtime)
       runtime.worker.postMessage({
         kind: "hostResult",
         pluginId: id,
         callId,
         ok: true,
-        data: result,
+        data: result === undefined ? undefined : JSON.parse(JSON.stringify(result)),
       } satisfies SandboxIn);
   } catch (error) {
     if (runtimes.get(id) === runtime)
@@ -248,7 +272,7 @@ const start = (info: PluginInfo, source: string): Runtime => {
           pending.resolve(undefined);
         }
         announce(info);
-        if (info.manifest.type === "control") void primePluginPlayback(id);
+        if (allowed(info, "control")) void primePluginPlayback(id);
         break;
       }
       case "sourcesUpdate":
@@ -262,7 +286,7 @@ const start = (info: PluginInfo, source: string): Runtime => {
           events: message.events,
           controls: message.controls,
           settings: message.settings,
-          menus: info.manifest.grant.includes("ui") ? message.menus : [],
+          menus: message.menus,
         };
         if (info.status.state === "ready") {
           Object.assign(info.status, runtime.registration);
@@ -308,9 +332,10 @@ const initialize = (): Promise<void> => {
       const enabledMap = store.get("plugins.enabled");
       if (Object.prototype.hasOwnProperty.call(enabledMap, id))
         saved.info.enabled = enabledMap[id] === true;
-      const persistedSettings = store.get(`plugins.perPlugin.${id}` as never) as
+      const persistedSettings = store.get("plugins.perPlugin")[id] as
         Record<string, unknown> | undefined;
       if (persistedSettings) saved.info.settingsValues = persistedSettings;
+      refreshPermissions(saved.info);
       records.set(id, saved.info);
       saved.info.status = { state: saved.info.enabled ? "unloaded" : "disabled" };
       if (saved.info.enabled) start(saved.info, saved.source);
@@ -390,6 +415,7 @@ export const installMobilePlugin = async (
       status: { state: "unloaded" },
       settingsValues: previous?.settingsValues ?? {},
     };
+    refreshPermissions(info);
     await storage.setItem(manifest.id, { info, source } satisfies SavedPlugin);
     const enabledMap = { ...store.get("plugins.enabled"), [manifest.id]: info.enabled };
     store.set("plugins.enabled", enabledMap);
@@ -438,8 +464,9 @@ const findMatch = async ({
 };
 
 export const mobilePlugins: PluginsApi = {
-  list: async () => {
+  list: async (waitForPluginId) => {
     await initialize();
+    if (waitForPluginId) await runtimes.get(waitForPluginId)?.ready.catch(() => {});
     return structuredClone([...records.values()]);
   },
   install: async (path) => {
@@ -480,6 +507,9 @@ export const mobilePlugins: PluginsApi = {
       const perPlugin = { ...store.get("plugins.perPlugin") };
       delete perPlugin[id];
       store.set("plugins.perPlugin", perPlugin);
+      const permissions = { ...store.get("plugins.permissions") };
+      delete permissions[id];
+      store.set("plugins.permissions", permissions);
       stop(id);
       records.delete(id);
       for (const key of await data.keys()) if (key.startsWith(id + ":")) await data.removeItem(key);
@@ -503,6 +533,32 @@ export const mobilePlugins: PluginsApi = {
       info.status = { state: "disabled" };
       announce(info);
     }
+  },
+  setPermission: async (id, grant, enabled) => {
+    await initialize();
+    const info = records.get(id);
+    if (!info || !info.manifest.grant.includes(grant)) throw new Error("插件未声明此权限");
+    const permissions = { ...store.get("plugins.permissions") };
+    permissions[id] = { ...permissions[id], [grant]: enabled };
+    store.set("plugins.permissions", permissions);
+    refreshPermissions(info);
+    if (!enabled && grant === "network")
+      runtimes.get(id)?.requests.forEach((request) => request.abort());
+    if (enabled && grant === "control") void primePluginPlayback(id);
+    announce(info);
+  },
+  search: async (args) => {
+    const input = pluginSearchSchema.parse(args);
+    await initialize();
+    const info = records.get(input.pluginId);
+    const runtime = runtimes.get(input.pluginId);
+    if (!runtime || !info?.enabled || info.status.state !== "ready") throw new Error("插件未就绪");
+    if (!info.status.sources[input.source]?.actions.includes("musicSearch"))
+      throw new Error("插件来源不支持搜索");
+    const result = await call(input.pluginId, "musicSearch", input);
+    if (runtimes.get(input.pluginId) !== runtime || !info.enabled)
+      throw new Error("插件搜索已取消");
+    return normalizePluginSearch(input, result);
   },
   setSetting: async (id, key, value) => {
     await initialize();
@@ -529,7 +585,7 @@ export const mobilePlugins: PluginsApi = {
     saved.info.settingsValues = settings;
     await storage.setItem(id, saved);
     info.settingsValues = settings;
-    store.set(`plugins.perPlugin.${id}` as never, settings);
+    store.set("plugins.perPlugin", { ...store.get("plugins.perPlugin"), [id]: settings });
     runtimes
       .get(id)
       ?.worker.postMessage({ kind: "settingsUpdate", pluginId: id, settings } satisfies SandboxIn);
@@ -542,8 +598,6 @@ export const mobilePlugins: PluginsApi = {
       if (!info?.manifest.updateUrl) throw new Error("插件未提供更新地址");
       const { manifest } = parsePluginScript(await fetchPluginScript(info.manifest.updateUrl));
       if (manifest.id !== id) throw new Error("更新文件与当前插件不匹配");
-      if ((manifest.type ?? "source") !== (info.manifest.type ?? "source"))
-        throw new Error("更新文件插件类型不匹配，请重新安装");
       const hasUpdate =
         manifest.version.localeCompare(info.manifest.version, undefined, { numeric: true }) > 0;
       info.updateInfo = hasUpdate
@@ -588,8 +642,8 @@ export const mobilePlugins: PluginsApi = {
   invokeMenu: async ({ pluginId, menuId, track }) => {
     try {
       await initialize();
-      if (!records.get(pluginId)?.manifest.grant.includes("ui"))
-        throw new Error("插件未声明菜单权限");
+      const info = records.get(pluginId);
+      if (!info || !allowed(info, "ui")) throw new Error("插件未声明菜单权限");
       return { ok: true, ...(await call(pluginId, "menuClick", { menuId, track })) };
     } catch (error) {
       return { ok: false, error: errorText(error) };
@@ -658,7 +712,7 @@ export const emitPluginPlayback = (event: PlaybackEventKind, data: unknown): voi
     const info = records.get(id);
     if (
       info?.enabled &&
-      info.manifest.type === "control" &&
+      allowed(info, "control") &&
       info.status.state === "ready" &&
       runtime.registration.events?.includes(event)
     )
@@ -678,7 +732,15 @@ export const primePluginPlayback = async (id: string): Promise<void> => {
   const runtime = runtimes.get(id);
   const info = records.get(id);
   const snapshot = playbackSnapshotProvider && (await playbackSnapshotProvider());
-  if (!runtime || !info || !snapshot || info.status.state !== "ready") return;
+  if (
+    !runtime ||
+    !info ||
+    !snapshot ||
+    info.status.state !== "ready" ||
+    runtimes.get(id) !== runtime ||
+    !allowed(info, "control")
+  )
+    return;
   const send = (event: PlaybackEventKind, data: unknown): void => {
     if (runtime.registration.events?.includes(event))
       runtime.worker.postMessage({ kind: "event", pluginId: id, event, data } satisfies SandboxIn);

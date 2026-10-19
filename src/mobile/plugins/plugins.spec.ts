@@ -91,6 +91,7 @@ beforeEach(async () => {
   mocks.request.mockReset();
   const { store } = await import("../shims/store");
   store.set("plugins.enabled", {});
+  store.set("plugins.permissions", {});
   store.set("plugins.perPlugin", {});
   TestWorker.instances = [];
   vi.stubGlobal("Worker", TestWorker);
@@ -173,7 +174,7 @@ it("插件请求经过宿主并遵守网络权限", async () => {
     "@version 1.0.0\n * @type control\n * @apiLevel 2",
   );
   await installMobilePlugin(control);
-  await expect(mobilePlugins.resolveUrl(args)).rejects.toThrow("联网权限");
+  await expect(mobilePlugins.resolveUrl(args)).rejects.toThrow("权限");
   expect(mocks.request).toHaveBeenCalledTimes(1);
 });
 
@@ -319,4 +320,94 @@ it("损坏的压缩内容或超限脚本不会安装或启动线程", async () =
   });
   expect(await mobilePlugins.list()).toEqual([]);
   expect(TestWorker.instances).toHaveLength(0);
+});
+
+it("独立搜索转换并保留插件身份，拒绝超大和重复候选", async () => {
+  const { installMobilePlugin, mobilePlugins } = await import("./index");
+  await installMobilePlugin(
+    source.replace('["musicUrl"]', '["musicUrl", "musicSearch"]') +
+      `
+    splayer.on("musicSearch", async () => ({ list: [
+      { id: "one", name: "歌曲", singer: "歌手", extra: "取址参数" },
+      { id: "one", name: "重复" },
+      { id: "huge", name: "大数据", extra: "x".repeat(9000) }
+    ], total: 10, hasMore: true }));`,
+  );
+  await mobilePlugins.list("test.source");
+  const result = await mobilePlugins.search({
+    pluginId: "test.source",
+    source: "wy",
+    keyword: "歌",
+  });
+  expect(result).toMatchObject({
+    total: 10,
+    hasMore: true,
+    items: [
+      {
+        source: "plugin",
+        title: "歌曲",
+        plugin: {
+          pluginId: "test.source",
+          source: "wy",
+          musicInfo: { id: "one", extra: "取址参数" },
+        },
+      },
+    ],
+  });
+  expect(result.items).toHaveLength(1);
+  await mobilePlugins.setEnabled("test.source", false);
+  await expect(
+    mobilePlugins.search({ pluginId: "test.source", source: "wy", keyword: "歌" }),
+  ).rejects.toThrow("未就绪");
+});
+
+it("关闭联网权限取消在途请求、隐藏迟到响应并持久化", async () => {
+  let finish!: (value: unknown) => void;
+  mocks.request.mockImplementation(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const { installMobilePlugin, mobilePlugins } = await import("./index");
+  await installMobilePlugin(
+    source +
+      `splayer.on("musicUrl", async () => ({ url: (await splayer.request("https://example.com/resolve")).body }));`,
+  );
+  const args = { pluginId: "test.source", source: "wy", musicInfo: { songmid: "1" } };
+  const pending = mobilePlugins.resolveUrl(args);
+  const rejected = expect(pending).rejects.toThrow("权限");
+  await vi.waitFor(() => expect(mocks.request).toHaveBeenCalledOnce());
+  await mobilePlugins.setPermission("test.source", "network", false);
+  expect(mocks.request.mock.calls[0][2].aborted).toBe(true);
+  finish({ status: 200, headers: {}, body: "https://example.com/audio" });
+  await rejected;
+  await expect(mobilePlugins.resolveUrl(args)).rejects.toThrow("权限");
+  expect(mocks.request).toHaveBeenCalledOnce();
+  expect((await mobilePlugins.list())[0].permissions?.network).toBe(false);
+  await mobilePlugins.setEnabled("test.source", false);
+  await mobilePlugins.setEnabled("test.source", true);
+  await expect(mobilePlugins.resolveUrl(args)).rejects.toThrow("权限");
+  await expect(mobilePlugins.setPermission("test.source", "api", true)).rejects.toThrow("未声明");
+});
+
+it.each([
+  ["library", 'splayer.music.searchLibrary("歌")'],
+  ["api", 'splayer.api.call("netease", "song_detail")'],
+  ["control", "splayer.player.getStatus()"],
+  ["ui", 'splayer.notify("提示")'],
+] as const)("关闭 %s 权限阻止对应新宿主接口", async (grant, expression) => {
+  const { installMobilePlugin, mobilePlugins } = await import("./index");
+  await installMobilePlugin(
+    source.replace("@version 1.0.0", `@version 1.0.0\n * @grant ${grant}`) +
+      `splayer.on("musicUrl", async () => { await ${expression}; return { url: "https://example.com/audio" }; });`,
+  );
+  await mobilePlugins.setPermission("test.source", grant, false);
+  await expect(
+    mobilePlugins.resolveUrl({
+      pluginId: "test.source",
+      source: "wy",
+      musicInfo: { songmid: "1" },
+    }),
+  ).rejects.toThrow("权限");
 });

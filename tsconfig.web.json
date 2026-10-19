@@ -16,7 +16,8 @@
       "@main/*": ["./electron/main/*"],
       "@root/*": ["./*"],
       "@shared/*": ["./shared/*"],
-      "@windows/*": ["./windows/*"]
+      "@windows/*": ["./windows/*"],
+      "@main/apis/netease/core/webClient": ["./src/mobile/shims/neteaseWebClient.ts"]
     },
     "types": ["./auto-imports.d.ts", "./components.d.ts"]
   }

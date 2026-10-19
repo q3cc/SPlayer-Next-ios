@@ -3,6 +3,9 @@ dist
 dist-mobile
 out
 build
+!/build/
+/build/*
+!/build/installer/
 .DS_Store
 .eslintcache
 .claude

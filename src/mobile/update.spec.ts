@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { UpdateEvent } from "@shared/types/update";
+import type { NativeUpdateEvent as UpdateEvent } from "./updateState";
 
 const mocks = vi.hoisted(() => ({
   fetch: vi.fn(),
@@ -47,7 +47,7 @@ const release = (tag = `ios-v${nextVersion}`, extra = {}) => ({
 
 describe("iOS 检查当前仓库更新", () => {
   it("GitHub 限流时提供明确原因，不当作已是最新版", async () => {
-    const { mobileUpdate } = await import("./update");
+    const { nativeUpdater: mobileUpdate } = await import("./update");
     const listener = vi.fn();
     mobileUpdate.onEvent(listener);
     mocks.fetch.mockResolvedValue(
@@ -62,7 +62,7 @@ describe("iOS 检查当前仓库更新", () => {
     );
   });
   it("检查途中切换通道时忽略旧响应，再请求新通道", async () => {
-    const { mobileUpdate } = await import("./update");
+    const { nativeUpdater: mobileUpdate } = await import("./update");
     const listener = vi.fn();
     mobileUpdate.onEvent(listener);
     let channel = "stable";
@@ -85,7 +85,7 @@ describe("iOS 检查当前仓库更新", () => {
     expect(listener).toHaveBeenLastCalledWith({ type: "notAvailable", manual: true });
   });
   it("立即更新传给原生下载器，转发进度，完成后打开分享并清理监听", async () => {
-    const { mobileUpdate } = await import("./update");
+    const { nativeUpdater: mobileUpdate } = await import("./update");
     const listener = vi.fn();
     mobileUpdate.onEvent(listener);
     mocks.fetch.mockResolvedValue(Response.json([release()]));
@@ -113,7 +113,7 @@ describe("iOS 检查当前仓库更新", () => {
   });
 
   it("下载失败可重试，分享失败仍保留已下载状态", async () => {
-    const { mobileUpdate } = await import("./update");
+    const { nativeUpdater: mobileUpdate } = await import("./update");
     const listener = vi.fn();
     mobileUpdate.onEvent(listener);
     mocks.fetch.mockResolvedValue(Response.json([release()]));
@@ -132,7 +132,7 @@ describe("iOS 检查当前仓库更新", () => {
   });
 
   it("文件丢失时恢复下载入口并显示原生错误，重新下载后可以分享", async () => {
-    const { mobileUpdate } = await import("./update");
+    const { nativeUpdater: mobileUpdate } = await import("./update");
     const listener = vi.fn();
     mobileUpdate.onEvent(listener);
     mocks.fetch.mockResolvedValue(Response.json([release()]));
@@ -153,7 +153,7 @@ describe("iOS 检查当前仓库更新", () => {
   });
 
   it("进度达到 100% 后仍等待原生文件就绪才允许分享", async () => {
-    const { mobileUpdate } = await import("./update");
+    const { nativeUpdater: mobileUpdate } = await import("./update");
     const listener = vi.fn();
     mobileUpdate.onEvent(listener);
     mocks.fetch.mockResolvedValue(Response.json([release()]));
@@ -183,7 +183,7 @@ describe("iOS 检查当前仓库更新", () => {
     ["1234567".padEnd(40, "0"), "2026-09-05T00:00:00Z", "notAvailable"],
     ["a".repeat(40), "2026-08-01T00:00:00Z", "notAvailable"],
   ])("Action 按提交和日期识别同版本构建 %s", async (commit, date, expected) => {
-    const { mobileUpdate } = await import("./update");
+    const { nativeUpdater: mobileUpdate } = await import("./update");
     mocks.get.mockImplementation((key) => (key === "update.channel" ? "action" : true));
     const listener = vi.fn();
     mobileUpdate.onEvent(listener);
@@ -200,7 +200,7 @@ describe("iOS 检查当前仓库更新", () => {
     expect(listener).toHaveBeenLastCalledWith(expect.objectContaining({ type: expected }));
   });
   it("识别 iOS 标签，复用弹窗并打开对应 Release，不提供自动安装", async () => {
-    const { mobileUpdate } = await import("./update");
+    const { nativeUpdater: mobileUpdate } = await import("./update");
     const events: UpdateEvent[] = [];
     const stop = mobileUpdate.onEvent((event) => events.push(event));
     mocks.fetch.mockResolvedValue(Response.json([release()]));
@@ -219,6 +219,7 @@ describe("iOS 检查当前仓库更新", () => {
           releaseNotes: "更新说明",
           releaseDate: "2026-09-05T00:00:00Z",
           size: 1234,
+          releaseUrl: `https://github.com/q3cc/SPlayer-Next-ios/releases/tag/ios-v${nextVersion}`,
         },
       },
     ]);
@@ -234,7 +235,7 @@ describe("iOS 检查当前仓库更新", () => {
   it.each([`ios-v${__APP_VERSION__}`, "ios-v2.0.0", "ios-v1.0.0", "ios-v0.1.0"])(
     "同版或旧版 %s 不提示更新",
     async (tag) => {
-      const { mobileUpdate } = await import("./update");
+      const { nativeUpdater: mobileUpdate } = await import("./update");
       const listener = vi.fn();
       mobileUpdate.onEvent(listener);
       mocks.fetch.mockResolvedValue(Response.json([release(tag)]));
@@ -244,7 +245,7 @@ describe("iOS 检查当前仓库更新", () => {
   );
 
   it("正式通道忽略预发布、草稿和没有 IPA 的版本，按数字比较版本", async () => {
-    const { mobileUpdate } = await import("./update");
+    const { nativeUpdater: mobileUpdate } = await import("./update");
     const listener = vi.fn();
     mobileUpdate.onEvent(listener);
     mocks.fetch.mockResolvedValue(
@@ -267,7 +268,7 @@ describe("iOS 检查当前仓库更新", () => {
     ["beta", "3.0.0-beta.10"],
     ["alpha", "4.0.0-alpha.1"],
   ])("%s 通道筛选版本", async (channel, expected) => {
-    const { mobileUpdate } = await import("./update");
+    const { nativeUpdater: mobileUpdate } = await import("./update");
     mocks.get.mockImplementation((key) => (key === "update.channel" ? channel : true));
     const listener = vi.fn();
     mobileUpdate.onEvent(listener);
@@ -285,7 +286,7 @@ describe("iOS 检查当前仓库更新", () => {
   });
 
   it("自动检查关闭时不请求；手动检查失败发出错误并允许重试", async () => {
-    const { mobileUpdate } = await import("./update");
+    const { nativeUpdater: mobileUpdate } = await import("./update");
     mocks.get.mockReturnValue(false);
     const listener = vi.fn();
     mobileUpdate.onEvent(listener);
@@ -302,7 +303,7 @@ describe("iOS 检查当前仓库更新", () => {
   });
 
   it("合并并发检查，保留手动检查反馈", async () => {
-    const { mobileUpdate } = await import("./update");
+    const { nativeUpdater: mobileUpdate } = await import("./update");
     const listener = vi.fn();
     mobileUpdate.onEvent(listener);
     let resolve!: (value: Response) => void;

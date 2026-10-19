@@ -63,7 +63,7 @@ const status = useStatusStore();
 const wrapperRef = ref<HTMLDivElement | null>(null);
 const playerRef = ref<SPlayerLyricPlayer>();
 const bottomLineEl = ref<HTMLElement>();
-const clockInitialized = ref(false);
+
 // 播放器是否已初始化完成
 const initialized = ref(false);
 const contentVisible = ref(false);
@@ -91,7 +91,7 @@ const processedLyrics = computed(() => {
     if (line.words) {
       newLine.words = line.words.map((word) => {
         const newWord = { ...word };
-        if (word.endsWithSpace && !word.word.endsWith(" ")) {
+        if ("endsWithSpace" in word && word.endsWithSpace === true && !word.word.endsWith(" ")) {
           newWord.word = word.word + " ";
         }
         if (!props.showWordRomanization) {
@@ -219,26 +219,19 @@ onMounted(async () => {
 
   await nextTick();
   await nextFrame();
-  if (playerRef.value !== player) return;
-
-  if (processedLyrics.value.length > 0) {
-    player.setLyricLines(processedLyrics.value, props.initialTime);
-    processLyricLanguage(player);
-  } else if (Number.isFinite(props.initialTime) && props.initialTime >= 0) {
-    player.setCurrentTime(props.initialTime, true);
-  }
-
+  // RAF 回调先于 ResizeObserver，再等一帧让 Core 获得容器尺寸
   await nextFrame();
   if (playerRef.value !== player) return;
-  if (pendingLyrics) {
-    player.setLyricLines(pendingLyrics, getCurrentTime() + status.lyricOffsetMs);
-    pendingLyrics = null;
-    processLyricLanguage(player);
-    await nextFrame();
-    if (playerRef.value !== player) return;
-  }
-  player.setCurrentTime(getCurrentTime() + status.lyricOffsetMs, true);
+
+  const currentTime = Math.round(props.initialTime);
+  if (props.playing) player.resume();
+  else player.pause();
+  // 等待期间可能更新歌词，使用此时的最新数据避免再次重建视图
+  pendingLyrics = null;
+  player.setLyricLines(processedLyrics.value, currentTime);
+  player.setCurrentTime(currentTime, true);
   player.update(0);
+  processLyricLanguage(player);
   initialized.value = true;
   contentVisible.value = true;
 });
@@ -260,12 +253,6 @@ onUnmounted(() => {
 watchEffect(() => {
   const player = playerRef.value;
   if (!player || !initialized.value) return;
-
-  // 首次运行时校准一次（避免重复）
-  if (!clockInitialized.value) {
-    player.update(0);
-    clockInitialized.value = true;
-  }
 
   const playing = props.playing;
   const frozen = isFrozen.value;
@@ -401,6 +388,11 @@ defineExpose({
   --amll-lp-color: var(--lp-color, #fff);
   width: 100%;
   height: 100%;
+}
+
+/* AMLL core 将副行字号硬编码为 max(.5em, 10px)，此处改用应用侧配置 */
+:deep([class*="lyricSubLine"]) {
+  font-size: var(--lp-sub-font-size, max(0.5em, 10px));
 }
 
 :deep(:lang(zh)) {

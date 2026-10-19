@@ -9,13 +9,7 @@
 
 import * as crypto from "node:crypto";
 import zlib from "node:zlib";
-import {
-  PLUGIN_TYPES,
-  PLUGIN_GRANTS,
-  type PluginGrant,
-  type PluginManifest,
-  type PluginType,
-} from "@shared/types/plugin";
+import { PLUGIN_GRANTS, type PluginGrant, type PluginManifest } from "@shared/types/plugin";
 import { HOST_API_LEVEL, PluginErrorCodes } from "@shared/defaults/plugin-api";
 
 const GZ_PREFIX = "gz_";
@@ -54,7 +48,7 @@ interface HeaderFields {
   author?: string;
   homepage?: string;
   apiLevel?: number;
-  type?: PluginType;
+  type?: "source" | "control";
   updateUrl?: string;
   changelog?: string;
 }
@@ -95,9 +89,7 @@ const parseHeader = (source: string): HeaderFields => {
         break;
       }
       case "type":
-        out.type = (PLUGIN_TYPES as readonly string[]).includes(val)
-          ? (val as PluginType)
-          : "source";
+        out.type = ["source", "control"].includes(val) ? (val as "source" | "control") : "source";
         break;
     }
   };
@@ -158,15 +150,15 @@ const deriveId = (declared: string | undefined, name: string): string => {
  * @param declared - 头部 @grant 原文（可空）
  * @param type - 插件类型
  */
-const deriveGrants = (declared: string | undefined, type: PluginType): PluginGrant[] => {
-  if (type !== "control") return ["network"];
-  if (!declared) return [];
+const deriveGrants = (declared: string | undefined, type: "source" | "control"): PluginGrant[] => {
+  const defaults: PluginGrant[] = type === "control" ? [] : ["network"];
+  if (!declared) return defaults;
   const valid = (PLUGIN_GRANTS as readonly string[]).includes.bind(PLUGIN_GRANTS);
   const parsed = declared
     .split(/[,\s]+/)
     .map((item) => item.trim().toLowerCase())
     .filter((item): item is PluginGrant => valid(item));
-  return [...new Set(parsed)];
+  return [...new Set([...defaults, ...parsed])];
 };
 
 export interface LoadedScript {
@@ -190,7 +182,7 @@ export const parsePluginScript = (raw: string, fileName?: string): LoadedScript 
   const version = header.version || "0.0.0";
 
   const apiLevel = header.apiLevel ?? 1;
-  const rawType: PluginType = header.type ?? "source";
+  const rawType: "source" | "control" = header.type ?? "source";
 
   // 控制类依赖 level 2 宿主 API（splayer.player / onSettingChange），低于 2 直接拒绝，和文档"否则不可用"一致
   if (rawType === "control" && apiLevel < 2) {
@@ -221,7 +213,6 @@ export const parsePluginScript = (raw: string, fileName?: string): LoadedScript 
     author: header.author,
     homepage: header.homepage,
     grant,
-    type: rawType,
     apiLevel,
     hash,
     updateUrl: header.updateUrl,

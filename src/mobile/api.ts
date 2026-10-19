@@ -415,6 +415,16 @@ const api = {
   library: mobileLibrary,
   playlist: mobilePlaylist,
   window: {
+    ready: async () => {
+      console.info("[splayer-boot] window-ready");
+    },
+    startupComplete: async () => {
+      console.info("[splayer-boot] startup-complete");
+    },
+    startupFailed: (error: string) =>
+      window.dispatchEvent(new CustomEvent("splayer:boot-error", { detail: error })),
+    setPlayerExpanded: (expanded: boolean) =>
+      window.dispatchEvent(new CustomEvent("splayer:player-expanded", { detail: expanded })),
     toggleDesktopLyric: mobileLyricPip.toggle,
     closeDesktopLyric: mobileLyricPip.close,
     isDesktopLyricOpen: mobileLyricPip.isOpen,

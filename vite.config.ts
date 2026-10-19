@@ -58,6 +58,11 @@ export default defineConfig(({ mode }) => ({
   },
   resolve: {
     alias: [
+      { find: "node:os", replacement: resolve(__dirname, "src/mobile/shims/os.ts") },
+      {
+        find: "@main/apis/netease/core/webClient",
+        replacement: resolve(__dirname, "src/mobile/shims/neteaseWebClient.ts"),
+      },
       { find: "/fonts", replacement: resolve(__dirname, "public/fonts") },
       {
         find: "@main/database/sessions",

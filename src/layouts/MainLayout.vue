@@ -20,6 +20,16 @@ useExternalFileHandler();
 /** 有歌曲信息时显示播放栏 */
 const showPlayerBar = computed(() => !!useMediaStore().track);
 const { isPlayerExpanded } = storeToRefs(status);
+
+/** 播放页展开状态同步与懒加载 */
+watch(
+  isPlayerExpanded,
+  (expanded) => {
+    window.api.window.setPlayerExpanded(expanded);
+  },
+  { immediate: true },
+);
+onBeforeUnmount(() => window.api.window.setPlayerExpanded(false));
 const { appearance } = settings;
 
 /** 路由切换动效 */
@@ -60,6 +70,9 @@ watch(
   (_newPath, oldPath) => {
     if (oldPath && mainContainerRef.value) {
       mainScrollMap.set(oldPath, mainContainerRef.value.scrollTop);
+      if (mainScrollMap.size > 10) {
+        mainScrollMap.delete(mainScrollMap.keys().next().value!);
+      }
     }
   },
 );
@@ -206,6 +219,8 @@ const playerBarInnerClass = computed(() => {
   <UpdateDialog />
   <!-- 评论弹窗 -->
   <MusicCommentsDialog />
+  <!-- 输出信息弹窗 -->
+  <AudioInfoDialog />
 </template>
 
 <style scoped>

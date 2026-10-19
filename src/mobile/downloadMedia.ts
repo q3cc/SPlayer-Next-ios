@@ -1,3 +1,4 @@
+import type { DownloadTrackIdentity } from "@shared/types/download";
 import localforage from "localforage";
 import { documentDir, join } from "@tauri-apps/api/path";
 import { exists, open, readTextFile, remove, rename, writeTextFile } from "@tauri-apps/plugin-fs";
@@ -23,8 +24,13 @@ export interface DownloadMedia {
   externalLyrics: { format: LyricFormat; path: string }[];
 }
 
-const identity = (track: Track): string =>
-  JSON.stringify([track.source, track.serverId ?? "", track.originalId ?? track.id]);
+const identity = (track: DownloadTrackIdentity): string =>
+  JSON.stringify([
+    track.source,
+    track.serverId ?? "",
+    track.originalId ?? track.id,
+    ...(track.source === "streaming" && track.serverRevision ? [track.serverRevision] : []),
+  ]);
 const rootDirectory = async (): Promise<string> => join(await documentDir(), "Downloads");
 const relativePath = (root: string, path: string): string | null =>
   path.startsWith(root + "/") ? path.slice(root.length + 1) : null;
@@ -64,7 +70,9 @@ export const readDownloadMedia = async (source: string): Promise<DownloadMedia |
 };
 
 /** 按原始歌曲身份查找下载，不受临时缓存开关、音质设置或下载历史清理影响。 */
-export const findDownloadMedia = async (track: Track): Promise<DownloadMedia | null> => {
+export const findDownloadMedia = async (
+  track: DownloadTrackIdentity & { path?: string },
+): Promise<DownloadMedia | null> => {
   if (track.source === "local") return track.path ? readDownloadMedia(track.path) : null;
   const paths = (await index.getItem<string[]>(identity(track))) ?? [];
   const root = await rootDirectory();

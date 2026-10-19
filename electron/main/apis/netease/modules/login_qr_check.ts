@@ -4,7 +4,7 @@
  */
 
 import type { NeteaseModule } from "../core/types";
-import type { NeteaseRequestError } from "../core/request";
+import type { NeteaseRequestError } from "../core/response";
 import { cookieHeaderToList, createWebQrRequest, mergeCookieLists } from "../core/webQrLogin";
 import { forgetQrLoginChain, takeQrLoginChain } from "./login_qr_create";
 

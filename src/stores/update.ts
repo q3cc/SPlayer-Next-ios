@@ -1,4 +1,4 @@
-import type { UpdateEvent, UpdateMeta, UpdatePhase } from "@shared/types/update";
+import type { UpdateEvent, UpdateState } from "@shared/types/update";
 import { toast } from "@/composables/useToast";
 import i18n from "@/i18n";
 import { isIOS, isAndroid } from "@/utils/config";
@@ -6,106 +6,98 @@ import { isIOS, isAndroid } from "@/utils/config";
 const { t } = i18n.global;
 
 export const useUpdateStore = defineStore("update", () => {
-  /** 当前阶段 */
-  const phase = ref<UpdatePhase>("idle");
-  /** 更新信息（版本 / 日志 / 日期 / 大小） */
-  const meta = ref<UpdateMeta | null>(null);
-  /** 下载进度 0–100 */
-  const percent = ref(0);
-  const bytesPerSecond = ref(0);
-  const downloadedBytes = ref(0);
-  const totalBytes = ref(0);
-  /** 当前平台是否支持应用内安装 */
-  const canInstall = ref(true);
-  /** 更新弹窗开关 */
+  const snapshot = shallowRef<UpdateState | null>(null);
   const dialogOpen = ref(false);
+  const phase = computed(() => snapshot.value?.phase ?? "idle");
+  const meta = computed(() => snapshot.value?.meta ?? null);
+  const percent = computed(() => snapshot.value?.percent ?? 0);
+  const bytesPerSecond = computed(() => snapshot.value?.bytesPerSecond ?? 0);
+  const downloadedBytes = computed(() => snapshot.value?.downloadedBytes ?? 0);
+  const totalBytes = computed(() => snapshot.value?.totalBytes ?? 0);
+  const mode = computed(() => snapshot.value?.mode ?? "external");
+  const canInstall = computed(() => mode.value === "inApp");
+  const errorSource = computed(() => snapshot.value?.error?.source);
+  const hasUpdate = computed(() => meta.value !== null);
+  let lastNotification = -1;
 
-  /** 是否有可用更新（驱动顶栏图标） */
-  const hasUpdate = computed(() =>
-    ["available", "downloading", "downloaded"].includes(phase.value),
-  );
-
-  const handleEvent = (event: UpdateEvent): void => {
-    switch (event.type) {
-      case "checking":
-        phase.value = "checking";
-        break;
-      case "available":
-        phase.value = "available";
-        meta.value = event.meta;
-        canInstall.value = event.canInstall;
-        percent.value = 0;
-        dialogOpen.value = true;
-        break;
-      case "notAvailable":
-        phase.value = "upToDate";
-        if (event.manual) toast.success(t("update.upToDate"));
-        break;
-      case "progress":
-        phase.value = "downloading";
-        percent.value = event.percent;
-        bytesPerSecond.value = event.bytesPerSecond ?? 0;
-        downloadedBytes.value = event.downloadedBytes ?? 0;
-        totalBytes.value = event.totalBytes ?? 0;
-        break;
-      case "downloaded":
-        phase.value = "downloaded";
-        meta.value = event.meta;
-        toast.success(
-          t(
-            isIOS
-              ? "update.iosReadyToast"
-              : isAndroid
-                ? "update.androidReadyToast"
-                : "update.readyToast",
-          ),
-        );
-        break;
-      case "error":
-        if (event.stage !== "share" && event.stage !== "install") phase.value = "error";
-        if (event.manual)
-          toast.error(
-            isIOS || isAndroid || event.stage === "install"
-              ? `${t("update.failed")}：${event.message}`
-              : t("update.failed"),
-          );
-        break;
-    }
+  /**
+   * 忽略迟到的拉取结果，主进程快照是唯一状态来源
+   * @param next - IPC 响应或事件携带的完整快照
+   */
+  const applyState = (next: UpdateState): void => {
+    if (snapshot.value && next.revision < snapshot.value.revision) return;
+    snapshot.value = next;
+    if (!next.meta) dialogOpen.value = false;
   };
 
-  // 订阅主进程推送的更新事件
+  /**
+   * 同步状态并按版本去重提示，避免 IPC 响应和事件交错时重复通知
+   * @param event - 主进程发布的状态和提示信息
+   */
+  const handleEvent = (event: UpdateEvent): void => {
+    if (snapshot.value && event.state.revision < snapshot.value.revision) return;
+    applyState(event.state);
+    if (event.state.revision <= lastNotification || !event.notification) return;
+    lastNotification = event.state.revision;
+    if (event.notification === "available") dialogOpen.value = true;
+    if (event.notification === "downloaded")
+      toast.success(
+        t(
+          isIOS
+            ? "update.iosReadyToast"
+            : isAndroid
+              ? "update.androidReadyToast"
+              : "update.readyToast",
+        ),
+      );
+    if (event.notification === "upToDate" && event.manual) toast.success(t("update.upToDate"));
+    if (event.notification === "error" && event.manual)
+      toast.error(
+        isIOS || isAndroid
+          ? `${t("update.failed")}：${event.state.error?.message ?? ""}`
+          : t("update.failed"),
+      );
+  };
+
   const unsubscribe = window.api.update.onEvent(handleEvent);
   onScopeDispose(unsubscribe);
-  // 触发启动检查
-  void window.api.update.check(false);
+  void window.api.update
+    .getState()
+    .then(async (state) => {
+      applyState(state);
+      if (phase.value === "idle" && mode.value !== "store")
+        applyState(await window.api.update.check(false));
+    })
+    .catch(console.warn);
 
-  /** 手动检查更新 */
+  /** 检查入口统一处理已有更新和商店安装形式。 */
   const checkManually = (): void => {
-    if (phase.value === "downloading") {
+    if (mode.value === "store") {
+      void window.api.update.openDownloadPage();
+    } else if (hasUpdate.value && errorSource.value !== "download") {
       dialogOpen.value = true;
-      return;
+    } else {
+      void window.api.update
+        .check(true)
+        .then(applyState)
+        .catch(() => toast.error(t("update.failed")));
     }
-    phase.value = "checking";
-    void window.api.update.check(true);
   };
-
-  /** 下载更新 */
+  /** 下载结果由主进程确认，不提前把界面切到下载中 */
   const download = (): void => {
-    phase.value = "downloading";
-    percent.value = 0;
-    bytesPerSecond.value = 0;
-    downloadedBytes.value = 0;
-    totalBytes.value = meta.value?.size ?? 0;
-    void window.api.update.download();
+    void window.api.update
+      .download()
+      .then(applyState)
+      .catch(() => toast.error(t("update.failed")));
   };
-
-  /** 退出并安装 */
-  const install = (): void => void window.api.update.install();
-
-  /** 打开 Releases 下载页（mac） */
+  /** 安装失败保留有效包，由主进程决定是否允许重试 */
+  const install = (): void => {
+    void window.api.update
+      .install()
+      .then(applyState)
+      .catch(() => toast.error(t("update.failed")));
+  };
   const openDownloadPage = (): void => void window.api.update.openDownloadPage();
-
-  /** 打开更新弹窗 */
   const openDialog = (): void => {
     dialogOpen.value = true;
   };
@@ -117,7 +109,9 @@ export const useUpdateStore = defineStore("update", () => {
     bytesPerSecond,
     downloadedBytes,
     totalBytes,
+    mode,
     canInstall,
+    errorSource,
     dialogOpen,
     hasUpdate,
     checkManually,

@@ -1,6 +1,7 @@
 import type { SettingCategory, SettingItem, SettingSection } from "@/types/settings-schema";
 import DeviceSelector from "@/components/settings/custom/DeviceSelector.vue";
-import { isMobile } from "@/utils/config";
+import { isMobile, isWin } from "@/utils/config";
+import { useSettingsStore } from "@/stores/settings";
 import IconLucidePlay from "~icons/lucide/play";
 
 const playerCategory: SettingCategory = {
@@ -87,9 +88,79 @@ const playerCategory: SettingCategory = {
         },
         {
           key: "preloadNextTrack",
+          visible: () => !isMobile,
           type: "switch",
           binding: { store: "settings", path: "player.preloadNextTrack" },
           defaultValue: false,
+          confirm: {
+            when: (next) =>
+              Boolean(next) &&
+              (!useSettingsStore().system.cache.songCache.enabled ||
+                !useSettingsStore().system.cache.songCache.cacheStreaming),
+            titleKey: "settings.confirm.preloadCacheTitle",
+            contentKey: "settings.confirm.preloadCacheContent",
+            type: "warning",
+          },
+          action: async (enabled) => {
+            if (!enabled) {
+              useSettingsStore().player.transitionMode = "none";
+              return;
+            }
+            const settings = useSettingsStore();
+            await settings.setSystem("cache.songCache.enabled", true);
+            await settings.setSystem("cache.songCache.cacheStreaming", true);
+          },
+        },
+      ],
+    },
+    {
+      id: "playbackTransition",
+      visible: () => !isMobile,
+      items: [
+        {
+          key: "transitionMode",
+          type: "select",
+          binding: { store: "settings", path: "player.transitionMode" },
+          options: [
+            { value: "none", labelKey: "settings.transitionMode.none" },
+            { value: "crossfade", labelKey: "settings.transitionMode.crossfade" },
+          ],
+          defaultValue: "none",
+          confirm: {
+            when: (next) =>
+              next === "crossfade" &&
+              (!useSettingsStore().system.cache.songCache.enabled ||
+                !useSettingsStore().system.cache.songCache.cacheStreaming),
+            titleKey: "settings.confirm.preloadCacheTitle",
+            contentKey: "settings.confirm.preloadCacheContent",
+            type: "warning",
+          },
+          action: async (mode) => {
+            if (mode !== "crossfade") return;
+            const settings = useSettingsStore();
+            settings.player.preloadNextTrack = true;
+            if (!settings.system.cache.songCache.enabled) {
+              await settings.setSystem("cache.songCache.enabled", true);
+            }
+            if (!settings.system.cache.songCache.cacheStreaming) {
+              await settings.setSystem("cache.songCache.cacheStreaming", true);
+            }
+          },
+          children: [
+            {
+              key: "transitionPreference",
+              type: "select",
+              binding: { store: "settings", path: "player.transitionPreference" },
+              options: [
+                { value: "conservative", labelKey: "settings.transitionPreference.conservative" },
+                { value: "standard", labelKey: "settings.transitionPreference.standard" },
+                { value: "eager", labelKey: "settings.transitionPreference.eager" },
+              ],
+              defaultValue: "standard",
+            },
+          ],
+          childrenCondition: () => useSettingsStore().player.transitionMode === "crossfade",
+          hideChildren: true,
         },
       ],
     },
@@ -102,6 +173,12 @@ const playerCategory: SettingCategory = {
           type: "switch",
           binding: { store: "settings", path: "system.system.neteaseScrobbleEnabled" },
           defaultValue: false,
+          confirm: {
+            when: (next) => next === true,
+            titleKey: "settings.confirm.enableTitle",
+            contentKey: "settings.confirm.scrobbleRiskContent",
+            type: "warning",
+          },
           children: [
             {
               key: "neteaseScrobbleMode",
@@ -111,7 +188,7 @@ const playerCategory: SettingCategory = {
                 { value: "legacy", labelKey: "settings.neteaseScrobbleMode.legacy" },
                 { value: "ncbl", labelKey: "settings.neteaseScrobbleMode.ncbl" },
               ],
-              defaultValue: "ncbl",
+              defaultValue: "legacy",
             },
           ],
         },
@@ -158,6 +235,23 @@ const playerCategory: SettingCategory = {
                 key: "outputDevice",
                 type: "custom",
                 component: DeviceSelector,
+              },
+              {
+                key: "audioOutputMode",
+                type: "select",
+                binding: { store: "settings", path: "system.player.audioOutputMode" },
+                options: [
+                  { value: "shared", labelKey: "settings.audioOutputMode.shared" },
+                  { value: "exclusive", labelKey: "settings.audioOutputMode.exclusive" },
+                ],
+                defaultValue: "shared",
+                confirm: {
+                  when: (next) => next === "exclusive",
+                  titleKey: "settings.confirm.exclusiveModeTitle",
+                  contentKey: "settings.confirm.exclusiveModeContent",
+                  type: "warning",
+                },
+                visible: () => isWin,
               },
               {
                 key: "pauseOnDeviceSwitch",

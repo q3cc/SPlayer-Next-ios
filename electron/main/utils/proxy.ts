@@ -1,6 +1,5 @@
 import { store } from "@main/store";
 import { systemLog } from "@main/utils/logger";
-import { fetch as undiciFetch, Agent, ProxyAgent, Socks5ProxyAgent } from "undici";
 import type { Dispatcher } from "undici";
 import crypto from "node:crypto";
 
@@ -13,18 +12,6 @@ let defaultDispatcher: Dispatcher | null = null;
 const isManualProxyProtocol = (value: string): value is "http" | "https" | "socks5" =>
   value === "http" || value === "https" || value === "socks5";
 
-/** 默认直连 dispatcher（允许 legacy renegotiation） */
-const getDefaultDispatcher = (): Dispatcher => {
-  if (!defaultDispatcher) {
-    defaultDispatcher = new Agent({
-      connect: {
-        secureOptions: crypto.constants.SSL_OP_LEGACY_SERVER_CONNECT,
-      },
-    });
-  }
-  return defaultDispatcher;
-};
-
 /** 当前手动代理地址；off 或配置无效时返回 null，保持原生直连行为 */
 export const getNetworkProxyUrl = (): string | null => {
   const config = store.get("system.networkProxy");
@@ -35,23 +22,32 @@ export const getNetworkProxyUrl = (): string | null => {
   return `${config.protocol}://${host}:${port}`;
 };
 
-const getProxyDispatcher = (): Dispatcher => {
+/** Node fetch 包装：首次请求才加载网络库，并复用当前代理连接池 */
+export const fetchWithProxy = async (
+  input: string | URL,
+  init?: RequestInit,
+): Promise<Response> => {
+  const { fetch, Agent, ProxyAgent, Socks5ProxyAgent } = await import("undici");
   const url = getNetworkProxyUrl();
-  if (!url) return getDefaultDispatcher();
-  if (!proxyAgent || proxyAgentUrl !== url) {
-    proxyAgent?.close().catch(() => {});
-    proxyAgent = url.startsWith("socks5://") ? new Socks5ProxyAgent(url) : new ProxyAgent(url);
-    proxyAgentUrl = url;
-    systemLog.info(`[proxy] node fetch proxy=${url}`);
+  let dispatcher: Dispatcher;
+  if (url) {
+    if (!proxyAgent || proxyAgentUrl !== url) {
+      proxyAgent?.close().catch(() => {});
+      proxyAgent = url.startsWith("socks5://") ? new Socks5ProxyAgent(url) : new ProxyAgent(url);
+      proxyAgentUrl = url;
+      systemLog.info(`[proxy] node fetch proxy=${url}`);
+    }
+    dispatcher = proxyAgent;
+  } else {
+    defaultDispatcher ??= new Agent({
+      connect: {
+        secureOptions: crypto.constants.SSL_OP_LEGACY_SERVER_CONNECT,
+      },
+    });
+    dispatcher = defaultDispatcher;
   }
-  return proxyAgent;
-};
-
-/** Node fetch 包装：统一使用 undici 并注入支持 legacy SSL 的 dispatcher */
-export const fetchWithProxy = (input: string | URL, init?: RequestInit): Promise<Response> => {
-  const dispatcher = getProxyDispatcher();
-  return undiciFetch(input, { ...(init as RequestInit), dispatcher } as Parameters<
-    typeof undiciFetch
+  return fetch(input, { ...(init as RequestInit), dispatcher } as Parameters<
+    typeof fetch
   >[1]) as unknown as Promise<Response>;
 };
 

@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { mount, flushPromises } from "@vue/test-utils";
+import { createI18n } from "vue-i18n";
 import { ref, nextTick } from "vue";
 import {
   DialogRoot,
@@ -38,6 +39,13 @@ const show = async () => {
   wrapper = mount(SettingsDialog, {
     attachTo: document.body,
     global: {
+      plugins: [
+        createI18n({
+          legacy: false,
+          locale: "zh-CN",
+          messages: { "zh-CN": { common: { loading: "加载中" } } },
+        }),
+      ],
       components: {
         SDialog,
         DialogRoot,

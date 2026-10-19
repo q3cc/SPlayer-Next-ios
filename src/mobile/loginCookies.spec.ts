@@ -25,3 +25,8 @@ describe("WebKit 扫码授权 Cookie", () => {
     expect(result.cookie).toContain("NMTID=browser");
   });
 });
+
+vi.mock("@main/apis/netease/core/webClient", () => ({
+  requestWithWebClient: vi.fn(),
+  resetWebClientSession: vi.fn(),
+}));

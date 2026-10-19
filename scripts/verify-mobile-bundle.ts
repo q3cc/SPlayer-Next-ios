@@ -42,7 +42,7 @@ if (fs.statSync(entryPath).size > 750_000) {
 }
 
 if (!html.includes("viewport-fit=cover")) fail("缺少 iOS 全屏 viewport-fit=cover");
-if (!html.includes('class="splash-logo"')) fail("缺少内联启动 Logo");
+if (!/class="[^"\n]*\bsplash-logo\b[^"\n]*"/.test(html)) fail("缺少启动 Logo");
 if (!javascript.includes("splayer.mobile.settings")) fail("移动端 window.api 桥接未进入 bundle");
 if (!isAndroidBuild && !javascript.includes("iPhone / iPad")) fail("移动播放器实现未进入 bundle");
 if (/\.mobile\s*\{[^}]*display\s*:\s*none/.test(styles)) {

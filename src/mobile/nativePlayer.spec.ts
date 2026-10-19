@@ -10,7 +10,13 @@ const mocks = vi.hoisted(() => ({
   track: vi.fn(),
   download: vi.fn(),
   like: vi.fn(),
+  prepareStreaming: vi.fn(),
+  streamState: vi.fn(),
+  streamPosition: vi.fn(),
+  streamStop: vi.fn(),
+  streamSeek: vi.fn(),
 }));
+vi.mock("./streaming", () => ({ prepareMobileStreamingPlayback: mocks.prepareStreaming }));
 vi.mock("./downloadMedia", () => ({
   findDownloadMedia: mocks.download,
   readDownloadMedia: mocks.download,
@@ -38,6 +44,17 @@ beforeEach(() => {
   mocks.invoke.mockReset().mockResolvedValue(status);
   mocks.listener.mockReset().mockResolvedValue({ unregister: vi.fn() });
   mocks.download.mockReset().mockResolvedValue(null);
+  mocks.prepareStreaming
+    .mockReset()
+    .mockResolvedValue({
+      source: "https://media.example/audio",
+      session: {
+        state: mocks.streamState,
+        position: mocks.streamPosition,
+        stop: mocks.streamStop,
+        seek: mocks.streamSeek,
+      },
+    });
 });
 
 it("系统音量命令已注册且默认向移动端开放", () => {
@@ -263,4 +280,55 @@ it("只有开启频谱且页面可见时转发真实频谱", async () => {
   event.mockClear();
   callback(data);
   expect(event).not.toHaveBeenCalled();
+});
+
+it("流媒体原生加载使用解析地址并按实际状态上报，停止结束会话", async () => {
+  const player = createNativePlayer({} as PlayerApi);
+  const track = {
+    id: "server:one",
+    serverId: "server",
+    originalId: "one",
+    source: "streaming" as const,
+    title: "One",
+    artists: [],
+    duration: 200000,
+    serverRevision: 2,
+  };
+  expect((await player.load("streaming://server/one?revision=2", { meta: track })).success).toBe(
+    true,
+  );
+  expect(mocks.prepareStreaming).toHaveBeenCalledWith(
+    "streaming://server/one?revision=2",
+    200000,
+    undefined,
+  );
+  expect(mocks.invoke).toHaveBeenCalledWith(
+    "plugin:native-audio|load",
+    expect.objectContaining({ source: "https://media.example/audio" }),
+  );
+  expect(mocks.streamState).toHaveBeenCalledWith(true);
+  expect(mocks.streamPosition).toHaveBeenCalledWith(1500);
+  await player.seek(3000);
+  expect(mocks.streamSeek).toHaveBeenCalledWith(3000);
+  await player.stop();
+  expect(mocks.streamStop).toHaveBeenCalledOnce();
+});
+
+it("缓存流媒体仍携带服务器身份建立会话，不把本地路径交给远程取址", async () => {
+  const player = createNativePlayer({} as PlayerApi);
+  const track = {
+    id: "server:one",
+    serverId: "server",
+    originalId: "one",
+    source: "streaming" as const,
+    title: "One",
+    artists: [],
+    duration: 200000,
+  };
+  await player.load("/cache/one.flac", { meta: track });
+  expect(mocks.prepareStreaming).toHaveBeenCalledWith(
+    "streaming://server/one",
+    200000,
+    "/cache/one.flac",
+  );
 });

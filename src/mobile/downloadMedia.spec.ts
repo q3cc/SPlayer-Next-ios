@@ -139,3 +139,18 @@ it("重新下载附属资源失败时保留同一首歌已有的本地封面", a
   await saveDownloadMedia(request, path);
   expect((await findDownloadMedia(track))?.coverPath).toBe(path + ".cover.jpg");
 });
+
+it("服务器换账号后不能复用旧下载，既有零代次下载仍可用", async () => {
+  const { saveDownloadMedia, findDownloadMedia } = await import("./downloadMedia");
+  const oldTrack = {
+    ...track,
+    source: "streaming" as const,
+    serverId: "server",
+    originalId: "one",
+  };
+  const path = "/Documents/Downloads/stream.flac";
+  mocks.files.set(path, new Uint8Array([1]));
+  await saveDownloadMedia({ ...request, track: oldTrack }, path);
+  expect((await findDownloadMedia({ ...oldTrack, serverRevision: 0 }))?.audioPath).toBe(path);
+  expect(await findDownloadMedia({ ...oldTrack, serverRevision: 1 })).toBeNull();
+});

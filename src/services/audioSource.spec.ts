@@ -1,132 +1,134 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Track } from "@shared/types/player";
-import type { PluginInfo } from "@shared/types/plugin";
-import { resolveTrackSource } from "./audioSource";
+import { ErrorCode } from "@shared/types/errors";
 
-const { resolve, settings, lookup, pluginList, resolvePlugin, priority } = vi.hoisted(() => ({
-  resolve: vi.fn(),
+const mocks = vi.hoisted(() => ({
+  netease: vi.fn(),
+  qqmusic: vi.fn(),
+  kugou: vi.fn(),
+  error: vi.fn(),
   lookup: vi.fn(),
-  pluginList: [] as PluginInfo[],
-  resolvePlugin: vi.fn(),
-  priority: vi.fn(),
+  cacheLookup: vi.fn(),
   settings: {
-    player: { songLevel: "hq", allowTrialPlay: true },
-    system: { cache: { songCache: { enabled: true } } },
+    player: { songLevel: "hq", allowTrialPlay: false },
+    system: { cache: { songCache: { enabled: false } } },
   },
 }));
-vi.mock("@/stores/settings", () => ({ useSettingsStore: () => settings }));
-vi.mock("@/stores/plugins", () => ({ usePluginsStore: () => ({ list: pluginList }) }));
-vi.mock("@/stores/streaming", () => ({ useStreamingStore: vi.fn() }));
-vi.mock("@/stores/user", () => ({ useUserStore: vi.fn() }));
-vi.mock("@/apis/song/kugou", () => ({ resolveKugouUrl: resolve }));
-vi.mock("@/apis/song/netease", () => ({ resolveNeteaseUrl: vi.fn() }));
-vi.mock("@/apis/song/qqmusic", () => ({ resolveQQMusicUrl: vi.fn() }));
-vi.mock("@/utils/errors", () => ({ handleError: vi.fn() }));
-
-const track = {
-  id: "hash",
-  source: "kugou",
-  title: "晴天",
-  artists: [],
-  duration: 240000,
-} as Track;
+vi.mock("@/stores/settings", () => ({
+  useSettingsStore: () => mocks.settings,
+}));
+vi.mock("@/stores/plugins", () => ({ usePluginsStore: () => ({ list: [] }) }));
+vi.mock("@/stores/user", () => ({ useUserStore: () => ({ isLoggedIn: false }) }));
+vi.mock("@/apis/song/netease", () => ({ resolveNeteaseUrl: mocks.netease }));
+vi.mock("@/apis/song/qqmusic", () => ({ resolveQQMusicUrl: mocks.qqmusic }));
+vi.mock("@/apis/song/kugou", () => ({ resolveKugouUrl: mocks.kugou }));
+vi.mock("@/utils/errors", () => ({ handleError: mocks.error }));
+import { resolveTrackSource } from "./audioSource";
 
 beforeEach(() => {
-  resolve.mockReset();
-  pluginList.length = 0;
-  resolvePlugin.mockReset();
-  priority.mockResolvedValue([]);
-  lookup.mockResolvedValue(null);
-  settings.player.allowTrialPlay = true;
-  Object.defineProperty(window, "api", {
-    configurable: true,
-    value: {
-      cache: { song: { lookup, fetch: vi.fn() } },
-      plugins: { resolveUrl: resolvePlugin },
-      config: { get: priority },
+  vi.clearAllMocks();
+  mocks.lookup.mockReset().mockResolvedValue(null);
+  mocks.settings.system.cache.songCache.enabled = false;
+  Object.assign(window, {
+    api: {
+      download: { lookup: mocks.lookup },
+      cache: { song: { lookup: mocks.cacheLookup } },
     },
   });
 });
 
-describe("多音源顺序尝试", () => {
-  beforeEach(() => {
-    for (const id of ["first", "second", "disabled"]) {
-      pluginList.push({
-        manifest: {
-          id,
-          name: id,
-          version: "1",
-          grant: ["network"],
-          apiLevel: 1,
-          hash: id,
-          installedAt: 0,
-          fileName: id + ".js",
-        },
-        enabled: id !== "disabled",
-        status: {
-          state: "ready",
-          sources: { kg: { name: "酷狗", actions: ["musicUrl"], qualities: ["hq"] } },
-        },
-      } as PluginInfo);
-    }
-    resolve.mockResolvedValue({ available: true, url: "https://example.com/trial", isTrial: true });
+describe("优先播放下载文件", () => {
+  it("远端流媒体只返回身份占位符，凭据和播放会话由主进程解析", async () => {
+    const result = await resolveTrackSource({
+      id: "server:remote",
+      source: "streaming",
+      serverId: "server",
+      originalId: "remote",
+      title: "歌曲",
+      artists: [],
+      duration: 1000,
+    });
+    expect(result?.source).toBe("streaming://server/remote");
+  });
+  it("命中下载后跳过缓存和在线地址解析", async () => {
+    mocks.settings.system.cache.songCache.enabled = true;
+    mocks.lookup.mockResolvedValueOnce("C:/downloads/song.flac");
+    const track: Track = { id: "1", title: "test", source: "netease", artists: [], duration: 1000 };
+    expect(await resolveTrackSource(track)).toEqual({
+      source: "C:/downloads/song.flac",
+      fromCache: false,
+      provider: "download",
+    });
+    expect(mocks.lookup).toHaveBeenCalledExactlyOnceWith({ source: "netease", id: "1" });
+    expect(mocks.cacheLookup).not.toHaveBeenCalled();
+    expect(mocks.netease).not.toHaveBeenCalled();
   });
 
-  it("按已保存优先级尝试，失败后继续且跳过禁用音源", async () => {
-    priority.mockResolvedValue(["disabled", "second", "first"]);
-    resolvePlugin.mockRejectedValueOnce(new Error("第三方服务不可用"));
-    resolvePlugin.mockResolvedValueOnce({ url: "https://example.com/plugin" });
-    const result = await resolveTrackSource(track, { silent: true });
-    expect(result?.provider).toBe("plugin");
-    expect(resolvePlugin.mock.calls.map(([args]) => args.pluginId)).toEqual(["second", "first"]);
+  it("流媒体下载按服务器身份查询，并跳过远端地址解析", async () => {
+    mocks.lookup.mockResolvedValueOnce("C:/downloads/stream.flac");
+    await resolveTrackSource({
+      id: "song",
+      source: "streaming",
+      serverId: "server",
+      originalId: "remote",
+      title: "stream",
+      artists: [],
+      duration: 1000,
+    });
+    expect(mocks.lookup).toHaveBeenCalledExactlyOnceWith({
+      source: "streaming",
+      id: "song",
+      serverId: "server",
+      originalId: "remote",
+    });
   });
 
-  it("官方完整音源优先，不请求插件", async () => {
-    resolve.mockResolvedValue({ available: true, url: "https://example.com/full", isTrial: false });
-    expect((await resolveTrackSource(track, { silent: true }))?.provider).toBe("official");
-    expect(resolvePlugin).not.toHaveBeenCalled();
-  });
-
-  it("全部插件失败后仅在允许时播放试听", async () => {
-    resolvePlugin.mockRejectedValue(new Error("音源不支持所选音质"));
-    expect((await resolveTrackSource(track, { silent: true }))?.provider).toBe("trial");
-    settings.player.allowTrialPlay = false;
-    expect(await resolveTrackSource(track, { silent: true })).toBeNull();
+  it("下载查询异常时继续在线解析", async () => {
+    mocks.lookup.mockRejectedValueOnce(new Error("database error"));
+    mocks.netease.mockResolvedValueOnce({
+      available: true,
+      url: "https://music/song",
+      isTrial: false,
+    });
+    const result = await resolveTrackSource({
+      id: "1",
+      source: "netease",
+      title: "test",
+      artists: [],
+      duration: 1000,
+    });
+    expect(result?.source).toBe("https://music/song");
+    expect(mocks.netease).toHaveBeenCalledOnce();
   });
 });
 
-describe("酷狗试听进入播放器", () => {
-  it("试听保留来源标记且不会写入完整歌曲缓存", async () => {
-    resolve.mockResolvedValue({ available: true, url: "https://example.com/trial", isTrial: true });
-    const result = await resolveTrackSource(track, { silent: true });
-    expect(resolve).toHaveBeenCalledWith(track, "hq", true);
-    expect(result?.provider).toBe("trial");
-    expect(result?.cacheRequest).toBeUndefined();
+describe("音源解析失败原因", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
   });
-
-  it("完整歌曲仍支持缓存", async () => {
-    resolve.mockResolvedValue({ available: true, url: "https://example.com/full", isTrial: false });
-    const result = await resolveTrackSource(track, { silent: true });
-    expect(result?.provider).toBe("official");
-    expect(result?.cacheRequest).toBeTypeOf("function");
-  });
-
-  it("关闭允许试听时拒绝平台直接返回的试听", async () => {
-    settings.player.allowTrialPlay = false;
-    resolve.mockResolvedValue({ available: true, url: "https://example.com/trial", isTrial: true });
-    expect(await resolveTrackSource(track, { silent: true })).toBeNull();
-    expect(resolve).toHaveBeenCalledWith(track, "hq", false);
-  });
-
-  it("已下载歌曲在关闭临时歌曲缓存时直接播放本地文件", async () => {
-    settings.system.cache.songCache.enabled = false;
-    window.api.download = {
-      lookup: vi.fn().mockResolvedValue("file:///Documents/Downloads/song.flac"),
-    } as never;
-    const result = await resolveTrackSource(track, { silent: true });
-    expect(result?.source).toBe("file:///Documents/Downloads/song.flac");
-    expect(result?.provider).toBe("download");
-    expect(resolve).not.toHaveBeenCalled();
-    settings.system.cache.songCache.enabled = true;
+  it.each(["netease", "qqmusic", "kugou"] as const)(
+    "%s API 异常不会被无插件覆盖",
+    async (source) => {
+      mocks[source].mockRejectedValueOnce(new Error("fetch failed"));
+      const onError = vi.fn();
+      const track: Track = { id: "1", title: "test", source, artists: [], duration: 1000 };
+      expect(await resolveTrackSource(track, { silent: true, onError })).toBeNull();
+      expect(onError).toHaveBeenCalledExactlyOnceWith(ErrorCode.NETWORK_ERROR);
+      expect(mocks.error).not.toHaveBeenCalled();
+    },
+  );
+  it("歌曲无版权仍保留单曲错误", async () => {
+    mocks.netease.mockResolvedValueOnce({
+      available: false,
+      errorCode: ErrorCode.NETEASE_UNAVAILABLE,
+    });
+    await resolveTrackSource({
+      id: "1",
+      title: "test",
+      source: "netease",
+      artists: [],
+      duration: 1000,
+    });
+    expect(mocks.error).toHaveBeenCalledExactlyOnceWith(ErrorCode.NETEASE_UNAVAILABLE);
   });
 });

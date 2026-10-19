@@ -1,6 +1,11 @@
 import { addPluginListener, invoke } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import type { UpdateApi, UpdateEvent, UpdateMeta } from "@shared/types/update";
+import type { UpdateMeta } from "@shared/types/update";
+import {
+  createMobileUpdater,
+  type NativeUpdater,
+  type NativeUpdateEvent as UpdateEvent,
+} from "./updateState";
 import { fetchWithProxy } from "./shims/proxy";
 import { store } from "./shims/store";
 
@@ -65,7 +70,7 @@ const matchingAsset = (release: Release, arch: string, commit?: string): Asset |
         : new RegExp(`^SPlayer-Next-Android-${arch}(?:-[a-f0-9]{7})?\\.apk$`).test(asset.name)),
   );
 
-export const androidUpdate: UpdateApi = {
+export const nativeUpdater: NativeUpdater = {
   check(manual) {
     if (downloading) return Promise.resolve();
     if (!manual && !store.get("update.autoCheck")) return Promise.resolve();
@@ -74,7 +79,7 @@ export const androidUpdate: UpdateApi = {
     if (checking)
       return checkingChannel === channel
         ? checking
-        : checking.then(() => androidUpdate.check(manual));
+        : checking.then(() => nativeUpdater.check(manual));
     checkingChannel = channel;
     selected = undefined;
     downloadedPath = undefined;
@@ -166,6 +171,7 @@ export const androidUpdate: UpdateApi = {
             .trim(),
           releaseDate: action?.date ?? latest.release.published_at ?? "",
           size: latest.asset.size,
+          releaseUrl: downloadPage,
         };
         selected = {
           url: assetUrl.href,
@@ -225,4 +231,5 @@ export const androidUpdate: UpdateApi = {
   },
 };
 
+export const androidUpdate = createMobileUpdater(nativeUpdater, () => store.get("update.channel"));
 export { androidUpdate as mobileUpdate };

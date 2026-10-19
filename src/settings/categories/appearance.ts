@@ -349,6 +349,12 @@ const appearanceCategory: SettingCategory = {
           binding: { store: "settings", path: "player.autoImmersive" },
           defaultValue: false,
         },
+        {
+          key: "keepScreenAwake",
+          type: "switch",
+          binding: { store: "settings", path: "system.player.keepScreenAwake" },
+          defaultValue: false,
+        },
       ],
     },
   ],

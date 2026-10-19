@@ -1,6 +1,11 @@
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { addPluginListener, invoke } from "@tauri-apps/api/core";
-import type { UpdateApi, UpdateEvent, UpdateMeta } from "@shared/types/update";
+import type { UpdateMeta } from "@shared/types/update";
+import {
+  createMobileUpdater,
+  type NativeUpdater,
+  type NativeUpdateEvent as UpdateEvent,
+} from "./updateState";
 import { fetchWithProxy } from "./shims/proxy";
 import { store } from "./shims/store";
 
@@ -46,7 +51,7 @@ const versionParts = (version: string): number[] | null => {
 };
 
 /** 复用更新弹窗和设置；IPA 下载后交给系统分享面板，不执行应用内安装。 */
-export const mobileUpdate: UpdateApi = {
+export const nativeUpdater: NativeUpdater = {
   check(manual) {
     if (downloading) return Promise.resolve();
     if (!manual && !store.get("update.autoCheck")) return Promise.resolve();
@@ -55,7 +60,7 @@ export const mobileUpdate: UpdateApi = {
     if (checking)
       return checkingChannel === channel
         ? checking
-        : checking.then(() => mobileUpdate.check(manual));
+        : checking.then(() => nativeUpdater.check(manual));
     checkingChannel = channel;
     console.info("[update] check-start", {
       channel,
@@ -171,6 +176,7 @@ export const mobileUpdate: UpdateApi = {
             .trim(),
           releaseDate: action?.date ?? latest.release.published_at ?? "",
           size: latest.asset.size,
+          releaseUrl: downloadPage,
         };
         selected = {
           url: assetUrl.href,
@@ -266,3 +272,5 @@ export const mobileUpdate: UpdateApi = {
     };
   },
 };
+
+export const mobileUpdate = createMobileUpdater(nativeUpdater, () => store.get("update.channel"));

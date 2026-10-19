@@ -220,6 +220,8 @@ export const mobileCache = {
     },
     fetch: async (key: string, source: TrackSource, streamUrl: string) => {
       if (!store.get("cache.songCache.enabled")) return null;
+      if (streamUrl.startsWith("streaming://"))
+        streamUrl = await (await import("./streaming")).resolveMobileStreamingDownload(streamUrl);
       const response = await fetchWithProxy(streamUrl);
       if (!response.ok || !response.body) return null;
       const storage = cacheStorage();

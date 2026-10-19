@@ -6,10 +6,14 @@ import DEFAULT_COVER from "@/assets/images/song.jpg";
 import { neteaseCdnUrl } from "@shared/utils/neteaseCdnUrl";
 import BackgroundRender from "./BackgroundRender.vue";
 
-const props = withDefaults(defineProps<{ active?: boolean; reducedMotion?: boolean }>(), {
-  active: true,
-  reducedMotion: false,
-});
+const props = withDefaults(
+  defineProps<{ visible?: boolean; active?: boolean; reducedMotion?: boolean }>(),
+  {
+    active: true,
+    visible: true,
+    reducedMotion: false,
+  },
+);
 
 const media = useMediaStore();
 const settings = useSettingsStore();
@@ -18,35 +22,24 @@ const visibility = useDocumentVisibility();
 
 const bgType = computed(() => settings.player.playerBgType as string);
 
-/**
- * 背景是否就绪
- * 展开后延迟 500ms 再挂载，收起后延迟 500ms 卸载以释放 WebGL 上下文 / 模糊位图
- */
-const bgReady = ref(false);
-let bgReadyTimer: ReturnType<typeof setTimeout> | undefined;
+const fluidReady = ref(false);
+const showBlurPreview = ref(true);
 
-watch(
-  () => status.isPlayerExpanded,
-  (expanded) => {
-    clearTimeout(bgReadyTimer);
-    if (expanded) {
-      // 已就绪（快速收起后又展开）则保留，避免无谓地卸载重建
-      if (!bgReady.value) {
-        bgReadyTimer = setTimeout(() => {
-          bgReady.value = true;
-        }, 500);
-      }
-    } else {
-      // 等收起动画结束后再卸载
-      bgReadyTimer = setTimeout(() => {
-        bgReady.value = false;
-      }, 500);
-    }
-  },
-  { immediate: true },
-);
+watch([() => props.active, bgType], () => {
+  fluidReady.value = false;
+  showBlurPreview.value = true;
+});
 
-onBeforeUnmount(() => clearTimeout(bgReadyTimer));
+/** 淡入结束后隐藏预览，避免长期叠加两套背景合成层 */
+const onFluidTransitionEnd = (event: TransitionEvent): void => {
+  if (
+    event.target === event.currentTarget &&
+    event.propertyName === "opacity" &&
+    fluidReady.value
+  ) {
+    showBlurPreview.value = false;
+  }
+};
 
 // 流体背景播放态
 const bgPlaying = computed(() => {
@@ -78,7 +71,7 @@ watch(
       preloadImg.src = "";
       preloadImg = null;
     }
-    if (type !== "blur") {
+    if (type !== "blur" && type !== "animation") {
       blurLayers[0].src = "";
       blurLayers[1].src = "";
       return;
@@ -92,7 +85,8 @@ watch(
       if (token !== switchToken) return;
       preloadImg = null;
       blurLayers[nextIndex].src = src;
-      nextTick(() => {
+      if (token !== switchToken) return;
+      requestAnimationFrame(() => {
         if (token !== switchToken) return;
         switchFrame = requestAnimationFrame(() => {
           switchFrame = 0;
@@ -115,7 +109,6 @@ watch(
 );
 
 onBeforeUnmount(() => {
-  clearTimeout(bgReadyTimer);
   switchToken++;
   cancelAnimationFrame(switchFrame);
   if (preloadImg) {
@@ -132,35 +125,40 @@ onBeforeUnmount(() => {
   <div class="absolute inset-0 overflow-hidden -z-1 bg-solid-wrap">
     <div class="color bg-cover-base" />
   </div>
-  <!-- 模糊背景 -->
-  <Transition v-if="bgType === 'blur'" name="bg-fade">
-    <div v-if="bgReady" class="absolute inset-0 overflow-hidden -z-1 bg-blur-wrap">
-      <template v-for="(layer, index) in blurLayers" :key="index">
-        <img
-          v-if="layer.src"
-          :src="layer.src"
-          :class="['bg-img', { active: layer.active }]"
-          decoding="async"
-          alt=""
-        />
-      </template>
-    </div>
-  </Transition>
+  <!-- 流体背景就绪前用缩略图铺底 -->
+  <div
+    v-if="(bgType === 'blur' || bgType === 'animation') && props.visible"
+    v-show="showBlurPreview"
+    class="absolute inset-0 overflow-hidden -z-1 bg-blur-wrap"
+  >
+    <img
+      v-for="(layer, index) in blurLayers"
+      :key="index"
+      :src="layer.src"
+      :class="['bg-img', { active: layer.active }]"
+      decoding="async"
+      alt=""
+    />
+  </div>
   <!-- 流体背景 -->
-  <Transition v-else-if="bgType === 'animation'" name="bg-fade">
-    <div v-if="bgReady" class="absolute inset-0 overflow-hidden -z-1">
-      <BackgroundRender
-        :active="props.active && status.isPlayerExpanded"
-        :album="media.track?.cover || DEFAULT_COVER"
-        :playing="bgPlaying"
-        :fps="settings.player.playerBgFps"
-        :flow-speed="settings.player.playerBgFlowSpeed"
-        :render-scale="settings.player.playerBgRenderScale"
-        :has-lyric="media.parsedLyric.length > 0"
-        :enable-beat="settings.player.playerBgBeat"
-      />
-    </div>
-  </Transition>
+  <div
+    v-if="bgType === 'animation' && props.active"
+    class="absolute inset-0 overflow-hidden -z-1 bg-fluid-wrap"
+    :class="{ ready: fluidReady }"
+    @transitionend="onFluidTransitionEnd"
+  >
+    <BackgroundRender
+      :active="props.active && status.isPlayerExpanded"
+      :album="media.track?.cover || DEFAULT_COVER"
+      :playing="bgPlaying"
+      :fps="settings.player.playerBgFps"
+      :flow-speed="settings.player.playerBgFlowSpeed"
+      :render-scale="settings.player.playerBgRenderScale"
+      :has-lyric="media.parsedLyric.length > 0"
+      :enable-beat="settings.player.playerBgBeat"
+      @ready="fluidReady = true"
+    />
+  </div>
 </template>
 
 <style scoped>
@@ -212,17 +210,13 @@ onBeforeUnmount(() => {
   opacity: 1;
 }
 
-/* 流体背景渐入 */
-.bg-fade-enter-active {
-  transition: opacity 0.8s ease-in-out;
-}
-
-.bg-fade-leave-active {
-  transition: opacity 0.3s ease-in;
-}
-
-.bg-fade-enter-from,
-.bg-fade-leave-to {
+/* 纹理就绪后再显露流体画面 */
+.bg-fluid-wrap {
   opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.bg-fluid-wrap.ready {
+  opacity: 1;
 }
 </style>

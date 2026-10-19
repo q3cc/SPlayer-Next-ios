@@ -11,6 +11,8 @@ import type {
   SandboxIn,
   SandboxOut,
   SourceCapability,
+  PluginPlayerApi,
+  PluginRegistration,
 } from "@shared/types/plugin";
 import { installLxShim } from "./lx-shim";
 
@@ -92,6 +94,7 @@ export const createPluginRuntime = (
     settingChangeHandlers: Map<string, ((value: unknown) => void)[]>;
     /** 已注册 sources */
     registeredSources: Record<string, SourceCapability>;
+    registration: PluginRegistration;
     /** 在途 action 的 AbortController，key = requestId */
     inflight: Map<string, AbortController>;
     /** hostCall 回调登记，key = callId */
@@ -116,6 +119,8 @@ export const createPluginRuntime = (
     args: unknown[],
   ): Promise<unknown> => {
     if (record.disposed) return Promise.reject(new Error("插件已停止"));
+    if (record.hostCallWaiters.size >= 64)
+      return Promise.reject(new Error("Too many pending host calls"));
     const callId = `c${++record.callSeq}`;
     return new Promise<unknown>((resolve, reject) => {
       record.hostCallWaiters.set(callId, { resolve, reject });
@@ -193,6 +198,10 @@ export const createPluginRuntime = (
     request: (url: string, opts?: HostRequestOptions): Promise<HostRequestResult> =>
       hostCall(record, "request", [url, opts ?? {}]) as Promise<HostRequestResult>,
 
+    /**
+     * 合并插件分次声明的能力并通知主进程
+     * @param args - 本次声明的音源、事件、设置与菜单
+     */
     register: (args: RegisterArgs) => {
       if (record.disposed) return;
       record.nativeRegistered = true;
@@ -212,14 +221,14 @@ export const createPluginRuntime = (
             }
           }
         }
-        send({
-          kind: "registered",
-          pluginId: record.pluginId,
-          events: Array.isArray(args.events) ? args.events : [],
-          controls: Boolean(args.controls),
-          settings: Array.isArray(args.settings) ? args.settings : [],
-          menus: Array.isArray(args.menus) ? args.menus : [],
-        });
+        const previous = record.registration;
+        record.registration = {
+          events: Array.isArray(args.events) ? args.events : previous.events,
+          controls: args.controls === undefined ? previous.controls : Boolean(args.controls),
+          settings: Array.isArray(args.settings) ? args.settings : previous.settings,
+          menus: Array.isArray(args.menus) ? args.menus : previous.menus,
+        };
+        send({ kind: "registered", pluginId: record.pluginId, ...record.registration });
       }
     },
 
@@ -289,7 +298,94 @@ export const createPluginRuntime = (
       setVolume: (volume: number) =>
         void hostCall(record, "player.setVolume", [volume]).catch(() => {}),
       getPosition: () => hostCall(record, "player.getPosition", []) as Promise<number>,
+      /**
+       * 请求宿主停止播放
+       */
+      stop: () => hostCall(record, "player.stop", []) as Promise<void>,
+      /**
+       * 请求宿主播放完整曲目
+       * @param track - 要播放的曲目
+       * @returns 已发送播放请求的曲目标识
+       */
+      playTrack: (track) =>
+        hostCall(record, "player.playTrack", [track]) as ReturnType<PluginPlayerApi["playTrack"]>,
+      /**
+       * 请求宿主将曲目加入播放队列
+       * @param tracks - 要加入的完整曲目
+       * @param position - 插入当前曲目之后或队列末尾
+       * @returns 本次提交的曲目数
+       */
+      addToQueue: (tracks, position = "next") =>
+        hostCall(record, "player.addToQueue", [tracks, position]) as ReturnType<
+          PluginPlayerApi["addToQueue"]
+        >,
+      /**
+       * 请求宿主修改播放模式
+       * @param mode - 循环或随机播放模式
+       */
+      setPlayMode: (mode) => hostCall(record, "player.setPlayMode", [mode]) as Promise<void>,
+      /**
+       * 请求宿主读取当前播放队列
+       * @param options - 队列偏移与返回条数
+       * @returns 队列分页及当前播放索引
+       */
+      getQueue: (options) =>
+        hostCall(record, "player.getQueue", [options]) as ReturnType<PluginPlayerApi["getQueue"]>,
+      /**
+       * 读取宿主播放状态
+       * @returns 播放状态、毫秒进度与播放模式
+       */
+      getStatus: () =>
+        hostCall(record, "player.getStatus", []) as ReturnType<PluginPlayerApi["getStatus"]>,
+      /**
+       * 读取当前曲目的轻量快照
+       * @returns 当前曲目和播放进度，不包含歌词正文
+       */
+      getNowPlaying: () =>
+        hostCall(record, "player.getNowPlaying", []) as ReturnType<
+          PluginPlayerApi["getNowPlaying"]
+        >,
     },
+
+    music: {
+      /**
+       * 通过宿主搜索在线曲目
+       * @param options - 平台、关键词与分页参数
+       * @returns 统一的曲目搜索结果
+       */
+      searchOnline: (options) =>
+        hostCall(record, "music.searchOnline", [options]) as ReturnType<
+          HostApi["music"]["searchOnline"]
+        >,
+      /**
+       * 搜索宿主本地曲库
+       * @param query - 搜索关键词
+       * @param limit - 返回曲目数上限
+       * @returns 搜索总数和完整曲目
+       */
+      searchLibrary: (query, limit) =>
+        hostCall(record, "music.searchLibrary", [query, limit]) as ReturnType<
+          HostApi["music"]["searchLibrary"]
+        >,
+    },
+    api: {
+      /**
+       * 复用宿主登录状态调用平台接口
+       * @param platform - 平台标识
+       * @param name - 接口名称或路径
+       * @param params - 业务参数
+       * @returns 移除认证凭据后的业务响应
+       */
+      call: (platform, name, params) =>
+        hostCall(record, "api.call", [platform, name, params]) as ReturnType<
+          HostApi["api"]["call"]
+        >,
+    },
+    /**
+     * 通过宿主显示插件通知
+     * @param message - 通知内容
+     */
+    notify: (message) => hostCall(record, "notify", [message]) as Promise<void>,
 
     onSettingChange: (key: string, handler: (value: unknown) => void) => {
       const list = record.settingChangeHandlers.get(key) ?? [];
@@ -408,6 +504,7 @@ export const createPluginRuntime = (
       playerEventHandlers: new Map(),
       settingChangeHandlers: new Map(),
       registeredSources: {},
+      registration: { events: [], controls: false, settings: [], menus: [] },
       inflight: new Map(),
       hostCallWaiters: new Map(),
       userSettingsCache: spec.userSettings ?? {},

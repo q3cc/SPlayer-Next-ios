@@ -1,4 +1,4 @@
-import type { KGSong } from "@main/apis/kugou/core/types";
+import type { KGSong } from "@shared/types/platform/kugou";
 import { pickBestCandidate, type LyricCandidate } from "@main/apis/common/lyric/utils";
 import {
   normalizeKugouCommentPage,

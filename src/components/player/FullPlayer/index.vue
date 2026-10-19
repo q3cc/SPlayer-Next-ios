@@ -17,8 +17,6 @@ import PlaylistPickerDialog from "@/components/modals/PlaylistPickerDialog.vue";
 import { useWindowControls } from "@/composables/useWindowControls";
 import * as player from "@/core/player";
 import { isMobile } from "@/utils/config";
-import IconFavorite from "~icons/material-symbols/favorite-rounded";
-import IconFavoriteOutline from "~icons/material-symbols/favorite-outline-rounded";
 import IconLucideListPlus from "~icons/lucide/list-plus";
 import IconLucideDownload from "~icons/lucide/download";
 
@@ -47,9 +45,12 @@ const { snapToNearestLyric } = useProgressLyric();
 
 const lyricRef = ref<InstanceType<typeof Lyrics>>();
 const lyricMounted = ref(false);
+const playerVisible = ref(false);
+const visualizerMounted = ref(false);
 const initialLyricTimeMs = ref(0);
+let visualizerMountFrame = 0;
 
-/** 加载中的歌曲使用队列当前项兜底，避免全屏播放器出现空白。 */
+/** 加载中的歌曲使用队列当前项兜底，避免全屏播放器出现空白 */
 const displayTrack = computed(() => media.track ?? status.currentTrack);
 const hasLyric = computed(() => media.parsedLyric.length > 0 || media.lyricLoading);
 const hasTrack = computed(() => !!displayTrack.value);
@@ -66,8 +67,17 @@ const onAfterEnter = () => {
   initialLyricTimeMs.value = getCurrentTime() + status.lyricOffsetMs;
   lyricMounted.value = true;
   nextTick(() => {
+    if (!isPlayerExpanded.value) return;
+    lyricRef.value?.setCurrentTime(getCurrentTime() + status.lyricOffsetMs);
     lyricRef.value?.resume();
     startTick();
+    // 将 WebGL 和频谱创建与歌词 DOM 测量错开
+    visualizerMountFrame = requestAnimationFrame(() => {
+      visualizerMountFrame = requestAnimationFrame(() => {
+        visualizerMountFrame = 0;
+        if (isPlayerExpanded.value) visualizerMounted.value = true;
+      });
+    });
   });
 };
 
@@ -78,15 +88,21 @@ onMounted(() => {
 
 /** 收起前 */
 const onBeforeLeave = () => {
+  cancelAnimationFrame(visualizerMountFrame);
+  visualizerMountFrame = 0;
   lyricRef.value?.freeze();
   stopTick();
 };
 
 /** 收起后 */
 const onAfterLeave = () => {
+  playerVisible.value = false;
   lyricMounted.value = false;
   cancelDismiss();
+  visualizerMounted.value = false;
 };
+
+onBeforeUnmount(() => cancelAnimationFrame(visualizerMountFrame));
 
 // 重新挂载时，刷新初始时间
 watch(hasLyric, (value) => {
@@ -131,6 +147,13 @@ const lyricFontSize = computed(() =>
     ? `calc(${settings.lyric.fontSize} / 1080 * 100vh)`
     : `${settings.lyric.fontSize}px`,
 );
+
+const lyricSubFontSize = computed(() => {
+  if (settings.lyric.translationFontSizeFollowMain) return "max(0.5em, 12px)";
+  return settings.lyric.adaptiveFontSize
+    ? `max(12px, calc(${settings.lyric.translationFontSize} / 1080 * 100vh))`
+    : `${settings.lyric.translationFontSize}px`;
+});
 
 const { immersive, onActivity, onPointerDown, onPointerUp } = useImmersiveMode(isPlayerExpanded);
 
@@ -201,6 +224,7 @@ const canDownload = computed(
   () =>
     !!displayTrack.value &&
     displayTrack.value.source !== "local" &&
+    displayTrack.value.source !== "plugin" &&
     settings.system.download.enabled,
 );
 
@@ -250,11 +274,13 @@ const showComments = (): void => {
 <template>
   <Teleport to="body">
     <Transition
+      appear
       enter-active-class="transition-transform duration-500 ease-[cubic-bezier(0.7,0,0.3,1)]"
       leave-active-class="transition-transform duration-500 ease-[cubic-bezier(0.7,0,0.3,1)]"
       enter-from-class="translate-y-full"
       leave-to-class="translate-y-full"
       @after-enter="onAfterEnter"
+      @before-enter="playerVisible = true"
       @before-leave="onBeforeLeave"
       @after-leave="onAfterLeave"
     >
@@ -277,14 +303,14 @@ const showComments = (): void => {
         @wheel.capture.passive="onActivity"
       >
         <!-- 背景 -->
-        <PlayerBackground />
+        <PlayerBackground :visible="playerVisible" :active="visualizerMounted" />
         <!-- 全屏封面 -->
         <div v-if="fullscreenCover" class="absolute inset-y-0 left-0 w-[60%]">
           <PlayerCover fullscreen />
         </div>
         <!-- 底部频谱 -->
         <BottomSpectrum
-          v-if="isPlayerExpanded && settings.player.enableSpectrum"
+          v-if="isPlayerExpanded && visualizerMounted && settings.player.enableSpectrum"
           :show="isPlaying && immersive"
         />
         <!-- 顶/底栏渐变遮罩（全屏封面模式） -->
@@ -415,6 +441,7 @@ const showComments = (): void => {
               :style="{
                 '--lp-credit-opacity': '1',
                 fontSize: lyricFontSize,
+                '--lp-sub-font-size': lyricSubFontSize,
                 fontWeight: String(settings.lyric.fontWeight),
                 fontFamily: settings.lyric.fontFamily || undefined,
                 '--lyric-font-zh': settings.lyric.fontFamilyChinese || undefined,
@@ -480,17 +507,18 @@ const showComments = (): void => {
               <template #icon><IconLucideChevronDown /></template>
             </SButton>
             <SButton
+              v-if="displayTrack?.source !== 'plugin'"
               type="cover"
               variant="ghost"
               size="large"
               circle
-              :disabled="!hasTrack"
+              :disabled="!hasTrack || !fav.isSupported(displayTrack)"
               @click="fav.toggle(displayTrack)"
             >
               <template #icon>
                 <SIconSwap :active="fav.isLiked(displayTrack)">
-                  <template #on><IconFavorite /></template>
-                  <template #off><IconFavoriteOutline /></template>
+                  <template #on><IconMaterialSymbolsFavoriteRounded /></template>
+                  <template #off><IconMaterialSymbolsFavoriteOutlineRounded /></template>
                 </SIconSwap>
               </template>
             </SButton>

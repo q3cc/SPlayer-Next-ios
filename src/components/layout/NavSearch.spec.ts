@@ -12,7 +12,10 @@ vi.mock("@/stores/data", () => ({
   useDataStore: () => ({ searchHistory: [], addSearchHistory: mocks.history }),
 }));
 vi.mock("@/stores/status", () => ({ useStatusStore: () => reactive({ searchOpen: true }) }));
-vi.mock("vue-router", () => ({ useRouter: () => ({ push: mocks.push }) }));
+vi.mock("vue-router", () => ({
+  useRoute: () => ({ name: "home", query: {} }),
+  useRouter: () => ({ push: mocks.push }),
+}));
 vi.mock("vue-i18n", () => ({ useI18n: () => ({ t: (key: string) => key, locale: "zh-CN" }) }));
 vi.mock("@vueuse/core", () => ({
   useDebounceFn: (fn: unknown) => fn,
