@@ -66,6 +66,7 @@ class DialogPlugin: Plugin {
   var filePickerController: FilePickerController!
   var onFilePickerResult: ((FilePickerEvent) -> Void)? = nil
   private var filePickerActive = false
+  private weak var webView: WKWebView?
   var pickerTrace: FolderPickerTrace?
 
   /** 选择和目录复制共用一个请求锁，不能让后来的调用覆盖正在等待的回调。 */
@@ -85,6 +86,10 @@ class DialogPlugin: Plugin {
     super.init()
     filePickerController = FilePickerController(self)
 
+  }
+
+  override func load(webview: WKWebView) {
+    self.webView = webview
   }
 
   @objc public func showFilePicker(_ invoke: Invoke) throws {
@@ -347,7 +352,8 @@ class DialogPlugin: Plugin {
   private func presentViewController(_ viewControllerToPresent: UIViewController) {
     let trace = pickerTrace
     trace?.log("present-request")
-    guard let presenter = self.manager.viewController,
+    // 从发起请求的 WebView 获取窗口，避免场景切换后使用全局的过期控制器。
+    guard let presenter = self.webView?.window?.rootViewController,
           presenter.presentedViewController == nil else {
       trace?.log("present-rejected")
       onFilePickerEvent(.error("无法打开文件选择器，请关闭当前弹窗后重试"))
@@ -454,7 +460,6 @@ class DialogPlugin: Plugin {
   }
 
   @objc public func showMessageDialog(_ invoke: Invoke) throws {
-    let manager = self.manager
     let args = try invoke.parseArgs(MessageDialogOptions.self)
 
     DispatchQueue.main.async { [] in
@@ -493,7 +498,11 @@ class DialogPlugin: Plugin {
         )
       )
 
-      manager.viewController?.present(alert, animated: true, completion: nil)
+      guard let presenter = self.webView?.window?.rootViewController else {
+        invoke.reject("播放器窗口尚未就绪，请返回播放器重试")
+        return
+      }
+      presenter.present(alert, animated: true, completion: nil)
     }
   }
 

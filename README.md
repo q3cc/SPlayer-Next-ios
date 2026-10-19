@@ -61,19 +61,22 @@
 环境依赖：macOS、Xcode、Rust (iOS Target)、Node.js >= 22.19.0、pnpm。
 
 ```bash
-git clone [https://github.com/q3cc/SPlayer-Next-ios.git](https://github.com/q3cc/SPlayer-Next-ios.git)
+git clone https://github.com/q3cc/SPlayer-Next-ios.git
 cd SPlayer-Next-ios
 git switch main
 
+rustup target add aarch64-apple-ios aarch64-apple-ios-sim
+rustup component add llvm-tools
 pnpm install --frozen-lockfile
 pnpm ios:init
 pnpm ios:build --ci --no-sign
 
 ```
 
+- Xcode 27 的 Swift 静态库链接需要 `llvm-tools`，否则可能出现 `_init_plugin_*` 等符号缺失。
 - 仅编译前端：`pnpm mobile:build`
 - 本地联机调试：`pnpm ios:dev`
-- 详见完整的 [iOS 构建指南](https://www.google.com/search?q=docs/ios-unsigned.md)。
+- 详见完整的 [iOS 构建指南](docs/ios-unsigned.md)。
 
 ---
 

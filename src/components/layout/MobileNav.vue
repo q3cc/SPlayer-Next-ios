@@ -13,7 +13,7 @@ const { show: showSettings } = useSettingsDialog();
 
 const items = computed(() => [
   { key: "home", path: "/", label: t("nav.home"), icon: IconLucideHome },
-  { key: "search", path: "/search", label: t("nav.search"), icon: IconLucideSearch },
+  { key: "search", path: "/search", label: t("common.search"), icon: IconLucideSearch },
   { key: "library", path: "/library", label: t("nav.library"), icon: IconLucideLibrary },
   { key: "liked", path: "/liked", label: t("nav.liked"), icon: IconLucideHeart },
 ]);

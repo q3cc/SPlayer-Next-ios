@@ -13,13 +13,19 @@
 
 ## 本地开发要求
 
-本地调试需要 macOS、Xcode、Rust iOS target、Node.js 22 和 pnpm。首次生成工程后可运行：
+本地调试需要 macOS、Xcode、Rust、Node.js >= 22.19.0 和 pnpm。Tauri 初始化还会检查 XcodeGen、libimobiledevice 和 CocoaPods，请先安装这些工具。
 
 ```bash
-pnpm install
+rustup target add aarch64-apple-ios aarch64-apple-ios-sim
+rustup component add llvm-tools
+pnpm install --frozen-lockfile
 pnpm ios:init
 pnpm ios:dev
 ```
+
+Xcode 27 下，Swift 静态库的 C 桥接符号需要通过 `llvm-tools` 中的 `llvm-objcopy` 导出。若日志提示 `llvm-objcopy not found`，先安装该组件，再重新构建受影响的原生包。
+
+未签名设备包使用 `pnpm ios:build --ci --no-sign`；Apple Silicon 模拟器使用 `pnpm ios:build --ci --no-sign --target aarch64-sim`。
 
 移动端前端也可单独执行 `pnpm mobile:build` 做静态构建检查。
 
