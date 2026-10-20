@@ -83,6 +83,18 @@ class EvidenceTests(unittest.TestCase):
             "--format", "json", "--id", "summary",
         ])
 
+    def test_new_xcode_export_retries_legacy_and_propagates_failure(self):
+        result = {"name": {"_value": "native-wide-home"}, "payloadRef": reference("image")}
+        failed = subprocess.CalledProcessError(64, ["xcresulttool"])
+        with patch.object(ipad, "read_result", return_value=result), \
+                patch.object(ipad.subprocess, "run", side_effect=[failed, subprocess.CompletedProcess([], 0)]) as run:
+            self.assertEqual(ipad.export_evidence(self.bundle, self.directory), {"native-wide-home"})
+            self.assertEqual(run.call_args.args[0][-1], "--legacy")
+        with patch.object(ipad, "read_result", return_value=result), \
+                patch.object(ipad.subprocess, "run", side_effect=failed):
+            with self.assertRaises(subprocess.CalledProcessError):
+                ipad.export_evidence(self.bundle, self.directory)
+
 
 class RunnerTests(unittest.TestCase):
     def setUp(self):
@@ -109,8 +121,8 @@ class RunnerTests(unittest.TestCase):
     def test_success_requires_all_expected_attachments(self):
         result = subprocess.CompletedProcess(["xcodebuild"], 0)
         with patch.object(ipad.subprocess, "run", return_value=result), \
-                patch.object(ipad, "export_evidence", return_value={"SPlayer-iPad-home"}):
-            with self.assertRaisesRegex(RuntimeError, "SPlayer-iPad-library"):
+                patch.object(ipad, "export_evidence", return_value={"native-wide-home"}):
+            with self.assertRaisesRegex(RuntimeError, "native-wide-home-tree"):
                 ipad.main()
 
     def test_success_never_relaunches_app_to_capture_a_different_screen(self):

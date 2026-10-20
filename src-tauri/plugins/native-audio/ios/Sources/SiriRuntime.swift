@@ -9,6 +9,7 @@ final class SiriRuntime {
   private var session: URLSession?
   private var timers: [Int: DispatchWorkItem] = [:]
   private var timerId = 0
+  private var cancelled = false
   private var completion: ((Result<[String: Any], Error>) -> Void)?
   private let resourceDirectory: URL
 
@@ -16,11 +17,13 @@ final class SiriRuntime {
     self.resourceDirectory = resourceDirectory
   }
 
-  func cancel() { queue.async { self.finish(.failure(SiriFailure("已被新的播放操作取消"))) } }
+  /// 记录尚未开始的取消，防止快速切歌时取消先于请求入队而失效
+  func cancel() { queue.async { self.cancelled = true; self.finish(.failure(CancellationError())) } }
 
   func run(_ request: [String: Any], storage: [String: String]) async throws -> [String: Any] {
     try await withCheckedThrowingContinuation { continuation in
       queue.async {
+        guard !self.cancelled else { continuation.resume(throwing: CancellationError()); return }
         self.completion = { continuation.resume(with: $0) }
         do {
           let context = JSContext()!

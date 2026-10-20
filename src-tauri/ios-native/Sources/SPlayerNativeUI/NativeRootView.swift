@@ -1,286 +1,291 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
-private enum NativeTab: Hashable { case home, search, library, liked, settings }
 private enum NativePresentation: String, Identifiable {
-    case music, player, queue
-    var id: String { rawValue }
+  case music, queue
+  var id: String { rawValue }
 }
 
 @MainActor
 public struct NativeRootView: View {
-    @StateObject private var player: NativePlayerStore
-    @State private var tab: NativeTab = .home
-    @State private var presentation: NativePresentation?
-    @State private var showMacImporter = false
-    @State private var search = ""
-    @State private var pendingDelete: NativeTrack?
-    @AppStorage("native.appearance") private var appearance = "system"
-    @AppStorage("native.favoriteIDs") private var favoriteIDs = ""
-    @Environment(\.scenePhase) private var scenePhase
+  @StateObject private var player: NativePlayerStore
+  @State private var page: NativePage = .home
+  @State private var previous: NativePage?
+  @State private var presentation: NativePresentation?
+  @State private var expanded = false
+  @State private var settings = false
+  @State private var account = false
+  @State private var importAfterSettings = false
+  @State private var macImporter = false
+  @AppStorage("native.appearance") private var appearance = "system"
+  @Environment(\.scenePhase) private var scenePhase
 
-    public init() { _player = StateObject(wrappedValue: NativePlayerStore()) }
-    public init(player: NativePlayerStore) { _player = StateObject(wrappedValue: player) }
+  /// 为原生入口创建或注入唯一播放器实例
+  public init() { _player = StateObject(wrappedValue: NativePlayerStore()) }
+  /// 为原生入口创建或注入唯一播放器实例
+  public init(player: NativePlayerStore) { _player = StateObject(wrappedValue: player) }
 
-    private var favorites: Set<String> { Set(favoriteIDs.split(separator: ",").map(String.init)) }
-    private var liked: [NativeTrack] { player.tracks.filter { favorites.contains($0.id.uuidString) } }
-    private var filtered: [NativeTrack] {
-        player.tracks.filter { search.isEmpty || ($0.title + " " + $0.artist).localizedCaseInsensitiveContains(search) }
-    }
-
-    public var body: some View {
-        GeometryReader { geometry in
-            if geometry.size.width > 900 {
-                NativeWideShell(player: player, favorites: $favoriteIDs, appearance: $appearance,
-                                importMusic: startImport, showPlayer: { presentation = .player }, showQueue: { presentation = .queue })
-            } else {
-                compactContent
-            }
-        }
-        .tint(.splayerAccent)
-        .preferredColorScheme(appearance == "dark" ? .dark : appearance == "light" ? .light : nil)
-        .task { await player.loadLibrary() }
-        .onChange(of: scenePhase) { player.setInterfaceActive($0 == .active) }
-        .overlay {
-            if player.importing { ProgressView("正在导入音乐…").padding(24).background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16)).accessibilityIdentifier("native.import.progress") }
-        }
-        #if os(macOS)
-        .fileImporter(isPresented: $showMacImporter, allowedContentTypes: [.audio], allowsMultipleSelection: true) { result in
-            switch result {
-            case .success(let urls): Task { await player.importFiles(urls) }
-            case .failure(let error): player.error = error.localizedDescription
-            }
-        }
-        #endif
-        .sheet(item: $presentation) { page in
-            switch page {
-            case .music:
-                #if os(iOS)
-                NativeDocumentPicker { urls in
-                    presentation = nil
-                    if !urls.isEmpty { Task { await player.importFiles(urls) } }
+  public var body: some View {
+    GeometryReader { geometry in
+      let wide = geometry.size.width >= 1000
+      VStack(spacing: 0) {
+        HStack(spacing: 0) {
+          if wide {
+            NativeSidebar(page: $page, player: player).frame(width: 240)
+            Divider()
+          }
+          VStack(spacing: 0) {
+            NativeTopbar(
+              catalog: player.catalog, wide: wide, canBack: previous != nil,
+              back: {
+                if let previous {
+                  page = previous
+                  self.previous = nil
                 }
-                #else
-                EmptyView()
-                #endif
-            case .player: NativeNowPlayingView(player: player)
-            case .queue: queueView
-            }
+              },
+              search: {
+                navigate(.search)
+                player.catalog.search()
+              },
+              settings: { settings = true }, account: { account = true })
+            NativePageContent(
+              page: page, player: player, catalog: player.catalog,
+              appearance: $appearance, importMusic: startImport,
+              openPlaylist: {
+                player.catalog.open($0)
+                navigate(.playlist)
+              },
+              navigate: navigate)
+          }
         }
-        .alert("操作失败", isPresented: Binding(get: { player.error != nil }, set: { if !$0 { player.error = nil } })) {
-            Button("好") { player.error = nil }
-        } message: { Text(player.error ?? "") }
-        .confirmationDialog("删除这首歌曲？", isPresented: Binding(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }), titleVisibility: .visible) {
-            Button("删除应用内副本", role: .destructive) {
-                if let track = pendingDelete { Task { await player.remove(track) } }
-                pendingDelete = nil
-            }
+        if player.current != nil || player.loadingTrack != nil {
+          NativePlaybackBar(
+            player: player, wide: wide, showPlayer: { expanded = true },
+            showQueue: { presentation = .queue })
         }
+        if !wide {
+          #if os(iOS)
+            NativeBottomTabs(selection: $page).frame(height: 64)
+          #else
+            HStack { ForEach(NativePage.tabs) { item in Button(item.rawValue) { page = item } } }
+              .padding()
+          #endif
+        }
+      }.background(Color.nativeCanvas)
     }
-
-    private var compactContent: some View {
-        TabView(selection: $tab) {
-            NavigationStack {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 24) {
-                        HStack(spacing: 12) {
-                            NativeLogo().frame(width: 48, height: 48)
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("SPlayer").font(.title.bold())
-                                Text("让音乐陪伴每一天").font(.subheadline).foregroundStyle(.secondary)
-                            }
-                            Spacer()
-                        }
-                        VStack(alignment: .leading, spacing: 16) {
-                            Text("你的音乐，随时聆听").font(.title2.bold())
-                            Text(player.tracks.isEmpty ? "导入本地音乐，开启今天的音乐时光。" : "已收录 \(player.tracks.count) 首歌曲，无需网络即可收听。")
-                                .foregroundStyle(.secondary)
-                            HStack {
-                                Button(action: startImport) { Label("导入音乐", systemImage: "plus").padding(.horizontal, 8).frame(minHeight: 32) }
-                                    .buttonStyle(.borderedProminent).buttonBorderShape(.capsule)
-                                    .disabled(player.importing).accessibilityIdentifier("native.import.home")
-                                if let first = player.tracks.first {
-                                    Button { player.play(first, in: player.tracks); presentation = .player } label: { Label("播放全部", systemImage: "play.fill").frame(minHeight: 44) }
-                                }
-                            }
-                        }
-                        .padding(20).frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Color.splayerAccent.opacity(0.10), in: RoundedRectangle(cornerRadius: 20))
-                        HStack(spacing: 12) {
-                            Button { tab = .library } label: { shortcut("本地音乐", count: player.tracks.count, icon: "music.note.list") }
-                            Button { tab = .liked } label: { shortcut("我喜欢的音乐", count: liked.count, icon: "heart") }
-                        }.buttonStyle(.plain)
-                        if !player.tracks.isEmpty {
-                            HStack {
-                                Text("最近添加").font(.title2.bold())
-                                Spacer()
-                                Button("查看全部") { tab = .library }
-                            }
-                            LazyVStack(spacing: 12) {
-                                ForEach(Array(player.tracks.suffix(8).reversed())) { track in
-                                    Button { player.play(track, in: player.tracks); presentation = .player } label: {
-                                        NativeTrackRow(track: track, selected: player.current?.id == track.id)
-                                    }.buttonStyle(.plain)
-                                }
-                            }
-                        }
-                    }.padding(20).frame(maxWidth: 1000).frame(maxWidth: .infinity)
-                }.navigationTitle("首页")
-                    .safeAreaInset(edge: .bottom) { miniPlayer }
-            }.tabItem { Label("首页", systemImage: "house") }.tag(NativeTab.home)
-
-            NavigationStack {
-                songList(filtered, empty: search.isEmpty ? "搜索本地歌曲或歌手" : "没有找到匹配的歌曲")
-                    .searchable(text: $search, prompt: "搜索歌曲或歌手")
-                    .navigationTitle("搜索")
-                    .safeAreaInset(edge: .bottom) { miniPlayer }
-            }.tabItem { Label("搜索", systemImage: "magnifyingglass") }.tag(NativeTab.search)
-
-            NavigationStack {
-                songList(player.tracks, empty: "还没有本地音乐，点击右上角导入歌曲。")
-                    .navigationTitle("音乐库")
-                    .toolbar {
-                        ToolbarItem(placement: .primaryAction) {
-                            Button(action: startImport) { Label("导入音乐", systemImage: "plus") }
-                                .disabled(player.importing).accessibilityIdentifier("native.import.library")
-                        }
-                    }
-                    .safeAreaInset(edge: .bottom) { miniPlayer }
-            }.tabItem { Label("音乐库", systemImage: "books.vertical") }.tag(NativeTab.library)
-
-            NavigationStack {
-                songList(liked, empty: "在歌曲菜单中点亮爱心，将喜欢的音乐留在这里。")
-                    .navigationTitle("我喜欢的音乐")
-                    .safeAreaInset(edge: .bottom) { miniPlayer }
-            }.tabItem { Label("喜欢", systemImage: "heart") }.tag(NativeTab.liked)
-
-            NavigationStack {
-                Form {
-                    Section {
-                        HStack(spacing: 16) {
-                            NativeLogo().frame(width: 52, height: 52)
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("SPlayer").font(.title2.bold())
-                                Text("音乐，触手可及").foregroundStyle(.secondary)
-                            }
-                        }.padding(.vertical, 8)
-                    }
-                    Section("外观") {
-                        Picker("主题", selection: $appearance) {
-                            Text("跟随系统").tag("system")
-                            Text("浅色").tag("light")
-                            Text("深色").tag("dark")
-                        }
-                    }
-                    Section("播放") { Toggle("单曲循环", isOn: $player.repeatOne) }
-                    Section("本地音乐") {
-                        LabeledContent("已导入歌曲", value: String(player.tracks.count))
-                        Button("导入音乐", action: startImport).disabled(player.importing).accessibilityIdentifier("native.import.settings")
-                        Text("删除歌曲只删除应用内副本，不影响原文件。")
-                            .font(.footnote).foregroundStyle(.secondary)
-                    }
-                    Section("关于") {
-                        Text("原生预览版目前支持本地音乐，在线平台与云盘等功能仍在迁移中。")
-                            .font(.footnote).foregroundStyle(.secondary)
-                    }
-                }.navigationTitle("全局设置")
-            }.tabItem { Label("设置", systemImage: "gearshape") }.tag(NativeTab.settings)
-        }
+    .tint(.primary)
+    .preferredColorScheme(appearance == "dark" ? .dark : appearance == "light" ? .light : nil)
+    .task {
+      await player.loadLibrary()
+      await player.catalog.loadHome()
     }
-
-    private func startImport() {
-        guard !player.importing else { return }
+    .onChange(of: scenePhase) { player.setInterfaceActive($0 == .active) }
+    .sheet(item: $presentation) { item in
+      switch item {
+      case .music:
         #if os(iOS)
-        presentation = .music
+          NativeDocumentPicker { urls in
+            presentation = nil
+            if !urls.isEmpty { Task { await player.importFiles(urls) } }
+          }
         #else
-        showMacImporter = true
+          EmptyView()
         #endif
+      case .queue: NativeQueueView(player: player)
+      }
     }
-
-    private func shortcut(_ title: String, count: Int, icon: String) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Image(systemName: icon).font(.title2).foregroundStyle(Color.splayerAccent)
-            Text(title).font(.headline)
-            Text("\(count) 首歌曲").font(.caption).foregroundStyle(.secondary)
-        }.padding(20).frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 16))
-    }
-
-    private func songList(_ tracks: [NativeTrack], empty: String) -> some View {
-        List {
-            if tracks.isEmpty { Text(empty).foregroundStyle(.secondary).padding(.vertical, 32).listRowSeparator(.hidden) }
-            ForEach(tracks) { track in
-                Button { player.play(track, in: tracks); presentation = .player } label: {
-                    NativeTrackRow(track: track, selected: player.current?.id == track.id)
-                }.buttonStyle(.plain).listRowSeparator(.hidden)
-                    .contextMenu {
-                        Button {
-                            var values = favorites
-                            if values.contains(track.id.uuidString) { values.remove(track.id.uuidString) } else { values.insert(track.id.uuidString) }
-                            favoriteIDs = values.sorted().joined(separator: ",")
-                        } label: { Label(favorites.contains(track.id.uuidString) ? "取消喜欢" : "喜欢", systemImage: "heart") }
-                        Button("删除", role: .destructive) { pendingDelete = track }
-                    }
-                    .swipeActions { Button("删除", role: .destructive) { pendingDelete = track } }
-            }
-        }.listStyle(.plain)
-    }
-
-    private var queueView: some View {
-        NavigationStack {
-            List {
-                if player.queue.isEmpty { Text("播放队列为空") }
-                ForEach(player.queue) { track in
-                    Button { player.play(track) } label: { NativeTrackRow(track: track, selected: player.current?.id == track.id) }.buttonStyle(.plain)
-                }.onMove(perform: player.moveQueue).onDelete(perform: player.removeQueue)
-            }.navigationTitle("播放队列")
-                .toolbar {
-                    ToolbarItem(placement: .cancellationAction) { Button("关闭") { presentation = nil } }
-                    #if os(iOS)
-                    ToolbarItem(placement: .primaryAction) { EditButton() }
-                    #endif
-                }
+    .sheet(isPresented: $account) {
+      NavigationStack {
+        NativeAccountsView(service: player.service).toolbar {
+          ToolbarItem(placement: .cancellationAction) { Button("完成") { account = false } }
         }
+      }
     }
-
-    @ViewBuilder private var miniPlayer: some View {
-        if player.current != nil {
-            HStack(spacing: 8) {
-                Button { presentation = .player } label: {
-                    HStack(spacing: 12) {
-                        NativeLogo().frame(width: 44, height: 44)
-                        VStack(alignment: .leading) {
-                            Text(player.title).font(.headline).lineLimit(1)
-                            Text(player.artist).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                        }
-                        Spacer()
-                    }.contentShape(Rectangle())
-                }.buttonStyle(.plain).accessibilityIdentifier("native.miniplayer")
-                Button(action: player.togglePlayback) { Image(systemName: player.isPlaying ? "pause.fill" : "play.fill").frame(width: 44, height: 44) }
-                    .accessibilityLabel(player.isPlaying ? "暂停" : "播放")
-                Button { presentation = .queue } label: { Image(systemName: "list.bullet").frame(width: 44, height: 44) }.accessibilityLabel("播放队列")
-            }.padding(.horizontal).padding(.vertical, 8).background(.bar)
+    .sheet(
+      isPresented: $settings,
+      onDismiss: {
+        if importAfterSettings {
+          importAfterSettings = false
+          startImport()
         }
+      }
+    ) {
+      NativeSettingsView(
+        player: player, appearance: $appearance,
+        importMusic: {
+          importAfterSettings = true
+          settings = false
+        })
     }
+    #if os(iOS)
+      .fullScreenCover(isPresented: $expanded) { NativeNowPlayingView(player: player) }
+    #else
+      .sheet(isPresented: $expanded) { NativeNowPlayingView(player: player) }
+      .fileImporter(
+        isPresented: $macImporter, allowedContentTypes: [.audio], allowsMultipleSelection: true
+      ) { result in
+        if case .success(let urls) = result { Task { await player.importFiles(urls) } }
+      }
+    #endif
+    .overlay(alignment: .top) { NativePluginNotice(plugins: player.plugins) }
+    .overlay {
+      if player.importing {
+        ProgressView("正在导入音乐…").padding(24).background(
+          .regularMaterial, in: RoundedRectangle(cornerRadius: 16))
+      }
+    }
+    .alert(
+      "操作失败",
+      isPresented: Binding(get: { player.error != nil }, set: { if !$0 { player.error = nil } })
+    ) {
+      Button("好") { player.error = nil }
+    } message: {
+      Text(player.error ?? "")
+    }
+  }
+
+  /// 保留返回位置，页面切换不重建播放器
+  private func navigate(_ target: NativePage) {
+    if page != target {
+      previous = page
+      page = target
+    }
+  }
+  /// 从原生文件选择器导入，不暴露应用沙盒路径
+  private func startImport() {
+    guard !player.importing else { return }
+    #if os(iOS)
+      presentation = .music
+    #else
+      macImporter = true
+    #endif
+  }
 }
 
-extension Color {
-    static let splayerAccent = Color(red: 254 / 255, green: 121 / 255, blue: 113 / 255)
-}
-
-struct NativeTrackRow: View {
-    let track: NativeTrack
-    let selected: Bool
-    var body: some View {
-        HStack(spacing: 12) {
-            NativeLogo().frame(width: 40, height: 40)
-            VStack(alignment: .leading, spacing: 4) {
-                Text(track.title).font(.body).foregroundStyle(selected ? Color.splayerAccent : .primary).lineLimit(1)
-                Text(track.artist).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-            }
+@MainActor
+struct NativeSidebar: View {
+  @State private var creating = false
+  @State private var name = ""
+  @State private var deleting: String?
+  @Binding var page: NativePage
+  @ObservedObject var player: NativePlayerStore
+  var body: some View {
+    VStack(spacing: 0) {
+      HStack(spacing: 8) {
+        NativeLogo().frame(width: 30, height: 30)
+        Text("SPlayer").font(.system(size: 22, weight: .semibold))
+      }
+      .frame(height: 64).frame(maxWidth: .infinity)
+      ScrollView {
+        VStack(spacing: 2) {
+          ForEach([NativePage.home, .library, .artists, .albums, .folders, .stats]) { item in
+            row(item)
+          }
+          Divider().padding(.vertical, 12)
+          ForEach([NativePage.liked, .collections, .cloud, .history]) { item in row(item) }
+          Divider().padding(.vertical, 12)
+          HStack {
+            Text("我的歌单")
+            Image(systemName: "chevron.down")
             Spacer()
-            Text(NativeNowPlayingView.time(track.durationMs)).font(.caption.monospacedDigit()).foregroundStyle(.secondary)
-        }.padding(.vertical, 4)
-            .contentShape(Rectangle())
+            Button {
+              name = ""
+              creating = true
+            } label: {
+              Image(systemName: "plus").frame(width: 32, height: 32)
+            }.accessibilityLabel("新建歌单")
+          }.font(.system(size: 12)).foregroundStyle(.secondary).padding(.horizontal, 12)
+          ForEach(player.playlists) { playlist in
+            Button {
+              player.selectedPlaylistID = playlist.id
+              page = .localPlaylist
+            } label: {
+              HStack {
+                Image(systemName: "music.note.list")
+                Text(playlist.name).lineLimit(1)
+                Spacer()
+              }.font(.system(size: 14)).padding(12).contentShape(Rectangle())
+            }.buttonStyle(.plain).contextMenu {
+              Button("删除歌单", role: .destructive) { deleting = playlist.id }
+            }
+          }
+        }.padding(.horizontal, 12)
+      }
+    }.background(.regularMaterial).accessibilityElement(children: .contain).accessibilityIdentifier(
+      "native.wide.sidebar"
+    )
+    .alert("新建本地歌单", isPresented: $creating) {
+      TextField("歌单名称", text: $name)
+      Button("取消", role: .cancel) {}
+      Button("创建") {
+        player.createPlaylist(name)
+        page = .localPlaylist
+      }
     }
+    .confirmationDialog(
+      "删除此歌单？音乐文件不会被删除",
+      isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } })
+    ) {
+      Button("删除歌单", role: .destructive) {
+        if let deleting { player.deletePlaylist(deleting) }
+        deleting = nil
+      }
+    }
+  }
+  /// 导航行使用完整可点击区域，支持 VoiceOver
+  private func row(_ item: NativePage) -> some View {
+    Button {
+      page = item
+    } label: {
+      HStack(spacing: 12) {
+        Image(systemName: item.icon).frame(width: 20)
+        Text(item.rawValue).font(.system(size: 14))
+        Spacer()
+      }
+      .padding(.horizontal, 12).frame(height: 44).contentShape(Rectangle())
+      .background(
+        page == item ? Color.primary.opacity(0.075) : .clear, in: RoundedRectangle(cornerRadius: 8)
+      )
+      .overlay(alignment: .leading) {
+        if page == item { Capsule().frame(width: 3, height: 20).padding(.leading, 2) }
+      }
+    }.buttonStyle(.plain).accessibilityIdentifier("native.wide.nav." + item.rawValue)
+  }
+}
+
+@MainActor
+struct NativeTopbar: View {
+  @ObservedObject var catalog: NativeCatalogStore
+  let wide: Bool
+  let canBack: Bool
+  let back: () -> Void
+  let search: () -> Void
+  let settings: () -> Void
+  let account: () -> Void
+  @State private var searching = false
+  var body: some View {
+    NativeGlassGroup {
+      HStack(spacing: 12) {
+        NativeIconButton(icon: "chevron.left", title: "返回", action: back).disabled(!canBack)
+        if wide || searching {
+          HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+            TextField("搜索歌曲、歌手", text: $catalog.query).textFieldStyle(.plain)
+              .font(.system(size: 14)).onSubmit(search).accessibilityIdentifier(
+                "native.search.input")
+          }.padding(.horizontal, 14).frame(maxWidth: wide ? 280 : .infinity).frame(height: 40)
+            .nativeGlass(in: Capsule())
+        } else {
+          NativeIconButton(icon: "magnifyingglass", title: "搜索") {
+            searching = true
+            search()
+          }
+        }
+        Spacer(minLength: 8)
+        NativeIconButton(icon: "person.crop.circle", title: "平台账号", action: account)
+        NativeIconButton(icon: "gearshape", title: "全局设置", action: settings)
+          .accessibilityIdentifier("native.wide.settings")
+      }.padding(.horizontal, 12).frame(height: wide ? 64 : 56)
+    }
+  }
 }

@@ -5,3 +5,11 @@ Generated/
 build/
 *.xcresult/
 *.ipa
+Sources/SPlayerNativeUI/GeneratedSiriRuntime.swift
+Sources/SPlayerNativeUI/Resources/siri-background.js
+Sources/SPlayerNativeUI/Resources/siri-bootstrap.js
+
+Sources/SPlayerNativeUI/Resources/native-plugin.js
+
+Sources/SPlayerNativeUI/Resources/QuickJS-LICENSE.txt
+Sources/SPlayerNativeUI/Resources/SPlayer-LICENSE.txt

@@ -5,10 +5,8 @@ import subprocess
 from pathlib import Path
 
 EVIDENCE_FILES = {
-    "SPlayer-iPad-home": "native-ipad.png",
-    "SPlayer-iPad-library": "native-ipad-library.png",
-    "SPlayer-iPad-playing": "native-ipad-playing.png",
-    "SPlayer-iPad-accessibility": "native-ipad-accessibility.txt",
+    "native-wide-home": "native-ipad.png",
+    "native-wide-home-tree": "native-ipad-accessibility.txt",
 }
 
 
@@ -17,7 +15,10 @@ def read_result(bundle, reference=None):
     command = ["xcrun", "xcresulttool", "get", "--path", str(bundle), "--format", "json"]
     if reference is not None:
         command.extend(["--id", reference])
-    return json.loads(subprocess.check_output(command))
+    try:
+        return json.loads(subprocess.check_output(command))
+    except subprocess.CalledProcessError:
+        return json.loads(subprocess.check_output(command + ["--legacy"]))
 
 
 def export_evidence(bundle, directory):
@@ -36,14 +37,15 @@ def export_evidence(bundle, directory):
             payload = value.get("payloadRef", {}).get("id", {}).get("_value")
             if name in EVIDENCE_FILES and payload and name not in exported:
                 destination = directory / EVIDENCE_FILES[name]
-                subprocess.run(
-                    [
-                        "xcrun", "xcresulttool", "export", "--type", "file",
-                        "--path", str(bundle), "--id", payload,
-                        "--output-path", str(destination),
-                    ],
-                    check=True,
-                )
+                command = [
+                    "xcrun", "xcresulttool", "export", "--type", "file",
+                    "--path", str(bundle), "--id", payload,
+                    "--output-path", str(destination),
+                ]
+                try:
+                    subprocess.run(command, check=True)
+                except subprocess.CalledProcessError:
+                    subprocess.run(command + ["--legacy"], check=True)
                 exported.add(name)
                 print(f"已导出 {destination}", flush=True)
             for key, child in value.items():
@@ -66,7 +68,7 @@ def main():
     device = next(
         device
         for runtime, values in devices["devices"].items()
-        if "iOS-17-5" in runtime
+        if "iOS" in runtime
         for device in values
         if "iPad" in device["name"]
     )
@@ -77,8 +79,9 @@ def main():
             "-destination", "platform=iOS Simulator,id=" + device["udid"],
             "-derivedDataPath", "build/ipad", "-resultBundlePath", str(bundle),
             "-parallel-testing-enabled", "NO",
+            "-collect-test-diagnostics", "never",
             "-only-testing:SPlayerNativeUITests/NativeAppTests/testWideLayoutMatchesOriginalStructure",
-            "CODE_SIGNING_ALLOWED=NO", "test",
+            "CODE_SIGNING_ALLOWED=YES", "CODE_SIGN_IDENTITY=-", "test",
         ],
         check=False,
     )
