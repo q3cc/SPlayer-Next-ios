@@ -7,7 +7,10 @@ import type { LyricLine, LyricWord } from "../types/lyrics";
  */
 export const getWordText = (word?: LyricWord | null): string => {
   if (!word) return "";
-  return word.word + (word.endsWithSpace && !/\s$/.test(word.word) ? " " : "");
+  return (
+    word.word +
+    ("endsWithSpace" in word && word.endsWithSpace === true && !/\s$/.test(word.word) ? " " : "")
+  );
 };
 
 /**
@@ -17,7 +20,12 @@ export const getWordText = (word?: LyricWord | null): string => {
  */
 export const getWordRomaji = (word?: LyricWord | null): string => {
   if (!word?.romanWord) return "";
-  return word.romanWord + (word.endsWithSpace && !/\s$/.test(word.romanWord) ? " " : "");
+  return (
+    word.romanWord +
+    ("endsWithSpace" in word && word.endsWithSpace === true && !/\s$/.test(word.romanWord)
+      ? " "
+      : "")
+  );
 };
 
 /**

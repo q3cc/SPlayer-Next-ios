@@ -2,6 +2,8 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+  <key>NSLocalNetworkUsageDescription</key>
+  <string>允许你主动开启局域网控制，让同一网络的 AI 客户端和设备控制 SPlayer。</string>
   <key>AVInitialRouteSharingPolicy</key>
   <string>LongFormAudio</string>
   <key>NSSiriUsageDescription</key>

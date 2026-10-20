@@ -2,6 +2,8 @@
   "update": {
     "iosInstallHint": "After download, choose your signing tool in the share sheet. The IPA still needs signing before installation.",
     "iosReadyToast": "IPA downloaded. Open it in another app.",
+    "androidReadyToast": "Update downloaded. Ready to install.",
+    "androidInstallNow": "Install now",
     "openInApp": "Open in another app",
     "updateNow": "Update now",
     "dialogTitle": "New Version Available",
@@ -11,9 +13,10 @@
     "installNow": "Restart & Install",
     "goDownload": "Go to Download",
     "goStore": "Update in Store",
-    "upToDate": "You're on the latest version",
+    "upToDate": "No newer version is available on this channel",
     "readyToast": "Update ready — restart to install",
-    "failed": "Update failed, please try again later"
+    "failed": "Update failed, please try again later",
+    "installing": "Starting installer"
   },
   "onboarding": {
     "next": "Next",
@@ -52,7 +55,10 @@
     },
     "library": {
       "title": "Local Music Library",
-      "subtitle": "Add folders to scan and SPlayer-Next will index them automatically. You can add more later."
+      "subtitle": "Add folders to scan and SPlayer-Next will index them automatically. You can add more later.",
+      "mobileSubtitle": "Choose songs to add to your library. You can select multiple files or add more later.",
+      "addSongs": "Add Songs",
+      "songsAdded": "Added {count} songs"
     },
     "streaming": {
       "title": "Streaming Servers",
@@ -128,7 +134,8 @@
     "totalSongs": "{count} songs",
     "totalAlbums": "{count} albums",
     "totalArtists": "{count} artists",
-    "totalPlaylists": "{count} playlists"
+    "totalPlaylists": "{count} playlists",
+    "disabled": "Disabled"
   },
   "comments": {
     "name": "Song Comments",
@@ -234,6 +241,7 @@
     }
   },
   "recognition": {
+    "broadcastHint": "Start broadcasting and switch to your music app. Listen for up to 2 minutes; stop and notify on a match if notifications are allowed. No video is saved.",
     "title": "Music Recognition",
     "entry": "Recognize",
     "description": "Identify the music currently playing",
@@ -248,6 +256,7 @@
       "microphone": "Microphone"
     },
     "phase": {
+      "waiting": "Start broadcasting in the system dialog…",
       "capturing": "Listening…",
       "fingerprinting": "Generating fingerprint…",
       "matching": "Matching library…"
@@ -405,7 +414,9 @@
       "albums": "Albums",
       "artists": "Artists",
       "playlists": "Playlists"
-    }
+    },
+    "plugins": "Plugins",
+    "pluginSource": "Select source"
   },
   "streaming": {
     "hint": "Connect to Media Source",
@@ -427,7 +438,8 @@
       "addHint": "Click the button at the top right to add one",
       "goToSettings": "Go to settings",
       "notConnected": "Not connected to any server",
-      "noResults": "No results"
+      "noResults": "No results",
+      "noFavorites": "No favorite songs on this server"
     },
     "server": {
       "type": "Type",
@@ -462,7 +474,8 @@
     },
     "actions": {
       "settings": "Streaming settings"
-    }
+    },
+    "favoritesOnly": "Favorites only"
   },
   "player": {
     "appleMusic": {
@@ -512,6 +525,11 @@
       "title": "Lyric Offset",
       "hint": "Positive values advance lyrics, in milliseconds"
     },
+    "externalLyric": {
+      "pick": "Add external lyrics",
+      "loaded": "External lyrics loaded",
+      "failed": "Could not read or parse external lyrics"
+    },
     "lyricCredit": "Lyrics by",
     "copyLyric": {
       "title": "Copy Lyrics",
@@ -540,7 +558,8 @@
     "shuffleMode": {
       "on": "Shuffle on",
       "off": "Shuffle off"
-    }
+    },
+    "transitioning": "Transition"
   },
   "songList": {
     "title": "Title",
@@ -579,7 +598,8 @@
       "more": "More",
       "copyTitle": "Copy Title",
       "copyId": "Copy Song ID",
-      "copyUrl": "Share Song Link"
+      "copyUrl": "Share Song Link",
+      "copyFile": "Copy Song File"
     },
     "batch": {
       "manage": "Batch Manage",
@@ -601,7 +621,7 @@
     }
   },
   "quality": {
-    "details": "Audio Quality",
+    "details": "Audio Details",
     "codec": "Codec",
     "sampleRate": "Sample Rate",
     "bitDepth": "Bit Depth",
@@ -609,7 +629,14 @@
     "channels": "Channels",
     "stereo": "Stereo",
     "mono": "Mono",
-    "multiChannel": "Multi-channel"
+    "multiChannel": "Multi-channel",
+    "outputInfo": "Output Information",
+    "outputSection": "Output Information",
+    "outputMode": "Output Mode",
+    "dspSection": "Audio Processing",
+    "tempoPitch": "Speed & Pitch",
+    "limiter": "Output Limiter",
+    "resampling": "Resampling"
   },
   "playlist": {
     "title": "Playlist",
@@ -651,9 +678,6 @@
       "button": "Upload",
       "title": "Upload to Cloud",
       "selectFile": "Select files",
-      "pickFailed": "Could not select or read files. Make sure they are downloaded to this device and try again.",
-      "mobileHint": "Keep the app open until uploads finish. Failed uploads can be retried.",
-      "queueFull": "Up to 200 songs can be queued. Wait for some uploads to finish before adding more.",
       "emptyHint": "Click Select files to add songs",
       "clearFinished": "Clear finished",
       "instant": "Instant",
@@ -696,6 +720,7 @@
     "deleteConfirmTitle": "Delete downloaded file",
     "deleteConfirmContent": "This permanently deletes the song file from disk and cannot be undone. Delete it?",
     "tagWarning": "Failed to write tags; file saved",
+    "mediaWarning": "Song downloaded, but the cover or lyrics could not be saved",
     "resolveFailed": "Cannot download: {title}",
     "alreadyQueued": "Already in the download queue",
     "alreadyDownloaded": "Already downloaded",
@@ -740,10 +765,13 @@
     "title": "Library",
     "empty": "Library is empty",
     "emptyHint": "Add a music folder to get started",
+    "emptySongsHint": "Choose songs to get started",
     "noLocalData": "No local content",
     "noLocalDataHint": "Add songs to your library to see them aggregated here",
     "goLibrary": "Go to Library",
     "addFolder": "Add Folder",
+    "addSongs": "Add Songs",
+    "songsAdded": "Added {count} songs",
     "scanAll": "Full Scan",
     "scanning": "Scanning...",
     "scanProgress": "Scanning {scanned}/{total}",
@@ -754,13 +782,20 @@
     "nestedHint": "Folder is nested with an existing one; skipped"
   },
   "settings": {
+    "mobileControlHint": "Keep SPlayer in the foreground. LAN control uses HTTP: enable only on trusted networks and keep the access key private. REST control is supported; WebSocket push is not available.",
+    "mobileControlCopy": "Copy external control connection settings",
+    "mobileMcpHint": "Keep SPlayer in the foreground. To connect from a computer, enable LAN access and use the phone address shown here. HTTP is unencrypted: use trusted networks only and keep the key private.",
+    "mcpAllowLan": {
+      "label": "Allow AI clients on the local network",
+      "description": "Use only on trusted networks and keep SPlayer in the foreground. HTTP is unencrypted; keep the access key private."
+    },
     "siriSettings": {
       "label": "Siri voice control",
       "description": "Enable voice control and configure the music source, search scope, and song selection."
     },
     "diagnosticLogging": {
       "label": "Diagnostic logging",
-      "description": "Enable when troubleshooting. Takes effect immediately. Logs are in Files → SPlayer Next/logs. Disabling stops recording and keeps existing files."
+      "description": "Enable when troubleshooting. On Android, share logs from About. On iOS, find them in Files → SPlayer Next/logs. Existing logs remain after disabling."
     },
     "title": "Settings",
     "subtitle": "Tailor your experience",
@@ -837,18 +872,27 @@
       "backupReset": "Backup & Reset",
       "debug": "Debug",
       "preset": "OCD Settings",
-      "envInfo": "Environment Info"
+      "envInfo": "Environment Info",
+      "playbackTransition": "Playback Transition"
     },
     "about": {
       "checkUpdate": "Check for Updates",
       "checking": "Checking",
       "newVersion": "Update Available",
       "openLogs": "Open Logs",
+      "shareLogs": "Share Logs",
       "officialSite": "Official Site",
+      "iosContributors": "iOS Version Contributors",
+      "originalContributors": "Original Project Contributors",
       "showMore": "More Contributors",
       "collapse": "Collapse",
       "commit": "Commit",
-      "date": "Date"
+      "date": "Date",
+      "dependencies": {
+        "lyrics": "Apple Music-style lyrics display library",
+        "neteaseApi": "NCM API backup and enhancements"
+      },
+      "originalProject": "Original project"
     },
     "storeVersion": "Store",
     "language": {
@@ -927,7 +971,7 @@
     },
     "preloadNextTrack": {
       "label": "Preload next track",
-      "description": "Fetch the next track's playback info in advance, which may increase network usage"
+      "description": "Cache and decode the next track in advance, which may increase network usage"
     },
     "outputDevice": {
       "label": "Output Device",
@@ -1097,7 +1141,8 @@
         "closePlayer": "Close player view",
         "togglePlaylist": "Show / hide playlist",
         "openSearch": "Open search",
-        "searchInPage": "Search in page"
+        "searchInPage": "Search in page",
+        "openSettings": "Open settings"
       }
     },
     "engine": {
@@ -1116,7 +1161,13 @@
       "testChannelTitle": "Switch to a Test Channel",
       "testChannelContent": "Beta and Alpha channels receive test releases early. Alpha releases may be highly unstable. Switch anyway?",
       "kugouLoginVersionTitle": "Switch KG Login Version",
-      "kugouLoginVersionContent": "After switching, the current credentials will not match the new version. You must log out and scan the QR code again, or VIP privileges and high-quality playback will stop working. Switch anyway?"
+      "kugouLoginVersionContent": "After switching, the current credentials will not match the new version. You must log out and scan the QR code again, or VIP privileges and high-quality playback will stop working. Switch anyway?",
+      "enableTitle": "Confirm enabling",
+      "scrobbleRiskContent": "Scrobbling is still experimental. Reported listening records are not guaranteed to count as valid plays, and the associated risks are not yet fully understood.\nEnabling it may trigger account risk controls or other account security issues. Consider the potential risks carefully before enabling this feature.",
+      "exclusiveModeTitle": "Switch to Exclusive Mode",
+      "exclusiveModeContent": "Exclusive mode bypasses the system mixer and prefers the source sample rate and bit depth, making it suitable for external DACs / Hi-Fi gear. Player volume, EQ and other processing still apply, so bit-perfect output is not guaranteed. Other apps may be unable to play audio while exclusive. If exclusive mode is unavailable, shared mode will be attempted; it may also fail if another app holds the device exclusively. Switch anyway?",
+      "preloadCacheTitle": "Enable the caches required for preloading?",
+      "preloadCacheContent": "Preloading requires caching the next track's audio. Continuing will enable both song caching and streaming caching, which may increase network traffic and disk usage"
     },
     "useAMSpring": {
       "label": "Spring Animation Debug Switch",
@@ -1184,11 +1235,11 @@
     },
     "adaptiveFontSize": {
       "label": "Adaptive Font Size",
-      "description": "Auto-adjust lyric font size based on window size"
+      "description": "Adjust lyric size with window height"
     },
     "fontSize": {
       "label": "Font Size",
-      "description": "Effective when adaptive is off"
+      "description": "Main lyric text size"
     },
     "fontWeight": {
       "label": "Font Weight",
@@ -1286,7 +1337,7 @@
     },
     "inactiveAlpha": {
       "label": "Inactive Opacity",
-      "description": "Base opacity for non-active lines"
+      "description": "Base opacity for non-active lines, also applied to translations and romanizations"
     },
     "lyricPipDoubleLine": {
       "label": "Two lyric lines",
@@ -1789,11 +1840,12 @@
     },
     "updateChannel": {
       "label": "Update Channel",
-      "description": "Choose Stable, Beta preview, or Alpha experimental updates",
+      "description": "Choose which releases to receive. Switching channels never automatically downgrades the app.",
       "stable": "Stable",
       "beta": "Beta Preview",
       "alpha": "Alpha Experimental",
-      "action": "Action Build"
+      "action": "Action Build",
+      "nightly": "Nightly Build"
     },
     "checkUpdate": {
       "label": "Check for Updates",
@@ -1846,12 +1898,12 @@
     },
     "neteaseScrobbleEnabled": {
       "label": "Enable scrobble",
-      "description": "Automatically report listening records to NCM after a track has played long enough"
+      "description": "Sync NCM listening records using actual playback time"
     },
     "neteaseScrobbleMode": {
       "label": "NCM scrobble method",
-      "description": "Choose which reporting interface is used for automatic NCM listening records",
-      "legacy": "Legacy log API",
+      "description": "Choose the reporting protocol for syncing listening records",
+      "legacy": "Web log API",
       "ncbl": "NCBL encrypted API"
     },
     "orpheusProtocol": {
@@ -2013,7 +2065,7 @@
       "marketError": "Failed to load",
       "publishHint": "Made a plugin?",
       "publishAction": "Publish",
-      "importSuccess": "Plugin imported",
+      "importSuccess": "Imported. Check the loading status in the list.",
       "importFailed": "Failed to import plugin",
       "empty": "No plugins installed",
       "emptyHint": "Install a plugin from local file or URL to enable extended features",
@@ -2028,6 +2080,7 @@
       "pendingUpdate": "Update",
       "noChangelog": "No release notes",
       "openUpdateUrl": "Open update page",
+      "manualUpdateHint": "Open the update link, download the new script, and import it again.",
       "checkUpdate": "Check update",
       "checkUpdateFailed": "Update check failed",
       "updateFound": "New version available",
@@ -2036,11 +2089,11 @@
       "updateSuccess": "Plugin updated",
       "updateFailed": "Update failed, use \"Open update page\" to install manually",
       "status": {
-        "ready": "Ready",
+        "ready": "Available",
         "loading": "Loading",
-        "error": "Error",
+        "error": "Failed to load",
         "disabled": "Disabled",
-        "unloaded": "Unloaded"
+        "unloaded": "Imported"
       },
       "sectionSource": "Source Plugins",
       "sectionControl": "Control Plugins",
@@ -2077,7 +2130,15 @@
         },
         "ui": {
           "label": "Interface",
-          "desc": "Can extend or modify the app interface"
+          "desc": "Can add song menus and send system notifications"
+        },
+        "library": {
+          "label": "Library",
+          "desc": "Can search the local library and read track metadata"
+        },
+        "api": {
+          "label": "Platform APIs",
+          "desc": "Call music platform APIs using the current session"
         }
       }
     },
@@ -2116,8 +2177,7 @@
       "switchConfirmDesc": "Current cover / artist / background caches will be cleared before the switch, and the new location must be an empty folder. Database-backed lyric caches are unaffected.",
       "switchConfirmOk": "Pick Folder",
       "resetConfirmTitle": "Reset to default cache directory?",
-      "resetConfirmDesc": "Current file caches will be cleared before resetting.",
-      "mobileHint": "Fully cached songs can play offline from their playlists or queue. A different quality requires a new cache. iOS may reclaim cache space; use downloads to keep songs. Clearing cache does not delete downloads, but may interrupt cached playback."
+      "resetConfirmDesc": "Current file caches will be cleared before resetting."
     },
     "cacheUsage": {
       "label": "Usage",
@@ -2152,7 +2212,8 @@
     "downloadDir": {
       "label": "Download Folder",
       "change": "Change",
-      "mobile": "Files → On My iPhone / iPad → SPlayer → Downloads"
+      "mobile": "Files → On My iPhone / iPad → SPlayer → Downloads",
+      "android": "Songs are saved in the app's Downloads folder"
     },
     "downloadQuality": {
       "label": "Download Quality",
@@ -2227,6 +2288,97 @@
       "button": "Clear All",
       "confirmTitle": "Clear all database caches?",
       "confirmDesc": "All database caches above will be cleared. This cannot be undone."
+    },
+    "skipKeywordsSongs": {
+      "label": "Skip Songs by Keywords",
+      "description": "Automatically skip tracks when title or artist matches specified keywords",
+      "button": "Manage",
+      "enable": "Enable Skip by Keywords",
+      "enableDesc": "Automatically skip to next track when keywords match"
+    },
+    "skipKeywordsRules": {
+      "label": "Keyword List",
+      "description": "Customize song keywords to skip",
+      "button": "Manage",
+      "hint": "Tracks containing these keywords in title or artist will be skipped",
+      "placeholder": "Enter keyword",
+      "add": "Add",
+      "clear": "Clear list",
+      "empty": "No keywords configured",
+      "duplicate": "Keyword already exists"
+    },
+    "transitionMode": {
+      "label": "Transition mode",
+      "description": "Adjust how songs sound when they change",
+      "none": "No transition",
+      "crossfade": "Crossfade"
+    },
+    "transitionPreference": {
+      "label": "Handoff preference",
+      "description": "Adjust when the transition starts and how long songs overlap; Eager starts earlier and lasts longer",
+      "conservative": "Conservative",
+      "standard": "Standard",
+      "eager": "Eager"
+    },
+    "rememberDeviceVolume": {
+      "label": "Remember Device Volume",
+      "description": "Independently save and restore volume for each audio output device"
+    },
+    "audioOutputMode": {
+      "label": "Audio Output Mode",
+      "description": "Select the current Windows WASAPI audio output mode",
+      "shared": "Shared Mode",
+      "exclusive": "WASAPI Exclusive Mode",
+      "fallback": {
+        "deviceBusy": "The device could not be opened exclusively and has fallen back to shared mode",
+        "formatUnsupported": "The device does not support the required exclusive-mode format, falling back to shared mode",
+        "unavailable": "Exclusive mode is currently unavailable, falling back to shared mode"
+      }
+    },
+    "translationFontSizeFollowMain": {
+      "label": "Follow Main Lyric Font Size",
+      "description": "Use half the main lyric font size"
+    },
+    "translationFontSize": {
+      "label": "Translation Font Size",
+      "description": "Used when following main size is off"
+    },
+    "keepScreenAwake": {
+      "label": "Keep screen awake during playback",
+      "description": "Only while Now Playing is expanded"
+    },
+    "lyricAlignment": {
+      "label": "Lyric Alignment",
+      "description": "Automatically place singers on opposite sides, or align all lines left, center, or right",
+      "auto": "Auto",
+      "left": "Left",
+      "center": "Center",
+      "right": "Right"
+    },
+    "playerBgRenderer": {
+      "label": "Render Engine",
+      "description": "Select the rendering engine for fluid animation background",
+      "mesh": "Mesh Gradient Renderer",
+      "isolation": "Isolation Renderer",
+      "pixi": "PixiJS Renderer"
+    },
+    "lastfmAccount": {
+      "label": "Last.fm Account"
+    },
+    "qmAccount": {
+      "label": "QQ Music Account"
+    },
+    "kgAccount": {
+      "label": "Kugou Music Account"
+    },
+    "streamingServerList": {
+      "label": "Media Source Management"
+    },
+    "pluginImport": {
+      "label": "Import Plugins"
+    },
+    "pluginList": {
+      "label": "Installed Plugins"
     }
   },
   "collection": {
@@ -2307,6 +2459,11 @@
     "artists": "Artists",
     "totalDuration": "Total Duration",
     "totalSize": "Total Size",
+    "listenedSongs": "Songs Played",
+    "listenedAlbums": "Albums Played",
+    "listenedArtists": "Artists Played",
+    "totalListened": "Time Listened",
+    "playCount": "Total Plays",
     "topSongs": "Most Played Songs",
     "topAlbums": "Most Played Albums",
     "topArtists": "Most Played Artists",
@@ -2340,7 +2497,7 @@
     "NETWORK_ERROR": "Failed to reach audio source, check network or try another",
     "NETWORK_TIMEOUT": "Audio source timed out, check network or try another",
     "URL_RESOLVE_FAILED": "Failed to get playback URL",
-    "NO_PLUGIN_AVAILABLE": "No plugin available for this platform",
+    "NO_PLUGIN_AVAILABLE": "No music source plugin available",
     "NETEASE_LOGIN_EXPIRED": "Login expired; switched to guest mode",
     "NETEASE_VIP_REQUIRED": "This track requires a membership or separate purchase",
     "NETEASE_TRIAL_DISABLED": "Only a trial is available; enable trial playback in settings",
@@ -2352,7 +2509,8 @@
     "TAG_READ_FAILED": "Failed to read tags",
     "TAG_WRITE_FAILED": "Failed to write tags",
     "MAX_CONSECUTIVE_FAILURES": "Too many consecutive playback failures",
-    "UNKNOWN": "Operation failed"
+    "UNKNOWN": "Operation failed",
+    "PERMISSION_DENIED": "This account does not have permission to perform this action"
   },
   "tagEditor": {
     "title": "Edit Metadata",

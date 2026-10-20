@@ -12,6 +12,28 @@ final class IpaUpdatePlugin: Plugin {
   private var downloadTask: IpaDownload?
   private var downloaded: URL?
 
+  /** 分享完成后删除临时 IPA；用户取消分享时保留文件以便重试。 */
+  private func cleanupDownloaded(_ file: URL) {
+    guard downloaded?.path == file.path else { return }
+    try? FileManager.default.removeItem(at: file.deletingLastPathComponent())
+    downloaded = nil
+    cleanupUpdateCacheRoot(file.deletingLastPathComponent().deletingLastPathComponent())
+  }
+
+  /** 删除上次中断或已失效的更新目录，避免缓存长期占用安装包空间。 */
+  private func cleanupUpdateCacheRoot(_ root: URL, keeping: URL? = nil) {
+    let entries = (try? FileManager.default.contentsOfDirectory(
+      at: root, includingPropertiesForKeys: [.isDirectoryKey])) ?? []
+    for entry in entries where entry.path != keeping?.path {
+      guard (try? entry.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true else { continue }
+      try? FileManager.default.removeItem(at: entry)
+    }
+    if keeping == nil,
+       (try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil).isEmpty) == true {
+      try? FileManager.default.removeItem(at: root)
+    }
+  }
+
   @objc func download(_ invoke: Invoke) throws {
     let request = try invoke.parseArgs(DownloadRequest.self)
     DispatchQueue.main.async {
@@ -22,6 +44,7 @@ final class IpaUpdatePlugin: Plugin {
       let root = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
         .appendingPathComponent("IpaUpdates", isDirectory: true)
       let folder = root.appendingPathComponent(UUID().uuidString, isDirectory: true)
+      self.cleanupUpdateCacheRoot(root)
       let task = IpaDownload(url: url, size: request.size, digest: request.digest, directory: folder,
         progress: { received, total, speed in
           DispatchQueue.main.async {
@@ -79,6 +102,10 @@ final class IpaUpdatePlugin: Plugin {
         popover.sourceView = presenter.view
         popover.sourceRect = CGRect(x: presenter.view.bounds.midX, y: presenter.view.bounds.midY, width: 1, height: 1)
         popover.permittedArrowDirections = []
+      }
+      sheet.completionWithItemsHandler = { [weak self] _, completed, _, _ in
+        guard completed else { return }
+        self?.cleanupDownloaded(file)
       }
       presenter.present(sheet, animated: true) {
         guard sheet.presentingViewController != nil else {

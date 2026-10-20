@@ -97,6 +97,24 @@ describe("lyric loader", () => {
     window.api = mockWindowApi;
   });
 
+  it("已下载的在线歌曲直接显示本地歌词，不发网络查询", async () => {
+    const media = useMediaStore();
+    media.track = createTrack("offline");
+    mockWindowApi.player.readLyricFile.mockResolvedValueOnce({
+      success: true,
+      data: "[00:01.00]离线歌词",
+    } as never);
+    await loadForTrack({
+      downloaded: true,
+      quality: { sampleRate: 44100, channels: 2, bitsPerSample: 16, bitRate: 320000, codec: "mp3" },
+      externalLyrics: [{ format: "lrc", path: "/Documents/Downloads/song.mp3.lrc" }],
+    });
+    expect(media.parsedLyric[0].words.map((word) => word.word).join("")).toBe("离线歌词");
+    expect(mockResolveOnlineByPreference).not.toHaveBeenCalled();
+    expect(mockResolveTTMLOverlay).not.toHaveBeenCalled();
+    expect(mockResolvePluginLyric).not.toHaveBeenCalled();
+  });
+
   it("在线多平台并发查询时，先到达的候选歌词立即上屏展示", async () => {
     const media = useMediaStore();
     const track = createTrack("song_1");
@@ -124,6 +142,22 @@ describe("lyric loader", () => {
 
     await loadForTrack(null);
     expect(media.activeLyric?.format).toBe("lrc");
+  });
+
+  it("外置歌词读取失败时回退到内嵌歌词", async () => {
+    const media = useMediaStore();
+    media.track = { ...createTrack("embedded", "local"), path: "/music/embedded.mp3" };
+    media.detail = {
+      quality: { sampleRate: 0, channels: 2, bitsPerSample: 0, bitRate: 0, codec: "MP3" },
+      embeddedLyric: "[00:01.00]内嵌歌词",
+      externalLyrics: [{ format: "lrc", path: "/music/embedded.lrc" }],
+    };
+    mockResolveOnlineByPreference.mockResolvedValue(null);
+
+    await loadForTrack(media.detail);
+
+    expect(media.activeLyric).toEqual({ source: "embedded", format: "lrc" });
+    expect(media.parsedLyric[0]?.words[0]?.word).toContain("内嵌歌词");
   });
 
   it("防降级保护：已展示高优先级逐词格式时，迟到的普通文本 LRC 无法覆盖降级", async () => {
@@ -429,25 +463,25 @@ describe("lyric loader", () => {
     expect(media.parsedLyric[0].words[0].word).toContain("歌曲B的歌词");
   });
 
-  it("偏好指定平台：当前展示高优先级 QRC 时，切换偏好为酷狗 (KRC) 必须成功替换展示", async () => {
+  it("偏好指定平台：当前展示高优先级 QRC 时，切换偏好为KG (KRC) 必须成功替换展示", async () => {
     const settings = useSettingsStore();
     const media = useMediaStore();
     const track = createTrack("song_pref_switch");
     media.track = track;
 
-    // 先加载 QQ 音乐的 QRC
+    // 先加载 QM的 QRC
     mockResolveOnlineByPreference.mockResolvedValue({
       source: { source: "online", format: "qrc", platform: "qqmusic" },
-      input: { content: "[1000,1000]QQ音乐QRC歌词(1000,1000)" },
+      input: { content: "[1000,1000]QMQRC歌词(1000,1000)" },
     });
     await loadForTrack(null);
     expect(media.activeLyric?.format).toBe("qrc");
     expect(media.activeLyric?.platform).toBe("qqmusic");
 
-    // 用户在播放器中点击切换偏好为酷狗音乐 (KRC)
+    // 用户在播放器中点击切换偏好为KG (KRC)
     mockResolveOnlineByPreference.mockResolvedValue({
       source: { source: "online", format: "krc", platform: "kugou" },
-      input: { content: "[00:01.000]<0,1000>酷狗音乐KRC歌词" },
+      input: { content: "[00:01.000]<0,1000>KGKRC歌词" },
     });
     settings.lyric.lyricSourcePreference = "kugou";
 
@@ -455,7 +489,7 @@ describe("lyric loader", () => {
       expect(media.activeLyric?.format).toBe("krc");
     });
     expect(media.activeLyric?.platform).toBe("kugou");
-    expect(media.parsedLyric[0].words[0].word).toContain("酷狗音乐KRC歌词");
+    expect(media.parsedLyric[0].words[0].word).toContain("KGKRC歌词");
   });
 
   it("显式平台指令：显式指定平台时即便仅有普通 LRC 也强制生效展示", async () => {
@@ -473,7 +507,7 @@ describe("lyric loader", () => {
 
     mockResolveOnlineByPreference.mockResolvedValue({
       source: { source: "online", format: "lrc", platform: "netease" },
-      input: { content: "[00:01.00]网易云普通LRC歌词" },
+      input: { content: "[00:01.00]NCM普通LRC歌词" },
     });
     settings.lyric.lyricSourcePreference = "netease";
 
@@ -481,6 +515,6 @@ describe("lyric loader", () => {
       expect(media.activeLyric?.format).toBe("lrc");
     });
     expect(media.activeLyric?.platform).toBe("netease");
-    expect(media.parsedLyric[0].words[0].word).toContain("网易云普通LRC歌词");
+    expect(media.parsedLyric[0].words[0].word).toContain("NCM普通LRC歌词");
   });
 });

@@ -16,9 +16,7 @@ import AirPlayControl from "@/components/player/AirPlayControl.vue";
 import PlaylistPickerDialog from "@/components/modals/PlaylistPickerDialog.vue";
 import { useWindowControls } from "@/composables/useWindowControls";
 import * as player from "@/core/player";
-import { isIOS } from "@/utils/config";
-import IconFavorite from "~icons/material-symbols/favorite-rounded";
-import IconFavoriteOutline from "~icons/material-symbols/favorite-outline-rounded";
+import { isMobile } from "@/utils/config";
 import IconLucideListPlus from "~icons/lucide/list-plus";
 import IconLucideDownload from "~icons/lucide/download";
 
@@ -47,9 +45,12 @@ const { snapToNearestLyric } = useProgressLyric();
 
 const lyricRef = ref<InstanceType<typeof Lyrics>>();
 const lyricMounted = ref(false);
+const playerVisible = ref(false);
+const visualizerMounted = ref(false);
 const initialLyricTimeMs = ref(0);
+let visualizerMountFrame = 0;
 
-/** 加载中的歌曲使用队列当前项兜底，避免全屏播放器出现空白。 */
+/** 加载中的歌曲使用队列当前项兜底，避免全屏播放器出现空白 */
 const displayTrack = computed(() => media.track ?? status.currentTrack);
 const hasLyric = computed(() => media.parsedLyric.length > 0 || media.lyricLoading);
 const hasTrack = computed(() => !!displayTrack.value);
@@ -66,8 +67,17 @@ const onAfterEnter = () => {
   initialLyricTimeMs.value = getCurrentTime() + status.lyricOffsetMs;
   lyricMounted.value = true;
   nextTick(() => {
+    if (!isPlayerExpanded.value) return;
+    lyricRef.value?.setCurrentTime(getCurrentTime() + status.lyricOffsetMs);
     lyricRef.value?.resume();
     startTick();
+    // 将 WebGL 和频谱创建与歌词 DOM 测量错开
+    visualizerMountFrame = requestAnimationFrame(() => {
+      visualizerMountFrame = requestAnimationFrame(() => {
+        visualizerMountFrame = 0;
+        if (isPlayerExpanded.value) visualizerMounted.value = true;
+      });
+    });
   });
 };
 
@@ -78,14 +88,21 @@ onMounted(() => {
 
 /** 收起前 */
 const onBeforeLeave = () => {
+  cancelAnimationFrame(visualizerMountFrame);
+  visualizerMountFrame = 0;
   lyricRef.value?.freeze();
   stopTick();
 };
 
 /** 收起后 */
 const onAfterLeave = () => {
+  playerVisible.value = false;
   lyricMounted.value = false;
+  cancelDismiss();
+  visualizerMounted.value = false;
 };
+
+onBeforeUnmount(() => cancelAnimationFrame(visualizerMountFrame));
 
 // 重新挂载时，刷新初始时间
 watch(hasLyric, (value) => {
@@ -131,14 +148,83 @@ const lyricFontSize = computed(() =>
     : `${settings.lyric.fontSize}px`,
 );
 
+const lyricSubFontSize = computed(() => {
+  if (settings.lyric.translationFontSizeFollowMain) return "max(0.5em, 12px)";
+  return settings.lyric.adaptiveFontSize
+    ? `max(12px, calc(${settings.lyric.translationFontSize} / 1080 * 100vh))`
+    : `${settings.lyric.translationFontSize}px`;
+});
+
 const { immersive, onActivity, onPointerDown, onPointerUp } = useImmersiveMode(isPlayerExpanded);
 
 const { isFullscreen, toggleFullscreen } = useWindowControls();
+
+const dragOffset = ref(0);
+const dragging = ref(false);
+let dismissGesture: { id: number; x: number; y: number; time: number } | undefined;
+let suppressHeaderClick = false;
+
+/** 顶部下滑收起手势，锁定为垂直方向后才接管触摸。 */
+const startDismiss = (event: PointerEvent): void => {
+  if (event.pointerType !== "touch" || !event.isPrimary || event.button !== 0) return;
+  dismissGesture = {
+    id: event.pointerId,
+    x: event.clientX,
+    y: event.clientY,
+    time: event.timeStamp,
+  };
+  suppressHeaderClick = false;
+};
+
+const moveDismiss = (event: PointerEvent): void => {
+  const gesture = dismissGesture;
+  if (!gesture || gesture.id !== event.pointerId) return;
+  const dx = event.clientX - gesture.x;
+  const dy = event.clientY - gesture.y;
+  if (!dragging.value) {
+    if (Math.max(Math.abs(dx), Math.abs(dy)) < 8) return;
+    suppressHeaderClick = true;
+    if (dy <= 0 || Math.abs(dx) > dy) {
+      dismissGesture = undefined;
+      return;
+    }
+    dragging.value = true;
+    (event.currentTarget as HTMLElement).setPointerCapture(event.pointerId);
+  }
+  dragOffset.value = Math.max(0, dy);
+};
+
+const endDismiss = (event: PointerEvent): void => {
+  const gesture = dismissGesture;
+  if (!gesture || gesture.id !== event.pointerId) return;
+  const distance = Math.max(0, event.clientY - gesture.y);
+  const velocity = distance / Math.max(1, event.timeStamp - gesture.time);
+  const shouldClose = dragging.value && (distance >= 80 || (distance >= 24 && velocity >= 0.6));
+  dismissGesture = undefined;
+  dragging.value = false;
+  if (shouldClose) collapse();
+  else dragOffset.value = 0;
+};
+
+const cancelDismiss = (): void => {
+  dismissGesture = undefined;
+  dragging.value = false;
+  dragOffset.value = 0;
+};
+
+const guardHeaderClick = (event: MouseEvent): void => {
+  if (suppressHeaderClick && event.detail !== 0) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+  suppressHeaderClick = false;
+};
 
 const canDownload = computed(
   () =>
     !!displayTrack.value &&
     displayTrack.value.source !== "local" &&
+    displayTrack.value.source !== "plugin" &&
     settings.system.download.enabled,
 );
 
@@ -188,19 +274,27 @@ const showComments = (): void => {
 <template>
   <Teleport to="body">
     <Transition
+      appear
       enter-active-class="transition-transform duration-500 ease-[cubic-bezier(0.7,0,0.3,1)]"
       leave-active-class="transition-transform duration-500 ease-[cubic-bezier(0.7,0,0.3,1)]"
       enter-from-class="translate-y-full"
       leave-to-class="translate-y-full"
       @after-enter="onAfterEnter"
+      @before-enter="playerVisible = true"
       @before-leave="onBeforeLeave"
       @after-leave="onAfterLeave"
     >
       <div
         v-show="isPlayerExpanded"
         class="full-player fixed inset-0 z-200 overflow-hidden text-cover"
-        :class="immersive ? 'cursor-none [&_*]:!cursor-none' : ''"
-        style="--lp-color: rgb(var(--s-cover))"
+        :class="[
+          immersive ? 'cursor-none [&_*]:!cursor-none' : '',
+          dragging ? 'full-player-dragging' : '',
+        ]"
+        :style="{
+          '--lp-color': 'rgb(var(--s-cover))',
+          '--full-player-drag-offset': `${dragOffset}px`,
+        }"
         @pointerdown.capture="onPointerDown"
         @pointerup.capture="onPointerUp"
         @pointercancel.capture="onPointerUp"
@@ -209,14 +303,14 @@ const showComments = (): void => {
         @wheel.capture.passive="onActivity"
       >
         <!-- 背景 -->
-        <PlayerBackground />
+        <PlayerBackground :visible="playerVisible" :active="visualizerMounted" />
         <!-- 全屏封面 -->
         <div v-if="fullscreenCover" class="absolute inset-y-0 left-0 w-[60%]">
           <PlayerCover fullscreen />
         </div>
         <!-- 底部频谱 -->
         <BottomSpectrum
-          v-if="isPlayerExpanded && settings.player.enableSpectrum"
+          v-if="isPlayerExpanded && visualizerMounted && settings.player.enableSpectrum"
           :show="isPlaying && immersive"
         />
         <!-- 顶/底栏渐变遮罩（全屏封面模式） -->
@@ -232,11 +326,17 @@ const showComments = (): void => {
         />
         <!-- 顶栏 -->
         <div
-          class="absolute top-0 inset-x-0 h-14 z-10 app-drag-region transition-opacity duration-400 flex items-center justify-between px-3"
+          class="full-player-header absolute top-0 inset-x-0 h-14 z-10 app-drag-region transition-opacity duration-400 flex items-center justify-between px-3"
           :class="[
             immersive ? 'opacity-0 pointer-events-none' : 'opacity-100',
-            useMobileLayout || isIOS ? 'safe-full-player-header' : '',
+            useMobileLayout || isMobile ? 'safe-full-player-header' : '',
           ]"
+          @pointerdown="startDismiss"
+          @pointermove="moveDismiss"
+          @pointerup="endDismiss"
+          @pointercancel="cancelDismiss"
+          @lostpointercapture="dismissGesture && cancelDismiss()"
+          @click.capture="guardHeaderClick"
         >
           <div class="app-no-drag flex items-center gap-2">
             <SButton
@@ -244,7 +344,7 @@ const showComments = (): void => {
               type="cover"
               variant="ghost"
               circle
-              :size="40"
+              :size="44"
               @click="collapse"
             >
               <template #icon><IconLucideChevronDown /></template>
@@ -253,7 +353,7 @@ const showComments = (): void => {
               type="cover"
               variant="ghost"
               circle
-              :size="40"
+              :size="44"
               :disabled="lyricToggleDisabled"
               :class="lyricToggleActive ? 'opacity-100' : 'opacity-40'"
               @click="toggleLyric"
@@ -261,7 +361,7 @@ const showComments = (): void => {
               <template #icon><IconLucideTextQuote /></template>
             </SButton>
           </div>
-          <div v-if="!useMobileLayout && !isIOS" class="app-no-drag flex items-center gap-3">
+          <div v-if="!useMobileLayout && !isMobile" class="app-no-drag flex items-center gap-3">
             <SButton type="cover" variant="ghost" circle :size="40" @click="toggleFullscreen">
               <template #icon>
                 <IconLucideMinimize v-if="isFullscreen" />
@@ -276,7 +376,7 @@ const showComments = (): void => {
           class="absolute top-14 inset-x-0"
           :class="[
             useMobileLayout ? 'bottom-34 mobile-full-player-main' : 'bottom-20',
-            isIOS && !useMobileLayout ? 'safe-wide-player-main' : '',
+            isMobile && !useMobileLayout ? 'safe-wide-player-main' : '',
           ]"
         >
           <!-- 左侧 -->
@@ -341,6 +441,7 @@ const showComments = (): void => {
               :style="{
                 '--lp-credit-opacity': '1',
                 fontSize: lyricFontSize,
+                '--lp-sub-font-size': lyricSubFontSize,
                 fontWeight: String(settings.lyric.fontWeight),
                 fontFamily: settings.lyric.fontFamily || undefined,
                 '--lyric-font-zh': settings.lyric.fontFamilyChinese || undefined,
@@ -398,7 +499,7 @@ const showComments = (): void => {
           class="absolute bottom-0 inset-x-0 h-20 z-10 flex items-center gap-4 px-4 transition-opacity duration-400"
           :class="[
             immersive ? 'opacity-0 pointer-events-none' : 'opacity-100',
-            isIOS ? 'safe-wide-player-controls' : '',
+            isMobile ? 'safe-wide-player-controls' : '',
           ]"
         >
           <div class="flex-1 min-w-0 flex items-center justify-start gap-2">
@@ -406,17 +507,18 @@ const showComments = (): void => {
               <template #icon><IconLucideChevronDown /></template>
             </SButton>
             <SButton
+              v-if="displayTrack?.source !== 'plugin'"
               type="cover"
               variant="ghost"
               size="large"
               circle
-              :disabled="!hasTrack"
+              :disabled="!hasTrack || !fav.isSupported(displayTrack)"
               @click="fav.toggle(displayTrack)"
             >
               <template #icon>
                 <SIconSwap :active="fav.isLiked(displayTrack)">
-                  <template #on><IconFavorite /></template>
-                  <template #off><IconFavoriteOutline /></template>
+                  <template #on><IconMaterialSymbolsFavoriteRounded /></template>
+                  <template #off><IconMaterialSymbolsFavoriteOutlineRounded /></template>
                 </SIconSwap>
               </template>
             </SButton>
@@ -583,6 +685,7 @@ const showComments = (): void => {
               type="cover"
               variant="ghost"
               circle
+              :size="44"
               :disabled="!hasTrack || fmMode"
               @click="player.prevTrack()"
             >
@@ -591,7 +694,7 @@ const showComments = (): void => {
             <SButton
               type="cover"
               variant="secondary"
-              size="large"
+              :size="48"
               circle
               :loading="isLoading"
               :disabled="!hasTrack && !isLoading"
@@ -608,6 +711,7 @@ const showComments = (): void => {
               type="cover"
               variant="ghost"
               circle
+              :size="44"
               :disabled="!hasTrack"
               @click="player.nextTrack()"
             >
@@ -627,6 +731,19 @@ const showComments = (): void => {
   padding-right: calc(1.25rem + var(--s-safe-right));
   padding-bottom: calc(0.75rem + var(--s-safe-bottom));
   padding-left: calc(1.25rem + var(--s-safe-left));
+}
+
+.full-player {
+  translate: 0 var(--full-player-drag-offset, 0px);
+  transition: translate 220ms ease-out;
+}
+
+.full-player-dragging {
+  transition: none;
+}
+
+.full-player-header {
+  touch-action: none;
 }
 
 .safe-full-player-header {

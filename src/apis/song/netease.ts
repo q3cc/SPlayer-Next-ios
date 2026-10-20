@@ -4,6 +4,7 @@ import type { QualityLevel } from "@/utils/quality";
 import { netease as neteaseApi, neteaseCall } from "@/apis/netease";
 import { isExplicitNeteaseAuthFailure } from "@/apis/neteaseAuth";
 import { songsToTracks } from "@/utils/format/netease";
+import { neteaseCdnUrl } from "@shared/utils/neteaseCdnUrl";
 
 /**
  * 按 ID 批量取歌曲详情
@@ -47,7 +48,7 @@ export const classifyNeteasePlayUrl = (item: unknown): NeteasePlayUrlResult => {
   }
   const data = item as { url?: unknown; freeTrialInfo?: unknown; fee?: unknown };
   if (typeof data.url === "string" && data.url) {
-    return { available: true, url: data.url, isTrial: data.freeTrialInfo != null };
+    return { available: true, url: neteaseCdnUrl(data.url), isTrial: data.freeTrialInfo != null };
   }
   const fee = Number(data.fee);
   if (fee === 1 || fee === 4) {

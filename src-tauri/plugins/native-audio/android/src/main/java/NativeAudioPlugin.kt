@@ -1,0 +1,1001 @@
+package app.tauri.nativeaudio
+
+import android.app.Activity
+import android.app.Notification
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.app.Service
+import android.database.ContentObserver
+import android.content.Context
+import android.content.Intent
+import android.content.pm.ServiceInfo
+import android.media.AudioAttributes
+import android.media.AudioFocusRequest
+import android.media.AudioManager
+import android.media.MediaMetadataRetriever
+import android.media.MediaMetadata
+import android.media.MediaDescription
+import android.media.browse.MediaBrowser
+import android.media.MediaPlayer
+import android.media.PlaybackParams
+import android.media.audiofx.Equalizer
+import android.media.audiofx.LoudnessEnhancer
+import android.media.session.MediaController
+import android.media.session.MediaSession
+import android.media.session.PlaybackState
+import android.net.Uri
+import android.os.Build
+import android.os.Bundle
+import android.os.Handler
+import android.os.IBinder
+import android.os.Looper
+import android.os.PowerManager
+import android.provider.Settings
+import android.util.Log
+import android.view.WindowManager
+import androidx.core.content.FileProvider
+import app.tauri.annotation.Command
+import app.tauri.annotation.InvokeArg
+import app.tauri.annotation.TauriPlugin
+import app.tauri.plugin.Invoke
+import app.tauri.plugin.JSObject
+import app.tauri.plugin.Plugin
+import java.io.File
+import java.net.HttpURLConnection
+import java.net.URL
+import java.security.MessageDigest
+
+@InvokeArg
+class UpdateDownloadArgs {
+    lateinit var url: String
+    var size: Long = 0
+    var digest: String? = null
+}
+
+@InvokeArg
+class UpdateInstallArgs {
+    lateinit var path: String
+}
+
+@InvokeArg
+class SourceArgs {
+    lateinit var source: String
+    var autoPlay: Boolean = true
+    var trackId: String? = null
+}
+
+@InvokeArg
+class ControlArgs {
+    lateinit var action: String
+    var position: Double? = null
+}
+
+@InvokeArg
+class EffectArgs {
+    var volume: Double = 1.0
+    var speed: Double = 1.0
+    var pitch: Double = 0.0
+    var pitchSync: Boolean = true
+    var enabled: Boolean = false
+    var bands: DoubleArray = DoubleArray(10)
+    var preamp: Double = 0.0
+}
+
+class LyricLineArgs {
+    var start: Long = 0
+    var end: Long = 0
+    var text: String = ""
+}
+
+@InvokeArg
+class MetadataArgs {
+    var title: String = ""
+    var artist: String = ""
+    var album: String = ""
+    var cover: String = ""
+    var enabled: Boolean = true
+    var dynamic: Boolean = false
+    var offset: Long = 0
+    var lines: Array<LyricLineArgs> = emptyArray()
+    var liked: Boolean = false
+    var favoriteSupported: Boolean = false
+}
+
+@InvokeArg
+class VolumeArgs {
+    var value: Double? = null
+    var show: Boolean? = null
+}
+
+@InvokeArg
+class KeepAwakeArgs {
+    var enabled: Boolean = false
+}
+
+@InvokeArg
+class VisibilityArgs {
+    var visible: Boolean = true
+}
+
+@InvokeArg
+class FileArgs {
+    lateinit var path: String
+}
+
+/** One process-wide player survives WebView recreation and owns the Android media session. */
+internal class AudioEngine private constructor(private val context: Context) {
+    companion object {
+        @Volatile private var instance: AudioEngine? = null
+        fun get(context: Context): AudioEngine = instance ?: synchronized(this) {
+            instance ?: AudioEngine(context.applicationContext).also { instance = it }
+        }
+    }
+
+    private val handler = Handler(Looper.getMainLooper())
+    private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+    private val session = MediaSession(context, "SPlayer Next")
+    private val artwork = MediaArtwork(context)
+    val sessionToken: MediaSession.Token get() = session.sessionToken
+    private var mediaEnabled = true
+    private var player: MediaPlayer? = null
+    private var equalizer: Equalizer? = null
+    private var loudness: LoudnessEnhancer? = null
+    private var prepared = false
+    private var playOnPrepared = false
+    private var state = "idle"
+    private var finished = false
+    private var speed = 1.0
+    private var pitch = 0.0
+    private var effects = EffectArgs()
+    private var metadata: MetadataArgs? = null
+    private var displayedTitle = ""
+    var visible = true
+        set(value) { field = value; updateAnalysis() }
+    private var processing = ProcessingArgs()
+    private var analysis: AudioAnalysis? = null
+    private var normalizationGain = 1.0
+    private var fadeGain = 1.0
+    private var fadeTask: Runnable? = null
+
+    fun processing(args: ProcessingArgs) {
+        require(args.fadeDuration.isFinite() && args.fadeDuration in 0.0..2000.0)
+        val previous = processing
+        processing = args
+        try { updateAnalysis() } catch (error: Exception) {
+            processing = previous
+            updateAnalysis()
+            throw error
+        }
+        if (!args.normalization) { normalizationGain = 1.0; applyEffects() }
+    }
+
+    fun fftData(): JSObject = analysis?.latest ?: JSObject().apply {
+        put("ldata", org.json.JSONArray(List(64) { 0.0 })); put("rdata", org.json.JSONArray(List(64) { 0.0 }))
+    }
+
+    private fun updateAnalysis() {
+        val current = player ?: return
+        if (!prepared) return
+        val fft = processing.fftEnabled && visible && state == "playing"
+        val normalizing = processing.normalization && state == "playing"
+        if (!fft && !normalizing) { analysis?.configure(false, false); return }
+        if (analysis == null) analysis = AudioAnalysis(current.audioSessionId,
+            { data -> if (visible && state == "playing") emit?.invoke("fftData", data) },
+            { gain -> normalizationGain = gain; applyEffects() })
+        analysis?.configure(normalizing, fft)
+    }
+
+    private fun fade(target: Double, completion: (() -> Unit)? = null) {
+        fadeTask?.let(handler::removeCallbacks)
+        fadeTask = null
+        if (processing.fadeDuration <= 0) { fadeGain = target; applyEffects(); completion?.invoke(); return }
+        val started = android.os.SystemClock.elapsedRealtime()
+        val initial = fadeGain
+        val task = object : Runnable {
+            override fun run() {
+                val progress = ((android.os.SystemClock.elapsedRealtime() - started) / processing.fadeDuration).coerceIn(0.0, 1.0)
+                fadeGain = initial + (target - initial) * progress
+                applyEffects()
+                if (progress < 1) handler.postDelayed(this, 10)
+                else { fadeTask = null; completion?.invoke() }
+            }
+        }
+        fadeTask = task
+        handler.post(task)
+    }
+
+    private var pending: Invoke? = null
+    private var loadTimeout: Runnable? = null
+    private var focusRequest: AudioFocusRequest? = null
+    private val legacyFocusListener = AudioManager.OnAudioFocusChangeListener { change ->
+        if (change == AudioManager.AUDIOFOCUS_LOSS ||
+            change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT ||
+            change == AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK) {
+            if (state == "playing") controlFromSystem("pause")
+        }
+    }
+    var emit: ((String, JSObject) -> Unit)? = null
+    private val positionTicker = object : Runnable {
+        override fun run() {
+            if (state != "playing") return
+            if (visible) emit?.invoke("position", snapshot())
+            publishMetadata()
+            handler.postDelayed(this, 1000)
+        }
+    }
+
+    init {
+        session.setFlags(MediaSession.FLAG_HANDLES_MEDIA_BUTTONS or MediaSession.FLAG_HANDLES_TRANSPORT_CONTROLS)
+        session.setCallback(object : MediaSession.Callback() {
+            override fun onPlay() { controlFromSystem("play") }
+            override fun onPause() { controlFromSystem("pause") }
+            override fun onStop() { controlFromSystem("stop") }
+            override fun onSeekTo(pos: Long) { controlFromSystem("seek", pos.toDouble()) }
+            override fun onSkipToNext() { emit?.invoke("action", JSObject().apply { put("type", "next") }) }
+            override fun onSkipToPrevious() { emit?.invoke("action", JSObject().apply { put("type", "prev") }) }
+            override fun onPlayFromMediaId(mediaId: String?, extras: Bundle?) {
+                if (mediaId == "splayer-current" && hasSource()) controlFromSystem("play")
+            }
+            override fun onCustomAction(action: String, extras: Bundle?) {
+                if (action == NativeAudioService.FAVORITE) toggleFavorite()
+            }
+        }, handler)
+        val launch = context.packageManager.getLaunchIntentForPackage(context.packageName)
+        launch?.let {
+            session.setSessionActivity(PendingIntent.getActivity(context, 0, it,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE))
+        }
+        context.contentResolver.registerContentObserver(Settings.System.CONTENT_URI, true,
+            object : ContentObserver(handler) {
+                override fun onChange(selfChange: Boolean) {
+                    emit?.invoke("systemVolume", JSObject().apply { put("volume", systemVolume()) })
+                }
+            })
+        publishState()
+    }
+
+    private fun systemVolume(): Double =
+        audioManager.getStreamVolume(AudioManager.STREAM_MUSIC).toDouble() /
+            audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
+
+    private fun requestFocus(): Boolean {
+        val attributes = AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA)
+            .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build()
+        return if (Build.VERSION.SDK_INT >= 26) {
+            val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
+                .setAudioAttributes(attributes)
+                .setOnAudioFocusChangeListener(legacyFocusListener, handler).build()
+            focusRequest = request
+            audioManager.requestAudioFocus(request) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+        } else {
+            @Suppress("DEPRECATION")
+            audioManager.requestAudioFocus(legacyFocusListener, AudioManager.STREAM_MUSIC,
+                AudioManager.AUDIOFOCUS_GAIN) == AudioManager.AUDIOFOCUS_REQUEST_GRANTED
+        }
+    }
+
+    private fun abandonFocus() {
+        if (Build.VERSION.SDK_INT >= 26) focusRequest?.let(audioManager::abandonAudioFocusRequest)
+        else {
+            @Suppress("DEPRECATION")
+            audioManager.abandonAudioFocus(legacyFocusListener)
+        }
+        focusRequest = null
+    }
+
+    private fun position(): Long = if (prepared) {
+        try { player?.currentPosition?.toLong() ?: 0L } catch (_: Exception) { 0L }
+    } else 0L
+
+    private fun duration(): Long = if (prepared) {
+        try { player?.duration?.toLong()?.coerceAtLeast(0) ?: 0L } catch (_: Exception) { 0L }
+    } else 0L
+
+    fun snapshot(): JSObject = JSObject().apply {
+        put("state", state)
+        put("position", position())
+        put("duration", duration())
+        put("volume", systemVolume())
+        put("speed", speed)
+        put("isFinished", finished)
+    }
+
+    private fun publishState(emitUpdate: Boolean = true) {
+        val nativeState = when (state) {
+            "playing" -> PlaybackState.STATE_PLAYING
+            "paused" -> PlaybackState.STATE_PAUSED
+            "loading" -> PlaybackState.STATE_BUFFERING
+            "stopped" -> PlaybackState.STATE_STOPPED
+            else -> PlaybackState.STATE_NONE
+        }
+        val builder = PlaybackState.Builder()
+            .setActions(PlaybackState.ACTION_PLAY or PlaybackState.ACTION_PAUSE or
+                PlaybackState.ACTION_PLAY_PAUSE or PlaybackState.ACTION_STOP or
+                PlaybackState.ACTION_SEEK_TO or PlaybackState.ACTION_SKIP_TO_NEXT or
+                PlaybackState.ACTION_SKIP_TO_PREVIOUS or PlaybackState.ACTION_PLAY_FROM_MEDIA_ID)
+            .setState(nativeState, position(), if (state == "playing") speed.toFloat() else 0f)
+        metadata?.takeIf { it.favoriteSupported }?.let {
+            builder.addCustomAction(NativeAudioService.FAVORITE,
+                context.getString(if (it.liked) R.string.media_unfavorite else R.string.media_favorite),
+                if (it.liked) R.drawable.ic_media_favorite_filled else R.drawable.ic_media_favorite)
+        }
+        session.isActive = mediaEnabled && hasSource()
+        session.setPlaybackState(builder.build())
+        if (emitUpdate) {
+            emit?.invoke("state", snapshot())
+            handler.removeCallbacks(positionTicker)
+            if (state == "playing") handler.postDelayed(positionTicker, 1000)
+        }
+        if (state == "playing" || state == "paused") NativeAudioService.current?.updateNotification()
+    }
+
+    private fun service(action: String) {
+        val intent = Intent(context, NativeAudioService::class.java).setAction(action)
+        if (Build.VERSION.SDK_INT >= 26) context.startForegroundService(intent) else context.startService(intent)
+    }
+
+    private fun reset() {
+        fadeTask?.let(handler::removeCallbacks); fadeTask = null
+        fadeGain = 1.0
+        analysis?.release(); analysis = null
+        normalizationGain = 1.0
+
+        loadTimeout?.let(handler::removeCallbacks)
+        loadTimeout = null
+        pending?.reject("已切换歌曲")
+        pending = null
+        loudness?.release()
+        loudness = null
+        equalizer?.release()
+        equalizer = null
+        player?.release()
+        player = null
+        prepared = false
+        playOnPrepared = false
+        finished = false
+    }
+
+    fun load(args: SourceArgs, invoke: Invoke) {
+        abandonFocus()
+        reset()
+        playOnPrepared = args.autoPlay
+        state = "loading"
+        publishState()
+        try {
+            val mediaPlayer = MediaPlayer()
+            mediaPlayer.setAudioAttributes(AudioAttributes.Builder()
+                .setUsage(AudioAttributes.USAGE_MEDIA)
+                .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build())
+            mediaPlayer.setWakeMode(context, PowerManager.PARTIAL_WAKE_LOCK)
+            when {
+                args.source.startsWith("content:") -> mediaPlayer.setDataSource(context, Uri.parse(args.source))
+                args.source.startsWith("file:") -> mediaPlayer.setDataSource(Uri.parse(args.source).path!!)
+                args.source.startsWith("https:") || args.source.startsWith("http:") -> {
+                    val url = Uri.parse(args.source)
+                    val host = url.host.orEmpty()
+                    Log.i("SPlayerAudio", "load scheme=${url.scheme} host=$host")
+                    if (host == "music.126.net" || host.endsWith(".music.126.net")) {
+                        mediaPlayer.setDataSource(context, url, mapOf(
+                            "User-Agent" to "NeteaseMusic/9.5.61",
+                            "Referer" to "https://music.163.com/"
+                        ))
+                    } else mediaPlayer.setDataSource(args.source)
+                }
+                else -> mediaPlayer.setDataSource(args.source)
+            }
+            player = mediaPlayer
+            pending = invoke
+            mediaPlayer.setOnPreparedListener {
+                if (player !== it) return@setOnPreparedListener
+                loadTimeout?.let(handler::removeCallbacks)
+                loadTimeout = null
+                prepared = true
+                state = "paused"
+                try {
+                    equalizer = Equalizer(0, it.audioSessionId).apply { enabled = false }
+                } catch (_: Exception) { equalizer = null }
+                try {
+                    loudness = LoudnessEnhancer(it.audioSessionId).apply { enabled = true }
+                } catch (_: Exception) { loudness = null }
+                try {
+                    applyEffects()
+                    publishMetadata(true)
+                    if (playOnPrepared) control("play", null) else publishState()
+                    pending?.resolve(snapshot())
+                    pending = null
+                } catch (error: Exception) {
+                    val failed = pending
+                    pending = null
+                    reset()
+                    state = "idle"
+                    publishState()
+                    failed?.reject(error.message ?: "无法播放音频")
+                }
+            }
+            mediaPlayer.setOnCompletionListener {
+                if (player !== it) return@setOnCompletionListener
+                state = "stopped"
+                finished = true
+                updateAnalysis()
+                publishState()
+                emit?.invoke("ended", JSObject())
+                NativeAudioService.current?.stopPlayback()
+                abandonFocus()
+            }
+            mediaPlayer.setOnErrorListener { source, what, extra ->
+                if (player === source) {
+                    val message = "Android audio error $what/$extra"
+                    state = "idle"
+                    val failed = pending
+                    pending = null
+                    reset()
+                    publishState()
+                    failed?.reject(message)
+                    emit?.invoke("error", JSObject().apply { put("message", message) })
+                }
+                true
+            }
+            mediaPlayer.prepareAsync()
+            loadTimeout = Runnable {
+                if (player !== mediaPlayer || pending == null) return@Runnable
+                val url = Uri.parse(args.source)
+                Log.e("SPlayerAudio", "load timeout scheme=${url.scheme} host=${url.host.orEmpty()}")
+                val failed = pending
+                pending = null
+                reset()
+                state = "idle"
+                publishState()
+                failed?.reject("原生音频加载超时")
+            }.also { handler.postDelayed(it, 25_000) }
+        } catch (error: Exception) {
+            pending = null
+            reset()
+            state = "idle"
+            publishState()
+            invoke.reject(error.message ?: "无法播放音频")
+        }
+    }
+
+    fun control(action: String, positionMs: Double?): JSObject {
+        val current = player
+        when (action) {
+            "play" -> {
+                if (state == "loading") playOnPrepared = true
+                else {
+                    if (!prepared || current == null) throw IllegalStateException("请先选择一首歌曲")
+                    if (state != "playing") {
+                        if (!requestFocus()) throw IllegalStateException("音频设备暂时不可用")
+                        applyPlaybackParams()
+                        fadeGain = if (processing.fadeDuration > 0) 0.0 else 1.0
+                        applyEffects()
+                        current.start()
+                        state = "playing"
+                        finished = false
+                        service(NativeAudioService.START)
+                    }
+                    fade(1.0)
+                }
+            }
+            "pause" -> {
+                if (state == "loading") playOnPrepared = false
+                else if (prepared && current != null && state == "playing") {
+                    fade(0.0) {
+                        current.pause()
+                        state = "paused"
+                        fadeGain = 1.0
+                        applyEffects()
+                        updateAnalysis()
+                        publishState()
+                        abandonFocus()
+                    }
+                }
+            }
+            "stop" -> {
+                reset()
+                state = "stopped"
+                abandonFocus()
+                NativeAudioService.current?.stopPlayback()
+            }
+            "seek" -> {
+                if (!prepared || current == null || positionMs?.isFinite() != true)
+                    throw IllegalStateException("当前音源暂不支持跳转")
+                current.seekTo(positionMs.toLong().coerceIn(0L, duration()).toInt())
+            }
+            else -> throw IllegalArgumentException("未知播放操作")
+        }
+        updateAnalysis()
+        publishState()
+        return snapshot()
+    }
+
+    fun hasSource(): Boolean = player != null
+
+    fun controlFromSystem(action: String, positionMs: Double? = null) {
+        if ((action == "play" || action == "seek") && !prepared && state != "loading") return
+        try {
+            control(action, positionMs)
+        } catch (error: Exception) {
+            emit?.invoke("error", JSObject().apply {
+                put("message", error.message ?: "系统播放操作失败")
+            })
+        }
+    }
+
+    fun configure(args: EffectArgs) {
+        require(args.volume.isFinite() && args.volume in 0.0..1.0)
+        require(args.speed.isFinite() && args.speed in 0.5..2.0)
+        require(args.pitch.isFinite() && args.pitch in -12.0..12.0)
+        require(args.preamp.isFinite() && args.preamp in -12.0..12.0)
+        require(args.bands.size == 10 && args.bands.all { it.isFinite() && it in -15.0..15.0 })
+        if (prepared && args.enabled && equalizer == null)
+            throw IllegalStateException("此设备不支持系统均衡器")
+        effects = args
+        speed = args.speed
+        pitch = args.pitch
+        if (prepared && state == "playing") applyPlaybackParams()
+        applyEffects()
+        publishState()
+    }
+
+    private fun applyPlaybackParams() {
+        if (!prepared) return
+        player?.playbackParams = PlaybackParams().setSpeed(speed.toFloat())
+            .setPitch(if (effects.pitchSync) Math.pow(2.0, pitch / 12.0).toFloat() else speed.toFloat())
+    }
+
+    private fun applyEffects() {
+        if (!prepared) return
+        val preamp = (if (effects.enabled) effects.preamp else 0.0) + 20 * kotlin.math.log10(normalizationGain.coerceAtLeast(0.001))
+        val attenuation = Math.pow(10.0, preamp.coerceAtMost(0.0) / 20.0)
+        val volume = (effects.volume * attenuation * fadeGain).toFloat().coerceIn(0f, 1f)
+        player?.setVolume(volume, volume)
+        loudness?.setTargetGain((preamp.coerceAtLeast(0.0) * 1000).toInt())
+        equalizer?.let { effect ->
+            effect.enabled = effects.enabled
+            if (effects.enabled) {
+                val range = effect.bandLevelRange
+                for (index in 0 until effect.numberOfBands) {
+                    val frequency = effect.getCenterFreq(index.toShort()) / 1000.0
+                    val source = (0..9).minByOrNull {
+                        kotlin.math.abs(kotlin.math.ln(sourceFrequency(it) / frequency.coerceAtLeast(1.0)))
+                    } ?: 0
+                    val gain = (effects.bands[source] * 100).toInt().coerceIn(range[0].toInt(), range[1].toInt())
+                    effect.setBandLevel(index.toShort(), gain.toShort())
+                }
+            }
+        }
+    }
+
+    private fun sourceFrequency(index: Int): Double =
+        doubleArrayOf(32.0, 64.0, 125.0, 250.0, 500.0, 1000.0, 2000.0, 4000.0, 8000.0, 16000.0)[index]
+
+    fun setMetadata(args: MetadataArgs) {
+        mediaEnabled = args.enabled
+        metadata = if (args.enabled) args else null
+        artwork.load(metadata?.cover.orEmpty()) { publishMetadata(true) }
+        publishMetadata(true)
+        publishState(false)
+    }
+
+    fun toggleFavorite() {
+        if (metadata?.favoriteSupported == true)
+            emit?.invoke("action", JSObject().apply { put("type", "toggleLike") })
+    }
+
+    fun currentMediaItem(): MediaBrowser.MediaItem? {
+        val info = metadata ?: return null
+        if (!hasSource()) return null
+        val description = MediaDescription.Builder().setMediaId("splayer-current")
+            .setTitle(info.title).setSubtitle(info.artist).setDescription(info.album)
+            .setIconBitmap(artwork.bitmap).build()
+        return MediaBrowser.MediaItem(description, MediaBrowser.MediaItem.FLAG_PLAYABLE)
+    }
+
+    private fun publishMetadata(force: Boolean = false) {
+        val info = metadata
+        val time = position() + (info?.offset ?: 0L)
+        val lyric = if (info?.dynamic == true) info.lines.lastOrNull {
+            it.start <= time && time < it.end + 3000 && it.text.isNotBlank()
+        } else null
+        val title = lyric?.text ?: info?.title.orEmpty()
+        if (!force && title == displayedTitle) return
+        displayedTitle = title
+        val builder = MediaMetadata.Builder()
+        if (info != null) {
+            builder.putString(MediaMetadata.METADATA_KEY_TITLE, title)
+            builder.putString(MediaMetadata.METADATA_KEY_ARTIST, if (lyric != null)
+                listOf(info.title, info.artist).filter { it.isNotBlank() }.joinToString(" - ")
+                else info.artist)
+            builder.putString(MediaMetadata.METADATA_KEY_ALBUM, if (lyric != null) "" else info.album)
+            builder.putLong(MediaMetadata.METADATA_KEY_DURATION, duration())
+            if (info.cover.isNotBlank()) builder.putString(MediaMetadata.METADATA_KEY_ART_URI, info.cover)
+            artwork.bitmap?.let {
+                builder.putBitmap(MediaMetadata.METADATA_KEY_ART, it)
+                builder.putBitmap(MediaMetadata.METADATA_KEY_ALBUM_ART, it)
+            }
+        }
+        session.setMetadata(builder.build())
+        if (state == "playing" || state == "paused") NativeAudioService.current?.updateNotification()
+    }
+
+    fun notification(): Notification {
+        val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val builder = if (Build.VERSION.SDK_INT >= 26) {
+            manager.createNotificationChannel(NotificationChannel("splayer-playback", "Music playback",
+                NotificationManager.IMPORTANCE_LOW))
+            Notification.Builder(context, "splayer-playback")
+        } else {
+            @Suppress("DEPRECATION")
+            Notification.Builder(context).setPriority(Notification.PRIORITY_LOW)
+        }
+        fun action(label: String, icon: Int, command: String): Notification.Action {
+            val intent = Intent(context, NativeAudioService::class.java).setAction(command)
+            val pending = PendingIntent.getService(context, command.hashCode(), intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+            return Notification.Action.Builder(icon, label, pending).build()
+        }
+        val launch = context.packageManager.getLaunchIntentForPackage(context.packageName)
+        val content = launch?.let { PendingIntent.getActivity(context, 0, it,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE) }
+        val info = metadata
+        builder
+            .setSmallIcon(R.drawable.ic_media_music)
+            .setLargeIcon(artwork.bitmap)
+            .setContentTitle(displayedTitle.ifBlank { "SPlayer Next" })
+            .setContentText(info?.artist ?: "")
+            .setContentIntent(content)
+            .setVisibility(Notification.VISIBILITY_PUBLIC)
+            .setOnlyAlertOnce(true)
+            .addAction(action(context.getString(R.string.media_previous), R.drawable.ic_media_previous, NativeAudioService.PREV))
+            .addAction(action(context.getString(if (state == "playing") R.string.media_pause else R.string.media_play),
+                if (state == "playing") R.drawable.ic_media_pause else R.drawable.ic_media_play,
+                if (state == "playing") NativeAudioService.PAUSE else NativeAudioService.PLAY))
+            .addAction(action(context.getString(R.string.media_next), R.drawable.ic_media_next, NativeAudioService.NEXT))
+        if (info?.favoriteSupported == true) builder.addAction(action(
+            context.getString(if (info.liked) R.string.media_unfavorite else R.string.media_favorite),
+            if (info.liked) R.drawable.ic_media_favorite_filled else R.drawable.ic_media_favorite,
+            NativeAudioService.FAVORITE))
+        builder.setStyle(Notification.MediaStyle().setMediaSession(session.sessionToken)
+            .setShowActionsInCompactView(0, 1, 2))
+        return builder.build()
+    }
+
+    fun readMetadata(source: String): JSObject {
+        val retriever = MediaMetadataRetriever()
+        try {
+            if (source.startsWith("content:")) retriever.setDataSource(context, Uri.parse(source))
+            else retriever.setDataSource(if (source.startsWith("file:")) Uri.parse(source).path else source)
+            return JSObject().apply {
+                put("title", retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE) ?: "")
+                put("artist", retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST) ?: "")
+                put("album", retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM) ?: "")
+                put("duration", retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DURATION)?.toLongOrNull() ?: 0L)
+                put("externalLyrics", emptyList<Any>())
+            }
+        } finally { retriever.release() }
+    }
+
+    fun readLyrics(path: String): String = if (path.startsWith("content:"))
+        context.contentResolver.openInputStream(Uri.parse(path))?.bufferedReader()?.use { it.readText() }
+            ?: throw IllegalArgumentException("歌词文件无法读取")
+    else File(if (path.startsWith("file:")) Uri.parse(path).path!! else path).readText()
+}
+
+class NativeAudioService : Service() {
+    companion object {
+        const val START = "splayer.audio.START"
+        const val PLAY = "splayer.audio.PLAY"
+        const val PAUSE = "splayer.audio.PAUSE"
+        const val NEXT = "splayer.audio.NEXT"
+        const val PREV = "splayer.audio.PREV"
+        const val FAVORITE = "splayer.audio.FAVORITE"
+        var current: NativeAudioService? = null
+    }
+
+    private val engine by lazy { AudioEngine.get(this) }
+
+    override fun onCreate() {
+        super.onCreate()
+        current = this
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        val notification = engine.notification()
+        if (Build.VERSION.SDK_INT >= 29)
+            startForeground(42, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
+        else startForeground(42, notification)
+        if (!engine.hasSource()) {
+            stopPlayback()
+            return START_NOT_STICKY
+        }
+        when (intent?.action) {
+            PLAY -> engine.controlFromSystem("play")
+            PAUSE -> engine.controlFromSystem("pause")
+            NEXT -> engine.emit?.invoke("action", JSObject().apply { put("type", "next") })
+            PREV -> engine.emit?.invoke("action", JSObject().apply { put("type", "prev") })
+            FAVORITE -> engine.toggleFavorite()
+        }
+        return START_NOT_STICKY
+    }
+
+    fun updateNotification() {
+        (getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).notify(42, engine.notification())
+    }
+
+    fun stopPlayback() {
+        stopForeground(STOP_FOREGROUND_REMOVE)
+        stopSelf()
+    }
+
+    override fun onDestroy() {
+        current = null
+        super.onDestroy()
+    }
+
+    override fun onBind(intent: Intent?): IBinder? = null
+}
+
+@TauriPlugin(permissions = [app.tauri.annotation.Permission(strings = ["android.permission.RECORD_AUDIO"], alias = "audio-analysis")])
+class NativeAudioPlugin(private val activity: Activity) : Plugin(activity) {
+    private val engine by lazy { AudioEngine.get(activity) }
+    private val lastfmCredentials by lazy { LastfmCredentials(activity) }
+
+    @Command
+    fun lastfmCredentials(invoke: Invoke) {
+        try {
+            val value = lastfmCredentials.run(invoke.parseArgs(LastfmCredentialArgs::class.java))
+            invoke.resolve(JSObject().apply { put("value", value ?: org.json.JSONObject.NULL) })
+        } catch (_: Exception) { invoke.reject("无法访问 Last.fm 安全凭证") }
+    }
+
+    private val handler = Handler(Looper.getMainLooper())
+
+    override fun load(webView: android.webkit.WebView) {
+        super.load(webView)
+        engine.emit = { name, data -> trigger(name, data) }
+    }
+
+    @Command fun load(invoke: Invoke) {
+        val args = invoke.parseArgs(SourceArgs::class.java)
+        handler.post { engine.load(args, invoke) }
+    }
+
+    @Command fun control(invoke: Invoke) {
+        val args = invoke.parseArgs(ControlArgs::class.java)
+        handler.post {
+            try { invoke.resolve(engine.control(args.action, args.position)) }
+            catch (error: Exception) { invoke.reject(error.message ?: "播放操作失败") }
+        }
+    }
+
+    @Command fun configure(invoke: Invoke) {
+        val args = invoke.parseArgs(EffectArgs::class.java)
+        handler.post {
+            try { engine.configure(args); invoke.resolve() }
+            catch (error: Exception) { invoke.reject(error.message ?: "音效设置失败") }
+        }
+    }
+
+    @Command fun audioProcessing(invoke: Invoke) {
+        val args = invoke.parseArgs(ProcessingArgs::class.java)
+        if ((args.normalization || args.fftEnabled) &&
+            getPermissionState("audio-analysis") != app.tauri.PermissionState.GRANTED) {
+            requestPermissionForAlias("audio-analysis", invoke, "audioAnalysisPermission")
+            return
+        }
+        applyProcessing(invoke)
+    }
+
+    @app.tauri.annotation.PermissionCallback
+    fun audioAnalysisPermission(invoke: Invoke) {
+        if (getPermissionState("audio-analysis") != app.tauri.PermissionState.GRANTED) {
+            invoke.reject("请允许音频采集权限以使用频谱与响度标准化"); return
+        }
+        applyProcessing(invoke)
+    }
+
+    private fun applyProcessing(invoke: Invoke) {
+        val args = invoke.parseArgs(ProcessingArgs::class.java)
+        handler.post {
+            try { engine.processing(args); invoke.resolve() }
+            catch (_: Exception) { invoke.reject("此设备不支持音频分析") }
+        }
+    }
+
+    @Command fun fftData(invoke: Invoke) { handler.post { invoke.resolve(engine.fftData()) } }
+
+    @Command fun metadata(invoke: Invoke) {
+        val args = invoke.parseArgs(MetadataArgs::class.java)
+        handler.post { engine.setMetadata(args); invoke.resolve() }
+    }
+
+    @Command fun status(invoke: Invoke) { handler.post { invoke.resolve(engine.snapshot()) } }
+    @Command fun visibility(invoke: Invoke) {
+        val args = invoke.parseArgs(VisibilityArgs::class.java)
+        handler.post { engine.visible = args.visible; invoke.resolve() }
+    }
+
+    @Command fun keepAwake(invoke: Invoke) {
+        val args = invoke.parseArgs(KeepAwakeArgs::class.java)
+        handler.post {
+            if (args.enabled) activity.window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            else activity.window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+            invoke.resolve()
+        }
+    }
+
+    @Command fun systemVolume(invoke: Invoke) {
+        val args = invoke.parseArgs(VolumeArgs::class.java)
+        handler.post {
+            val manager = activity.getSystemService(Context.AUDIO_SERVICE) as AudioManager
+            val max = manager.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
+            args.value?.let { manager.setStreamVolume(AudioManager.STREAM_MUSIC,
+                (it.coerceIn(0.0, 1.0) * max).toInt(), 0) }
+            invoke.resolve(JSObject().apply {
+                put("volume", manager.getStreamVolume(AudioManager.STREAM_MUSIC).toDouble() / max)
+            })
+        }
+    }
+
+    @Command fun readMetadata(invoke: Invoke) {
+        val args = invoke.parseArgs(SourceArgs::class.java)
+        Thread {
+            try { invoke.resolve(engine.readMetadata(args.source)) }
+            catch (error: Exception) { invoke.reject(error.message ?: "无法读取音频信息") }
+        }.start()
+    }
+
+    @Command fun readLyricFile(invoke: Invoke) {
+        val args = invoke.parseArgs(FileArgs::class.java)
+        Thread {
+            try { invoke.resolveObject(engine.readLyrics(args.path)) }
+            catch (error: Exception) { invoke.reject(error.message ?: "无法读取歌词") }
+        }.start()
+    }
+
+    @Command fun shareLog(invoke: Invoke) {
+        val args = invoke.parseArgs(FileArgs::class.java)
+        try {
+            val source = File(args.path).canonicalFile
+            val cacheRoot = activity.cacheDir.canonicalFile
+            if (!source.path.startsWith(cacheRoot.path + File.separator) || !source.isFile) {
+                throw IllegalArgumentException("日志文件无效")
+            }
+            val uri = FileProvider.getUriForFile(
+                activity, "${activity.packageName}.fileprovider", source)
+            val send = Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+            activity.startActivity(Intent.createChooser(send, "分享日志"))
+            invoke.resolve()
+        } catch (error: Exception) {
+            invoke.reject(error.message ?: "无法分享日志")
+        }
+    }
+
+    @Command fun deviceAbi(invoke: Invoke) {
+        val abi = Build.SUPPORTED_ABIS.firstOrNull { it == "arm64-v8a" || it == "armeabi-v7a" || it == "x86_64" }
+        if (abi == null) invoke.reject("此设备架构暂不支持 Android 更新")
+        else invoke.resolveObject(abi)
+    }
+
+    @Command fun downloadUpdate(invoke: Invoke) {
+        val args = invoke.parseArgs(UpdateDownloadArgs::class.java)
+        Thread {
+            var connection: HttpURLConnection? = null
+            var temporary: File? = null
+            try {
+                val url = URL(args.url)
+                if (url.protocol != "https" || url.host != "github.com" ||
+                    !url.path.startsWith("/q3cc/SPlayer-Next-ios/releases/download/") ||
+                    !url.path.endsWith(".apk") || args.size <= 0 || args.size > 500_000_000) {
+                    throw IllegalArgumentException("更新包来源或大小无效")
+                }
+                val directory = File(activity.cacheDir, "updates").apply { mkdirs() }
+                directory.listFiles()?.filter { it.isFile && it.extension == "part" }?.forEach { it.delete() }
+                val name = url.path.substringAfterLast('/')
+                if (!Regex("^SPlayer-Next-Android-(arm64|arm32|x64)(?:-[a-f0-9]{7})?\\.apk$").matches(name)) {
+                    throw IllegalArgumentException("更新包文件名无效")
+                }
+                val target = File(directory, name)
+                val part = File(directory, "$name.part")
+                temporary = part
+                connection = (url.openConnection() as HttpURLConnection).apply {
+                    connectTimeout = 15_000
+                    readTimeout = 30_000
+                    setRequestProperty("User-Agent", "SPlayer-Next-Android")
+                }
+                if (connection.responseCode != 200) throw IllegalStateException("下载失败：HTTP ${connection.responseCode}")
+                val digest = MessageDigest.getInstance("SHA-256")
+                var downloaded = 0L
+                var lastReport = System.currentTimeMillis()
+                var lastBytes = 0L
+                val started = lastReport
+                connection.inputStream.use { input ->
+                    part.outputStream().use { output ->
+                        val buffer = ByteArray(64 * 1024)
+                        while (true) {
+                            val count = input.read(buffer)
+                            if (count < 0) break
+                            downloaded += count
+                            if (downloaded > args.size) throw IllegalStateException("更新包超过预期大小")
+                            digest.update(buffer, 0, count)
+                            output.write(buffer, 0, count)
+                            val now = System.currentTimeMillis()
+                            if (now - lastReport >= 250) {
+                                val speed = ((downloaded - lastBytes) * 1000 / (now - lastReport)).coerceAtLeast(0)
+                                val progress = JSObject().apply {
+                                    put("percent", downloaded * 100.0 / args.size)
+                                    put("downloadedBytes", downloaded)
+                                    put("totalBytes", args.size)
+                                    put("bytesPerSecond", speed)
+                                }
+                                handler.post { trigger("updateProgress", progress) }
+                                lastReport = now
+                                lastBytes = downloaded
+                            }
+                        }
+                    }
+                }
+                if (downloaded != args.size) throw IllegalStateException("更新包下载不完整")
+                val expected = args.digest?.removePrefix("sha256:")?.lowercase()
+                if (expected != null && expected != digest.digest().joinToString("") { "%02x".format(it.toInt() and 0xff) }) {
+                    throw IllegalStateException("更新包校验失败")
+                }
+                if (target.exists()) target.delete()
+                if (!part.renameTo(target)) throw IllegalStateException("无法保存更新包")
+                temporary = null
+                directory.listFiles()?.filter { it.isFile && it != target && it.extension == "apk" }
+                    ?.forEach { it.delete() }
+                handler.post {
+                    trigger("updateProgress", JSObject().apply {
+                        put("percent", 100.0)
+                        put("downloadedBytes", downloaded)
+                        put("totalBytes", args.size)
+                        put("bytesPerSecond", if (System.currentTimeMillis() > started)
+                            downloaded * 1000 / (System.currentTimeMillis() - started) else 0)
+                    })
+                    invoke.resolveObject(target.absolutePath)
+                }
+            } catch (error: Exception) {
+                Log.e("SPlayerUpdate", "APK download failed", error)
+                invoke.reject(error.message ?: "下载更新包失败")
+            } finally {
+                connection?.disconnect()
+                temporary?.delete()
+            }
+        }.start()
+    }
+
+    @Command fun installUpdate(invoke: Invoke) {
+        val args = invoke.parseArgs(UpdateInstallArgs::class.java)
+        handler.post {
+            try {
+                val source = File(args.path).canonicalFile
+                val updates = File(activity.cacheDir, "updates").canonicalFile
+                if (source.parentFile != updates || !source.isFile || source.extension != "apk") {
+                    throw IllegalArgumentException("更新包文件无效，请重新下载")
+                }
+                if (Build.VERSION.SDK_INT >= 26 && !activity.packageManager.canRequestPackageInstalls()) {
+                    val settings = Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                        Uri.parse("package:${activity.packageName}"))
+                    activity.startActivity(settings)
+                    throw IllegalStateException("请允许安装应用后返回，再点击安装")
+                }
+                val uri = FileProvider.getUriForFile(
+                    activity, "${activity.packageName}.fileprovider", source)
+                val intent = Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(uri, "application/vnd.android.package-archive")
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                activity.startActivity(intent)
+                invoke.resolve()
+            } catch (error: Exception) {
+                invoke.reject(error.message ?: "无法打开安装程序")
+            }
+        }
+    }
+}

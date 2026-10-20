@@ -4,6 +4,18 @@ SPlayer-Next 内置 [Model Context Protocol](https://modelcontextprotocol.io/) �
 
 ## 连接
 
+### iOS / Android
+
+移动端在 **设置 → AI 集成 → MCP** 开启服务，复制「配置详情」到 AI 客户端。默认仅本机可连接；电脑连接手机时，需主动开启「允许局域网访问」，并使用设置显示的手机地址。每次请求必须携带 `X-MCP-Key`。
+
+请保持 SPlayer 在前台；切到后台会停止控制服务，回到前台后重新启动。移动端使用无状态 Streamable HTTP JSON 响应，不提供持续 SSE 会话，也不能自动修改其他 App 的配置。HTTP 不加密，只应在可信局域网使用，不要将端口暴露到公网。
+
+移动端工具包括播放状态、当前歌曲、播放/暂停/停止、上下曲、进度和音量控制、本地曲库搜索、在线歌曲搜索及按歌曲 ID 播放。其他桌面专用工具不在移动端提供。
+
+同页的 **AI 模型配置** 支持添加、编辑、删除和选择模型；密钥保存在 iOS 钥匙串或 Android 加密存储，不进入设置导出。这是连接配置管理，不包含 AI 聊天或自动调用模型功能。
+
+### 桌面端
+
 MCP 服务默认关闭。先在 **设置 → AI 集成 → MCP** 中启用，再使用设置页显示的实际端口与连接密钥。
 
 - **传输协议**：Streamable HTTP
@@ -31,25 +43,40 @@ MCP 服务默认关闭。先在 **设置 → AI 集成 → MCP** 中启用，再
 
 ## 工具
 
-| 工具                  | 参数                                   | 说明                                       |
-| --------------------- | -------------------------------------- | ------------------------------------------ |
-| `get_playback_status` | —                                      | 获取播放状态、进度、音量和播放模式         |
-| `get_now_playing`     | —                                      | 获取不含完整歌词正文的当前曲目轻量快照     |
-| `play`                | —                                      | 继续播放                                   |
-| `pause`               | —                                      | 暂停播放                                   |
-| `stop`                | —                                      | 停止播放                                   |
-| `next_track`          | —                                      | 下一曲                                     |
-| `previous_track`      | —                                      | 上一曲                                     |
-| `seek`                | `positionMs`                           | 跳转到指定毫秒位置                         |
-| `set_volume`          | `volume`                               | 设置音量，范围 `0` 到 `1`                  |
-| `set_play_mode`       | `repeat?`, `shuffle?`                  | 设置循环和随机播放模式                     |
-| `play_track`          | `trackId?` 或 `track?`                 | 按曲目 ID（推荐）或完整 Track 立即播放     |
-| `add_to_queue`        | `trackIds?` 或 `tracks?`, `position?`  | 添加最多 50 首；`position` 为 `next`/`end` |
-| `search_library`      | `query`, `limit?`                      | 搜索本地曲库，默认返回 20 条，最多 100 条  |
-| `search_online_songs` | `platform`, `query`, `page?`, `limit?` | 搜索在线音乐资源，单页最多返回 50 条       |
-| `get_random_tracks`   | `limit?`                               | 随机获取曲目，默认 10 条，最多 50 条       |
-| `list_albums`         | `limit?`                               | 获取专辑摘要，默认 50 条，最多 100 条      |
-| `list_artists`        | `limit?`                               | 获取艺术家摘要，默认 50 条，最多 100 条    |
+| 工具                  | 参数                                   | 说明                                               |
+| --------------------- | -------------------------------------- | -------------------------------------------------- |
+| `get_playback_status` | —                                      | 获取播放状态、队列索引、进度、音量和播放模式       |
+| `get_now_playing`     | —                                      | 获取不含完整歌词正文的当前曲目轻量快照             |
+| `get_queue`           | `offset?`, `limit?`                    | 读取当前播放队列，默认 50 条，最多 100 条          |
+| `play`                | —                                      | 继续播放                                           |
+| `pause`               | —                                      | 暂停播放                                           |
+| `stop`                | —                                      | 停止播放                                           |
+| `next_track`          | —                                      | 下一曲                                             |
+| `previous_track`      | —                                      | 上一曲                                             |
+| `seek`                | `positionMs`                           | 跳转到指定毫秒位置                                 |
+| `set_volume`          | `volume`                               | 设置音量，范围 `0` 到 `1`                          |
+| `set_play_mode`       | `repeat?`, `shuffle?`                  | 设置循环和随机播放模式                             |
+| `play_track`          | `track`                                | 传入完整 Track 请求播放，可直接使用搜索结果        |
+| `add_to_queue`        | `tracks`, `position?`                  | 添加 1–50 个完整 Track；`position` 为 `next`/`end` |
+| `search_library`      | `query`, `limit?`                      | 搜索本地曲库，默认返回 20 条，最多 100 条          |
+| `search_online_songs` | `platform`, `query`, `page?`, `limit?` | 搜索在线音乐资源，单页最多返回 50 条               |
+| `get_random_tracks`   | `limit?`                               | 随机获取曲目，默认 10 条，最多 50 条               |
+| `list_albums`         | `limit?`                               | 获取专辑摘要，默认 50 条，最多 100 条              |
+| `list_artists`        | `limit?`                               | 获取艺术家摘要，默认 50 条，最多 100 条            |
+
+## 播放状态
+
+`get_playback_status` 返回播放状态、进度、时长、音量、播放模式和 `currentIndex`。索引从 0 开始，无当前队列项时为 -1；可据此调用 `get_queue` 读取附近的曲目。
+
+## 播放队列
+
+调用 `get_queue`，可传入 `offset`（默认 `0`）和 `limit`（默认 `50`，范围 1–100）。返回 `tracks`、`total`、`currentIndex` 和 `offset`；`currentIndex` 是当前曲目在整个队列中的索引，从 0 开始，无当前队列项时为 `-1`。顺序与播放器队列一致，偏移超出队列时 `tracks` 为空。
+
+```json
+{ "offset": 0, "limit": 20 }
+```
+
+主窗口不可用或未响应时，工具返回错误。
 
 ## 资源
 

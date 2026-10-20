@@ -2,6 +2,8 @@
 defineOptions({ name: "Library" });
 
 import type { PlaybackContext } from "@shared/types/player";
+import { ErrorCode } from "@shared/types/errors";
+import { toast } from "@/composables/useToast";
 import type { DropdownMenuItem } from "@/components/ui/SDropdownMenu.vue";
 import { useLibraryStore } from "@/stores/library";
 import SongList from "@/components/list/SongList.vue";
@@ -14,6 +16,7 @@ import * as player from "@/core/player";
 const { t } = useI18n();
 const libraryStore = useLibraryStore();
 const { tracks, scanDirs, scanning, scanProgress, initialized } = storeToRefs(libraryStore);
+const mobile = typeof window !== "undefined" && Boolean(window.api?.library?.addTracksFromFiles);
 
 const playbackContext = computed<PlaybackContext>(() => ({
   originId: "library",
@@ -38,15 +41,45 @@ const handleFolderAdded = (): void => {
   libraryStore.startScan(false);
 };
 
+const addingFolder = ref(false);
+
 const handleQuickAddFolder = async (): Promise<void> => {
-  const res = await libraryStore.addScanDir();
-  if (res.success) libraryStore.startScan(false);
+  if (addingFolder.value) return;
+  addingFolder.value = true;
+  try {
+    if (mobile) {
+      const res = await libraryStore.addTracksFromFiles();
+      if (res.success) {
+        await libraryStore.load();
+        if (res.data) toast.success(t("library.songsAdded", { count: res.data }));
+      } else if (res.error && res.error !== "canceled") {
+        toast.error(res.error);
+      }
+      return;
+    }
+    const res = await libraryStore.addScanDir();
+    if (res.success) {
+      libraryStore.startScan(false);
+    } else if (res.error === "nested") {
+      toast.warning(t("library.nestedHint"));
+    } else if (
+      res.error &&
+      res.error !== "canceled" &&
+      res.error !== ErrorCode.SCAN_DIR_NOT_SELECTED
+    ) {
+      toast.error(res.error);
+    }
+  } catch (error) {
+    toast.error(error instanceof Error ? error.message : String(error));
+  } finally {
+    addingFolder.value = false;
+  }
 };
 
 // 播放全部
 const handlePlayAll = (): void => {
   if (tracks.value.length === 0) return;
-  player.playFrom(tracks.value, 0, playbackContext.value);
+  player.playFrom(tracks.value, { context: playbackContext.value });
 };
 
 // 扫描进度百分比
@@ -58,16 +91,23 @@ const scanPercent = computed(() => {
 // 目录管理弹窗
 const folderDialogOpen = ref(false);
 
-const moreMenuItems = computed<DropdownMenuItem[]>(() => [
-  { key: "batchManage", label: t("songList.batch.manage"), icon: IconLucideListChecks },
-  { key: "folders", label: t("library.folders"), icon: IconFolderOpen, separator: true },
-  {
-    key: "scan",
-    label: scanning.value ? t("library.scanning") : t("library.scanAll"),
-    icon: IconRefreshCw,
-    disabled: scanning.value || scanDirs.value.length === 0,
-  },
-]);
+const moreMenuItems = computed<DropdownMenuItem[]>(() => {
+  const items: DropdownMenuItem[] = [
+    { key: "batchManage", label: t("songList.batch.manage"), icon: IconLucideListChecks },
+  ];
+  if (!mobile) {
+    items.push(
+      { key: "folders", label: t("library.folders"), icon: IconFolderOpen, separator: true },
+      {
+        key: "scan",
+        label: scanning.value ? t("library.scanning") : t("library.scanAll"),
+        icon: IconRefreshCw,
+        disabled: scanning.value || scanDirs.value.length === 0,
+      },
+    );
+  }
+  return items;
+});
 
 // 更多菜单
 const handleMoreMenu = (key: string): void => {
@@ -163,7 +203,7 @@ onUnmounted(() => {
           <SButton
             variant="secondary"
             circle
-            :disabled="scanning || scanDirs.length === 0"
+            :disabled="mobile || scanning || scanDirs.length === 0"
             @click="libraryStore.startScan(true)"
           >
             <template #icon>
@@ -210,15 +250,26 @@ onUnmounted(() => {
       <div class="text-center text-on-surface-variant/50">
         <IconLucideMusic class="size-12 mx-auto mb-3 opacity-30" />
         <div class="text-sm mb-1">{{ t("library.empty") }}</div>
-        <div class="text-xs mb-4 opacity-70">{{ t("library.emptyHint") }}</div>
-        <SButton type="primary" variant="secondary" @click="handleQuickAddFolder">
-          <template #icon><IconLucideFolderPlus /></template>
-          {{ t("library.addFolder") }}
+        <div class="text-xs mb-4 opacity-70">
+          {{ t(mobile ? "library.emptySongsHint" : "library.emptyHint") }}
+        </div>
+        <SButton
+          type="primary"
+          variant="secondary"
+          :loading="addingFolder"
+          @click="handleQuickAddFolder"
+        >
+          <template #icon>
+            <IconLucideMusic2 v-if="mobile" />
+            <IconLucideFolderPlus v-else />
+          </template>
+          {{ t(mobile ? "library.addSongs" : "library.addFolder") }}
         </SButton>
       </div>
     </div>
     <!-- 文件夹管理 -->
     <SDialog
+      v-if="!mobile"
       v-model:open="folderDialogOpen"
       :title="t('library.folders')"
       :description="t('library.foldersDescription')"

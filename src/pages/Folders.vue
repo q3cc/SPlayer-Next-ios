@@ -92,7 +92,7 @@ const selectedTracks = computed<Track[]>(() => {
 
 const handlePlayAll = (): void => {
   if (selectedTracks.value.length === 0) return;
-  player.playFrom(selectedTracks.value, 0);
+  player.playFrom(selectedTracks.value);
 };
 
 /** 文件夹创建为本地歌单 */

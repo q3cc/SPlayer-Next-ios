@@ -3,6 +3,8 @@ import { useMediaStore } from "@/stores/media";
 import { useStatusStore } from "@/stores/status";
 import { useSettingsDialog } from "@/settings/useSettingsDialog";
 import { formatSignedSec } from "@/utils/time";
+import { loadExternalLyricFile } from "@/services/lyric/loader";
+import { toast } from "@/composables/useToast";
 
 defineProps<{
   /** 是否处于沉浸模式 */
@@ -47,6 +49,20 @@ const offsetInputMs = computed<number>({
 const advanceLyric = (): void => writeOffset(songOffset.value + LYRIC_OFFSET_STEP);
 const delayLyric = (): void => writeOffset(songOffset.value - LYRIC_OFFSET_STEP);
 const resetLyricOffset = (): void => writeOffset(0);
+
+/** 选择并加载用户指定的外置歌词 */
+const pickExternalLyric = async (): Promise<void> => {
+  const result = await window.api.player.pickLyricFile();
+  if (!result.success || !result.data) {
+    if (result.error && result.error !== "canceled") toast.error(result.error);
+    return;
+  }
+  if (await loadExternalLyricFile(result.data.path, result.data.format)) {
+    toast.success(t("player.externalLyric.loaded"));
+  } else {
+    toast.error(t("player.externalLyric.failed"));
+  }
+};
 </script>
 
 <template>
@@ -69,6 +85,18 @@ const resetLyricOffset = (): void => writeOffset(0);
       @click="copyDialogOpen = true"
     >
       <template #icon><IconLucideCopy /></template>
+    </SButton>
+    <SButton
+      type="cover"
+      variant="ghost"
+      circle
+      :size="40"
+      :disabled="!hasTrack"
+      :title="t('player.externalLyric.pick')"
+      :aria-label="t('player.externalLyric.pick')"
+      @click="pickExternalLyric"
+    >
+      <template #icon><IconLucideFileMusic /></template>
     </SButton>
     <div class="h-px w-6 bg-cover/25 my-1" />
     <SButton

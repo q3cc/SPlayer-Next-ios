@@ -1,20 +1,32 @@
 fn main() {
+    println!("cargo:rerun-if-changed=../../vendor/DirectoryAccess");
+    println!("cargo:rerun-if-changed=../../vendor/AudioStreaming");
     tauri_plugin::Builder::new(&[
         "load",
+        "recognition_start",
+        "recognition_cancel",
+        "lastfm_credentials",
+        "audio_processing",
+        "fft_data",
         "control",
         "configure",
         "metadata",
         "status",
         "system_volume",
+        "keep_awake",
         "airplay",
         "visibility",
         "siri",
         "read_metadata",
-        "prepare_cloud_upload",
-        "upload_cloud_file",
+        "read_lyric_file",
+        "share_log",
+        "device_abi",
+        "download_update",
+        "install_update",
         "register_listener",
         "remove_listener",
     ])
+    .android_path("android")
     .ios_path("ios")
     .build();
 }

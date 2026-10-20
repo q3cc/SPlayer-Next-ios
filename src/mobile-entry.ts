@@ -2,4 +2,7 @@
 import "./mobile/diagnostics";
 import "./boot";
 import "./mobile/bootstrap";
-import "./main";
+import * as application from "./main";
+import { bootstrap } from "./bootstrap";
+import { showBootError } from "./boot";
+void bootstrap(application).catch(showBootError);

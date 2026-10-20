@@ -2,7 +2,7 @@
 import IconLucideFolderOpen from "~icons/lucide/folder-open";
 import IconLucideRotateCcw from "~icons/lucide/rotate-ccw";
 
-import { isIOS } from "@/utils/config";
+import { isAndroid, isIOS, isMobile } from "@/utils/config";
 
 defineOptions({ inheritAttrs: false });
 
@@ -37,10 +37,16 @@ onMounted(load);
     <div class="min-w-0 flex-1">
       <div class="text-base">{{ t("settings.downloadDir.label") }}</div>
       <div class="mt-0.5 truncate font-mono text-sm text-on-surface-variant/70" :title="dir">
-        {{ isIOS ? t("settings.downloadDir.mobile") : dir || "—" }}
+        {{
+          isIOS
+            ? t("settings.downloadDir.mobile")
+            : isAndroid
+              ? t("settings.downloadDir.android")
+              : dir || "—"
+        }}
       </div>
     </div>
-    <div v-if="!isIOS" class="shrink-0 flex items-center gap-2">
+    <div v-if="!isMobile" class="shrink-0 flex items-center gap-2">
       <SButton variant="ghost" circle :title="t('settings.cacheDir.open')" @click="openDir">
         <template #icon><IconLucideFolderOpen /></template>
       </SButton>

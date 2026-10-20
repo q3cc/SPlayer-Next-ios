@@ -1,121 +1,125 @@
-/**
- * 渲染进程麦克风采集：getUserMedia + AudioWorklet，抽稀到 8 kHz 单声道后累计
- * 仅在原生模块不可用的平台（macOS/Linux）使用
- */
-
 import { MICROPHONE_WORKLET_SOURCE } from "./microphoneCapture.worklet";
 
-/** 目标采样率（与指纹库一致） */
 const TARGET_RATE = 8000;
-/** 音量回调约每 100 ms 更新一次 */
 const LEVEL_BLOCK = TARGET_RATE / 10;
 
 export interface MicrophoneCaptureHandle {
-  /** 停止采集并返回累计的 8 kHz 单声道 PCM（取消时返回空数组） */
   stop: () => Promise<Float32Array>;
-  /** 释放媒体流与音频上下文，应始终在 stop 后调用 */
   close: () => void;
 }
 
-/** 等待可取消的定时器 */
-const wait = (ms: number, signal: AbortSignal): Promise<void> =>
-  new Promise((resolve) => {
-    const timer = setTimeout(resolve, ms);
-    signal.addEventListener(
-      "abort",
-      () => {
-        clearTimeout(timer);
-        resolve();
-      },
-      { once: true },
-    );
-  });
-
-/**
- * 开始麦克风采集
- * @param onLevel - 音量回调（RMS，约 1 Hz）
- * @param signal - 取消信号
- */
+/** 采集 8 kHz 单声道；授权失败、取消和初始化异常都会释放麦克风。 */
 export const captureMicrophone = async (
   onLevel?: (level: number) => void,
   signal?: AbortSignal,
 ): Promise<MicrophoneCaptureHandle> => {
+  signal?.throwIfAborted();
   const stream = await navigator.mediaDevices.getUserMedia({
     audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false },
   });
-  const ctx = new AudioContext();
-  const blob = new Blob([MICROPHONE_WORKLET_SOURCE], { type: "application/javascript" });
-  const workletUrl = URL.createObjectURL(blob);
-  try {
-    await ctx.audioWorklet.addModule(workletUrl);
-  } finally {
-    URL.revokeObjectURL(workletUrl);
-  }
-  const node = new AudioWorkletNode(ctx, "microphone-capture");
-  const source = ctx.createMediaStreamSource(stream);
-  const output = ctx.createGain();
-  output.gain.value = 0;
-  source.connect(node);
-  node.connect(output);
-  output.connect(ctx.destination);
-
+  let ctx: AudioContext | undefined;
+  let node: AudioWorkletNode | undefined;
+  let source: MediaStreamAudioSourceNode | undefined;
+  let output: GainNode | undefined;
+  let closed = false;
+  let flush: (() => void) | undefined;
   const chunks: Float32Array[] = [];
   let total = 0;
-  let blockEnergy = 0;
-  let blockCount = 0;
-  /** 等待 flush 回传最后一个块（stop 需等它计入总长度） */
-  const flushWaiters: Array<() => void> = [];
-
-  node.port.onmessage = (event: MessageEvent<{ type: string; pcm?: Float32Array }>) => {
-    const pcm = event.data?.pcm;
-    if (pcm) {
-      chunks.push(pcm);
-      total += pcm.length;
-      for (let i = 0; i < pcm.length; i++) {
-        blockEnergy += pcm[i] * pcm[i];
-        blockCount++;
-      }
-      if (blockCount >= LEVEL_BLOCK) {
-        onLevel?.(Math.sqrt(blockEnergy / blockCount));
-        blockEnergy = 0;
-        blockCount = 0;
-      }
-    }
-    const resolve = flushWaiters.shift();
-    if (resolve) resolve();
-  };
-
-  let closed = false;
   const release = (): void => {
     if (closed) return;
     closed = true;
-    source.disconnect();
-    node.disconnect();
-    output.disconnect();
-    void ctx.close();
-    for (const track of stream.getTracks()) {
-      track.stop();
+    signal?.removeEventListener("abort", release);
+    flush?.();
+    source?.disconnect();
+    node?.disconnect();
+    output?.disconnect();
+    if (ctx) void ctx.close();
+    stream.getTracks().forEach((track) => track.stop());
+    chunks.length = 0;
+  };
+  signal?.addEventListener("abort", release, { once: true });
+  try {
+    signal?.throwIfAborted();
+    ctx = new AudioContext();
+    const url = URL.createObjectURL(
+      new Blob([MICROPHONE_WORKLET_SOURCE], { type: "application/javascript" }),
+    );
+    try {
+      await ctx.audioWorklet.addModule(url);
+    } finally {
+      URL.revokeObjectURL(url);
     }
-  };
-
-  return {
-    stop: async () => {
-      if (signal?.aborted || closed) return new Float32Array(0);
-      node.port.postMessage({ type: "flush" });
-      await new Promise<void>((resolve) => flushWaiters.push(resolve));
-      const merged = new Float32Array(total);
-      let offset = 0;
-      for (const chunk of chunks) {
-        merged.set(chunk, offset);
-        offset += chunk.length;
+    signal?.throwIfAborted();
+    node = new AudioWorkletNode(ctx, "microphone-capture");
+    source = ctx.createMediaStreamSource(stream);
+    output = ctx.createGain();
+    output.gain.value = 0;
+    source.connect(node);
+    node.connect(output);
+    output.connect(ctx.destination);
+    let blockEnergy = 0;
+    let blockCount = 0;
+    node.port.onmessage = (event: MessageEvent<{ type: string; pcm?: Float32Array }>) => {
+      if (closed) return;
+      const pcm = event.data?.pcm;
+      if (pcm && total + pcm.length <= TARGET_RATE * 30) {
+        chunks.push(pcm);
+        total += pcm.length;
+        for (const sample of pcm) {
+          blockEnergy += sample * sample;
+          blockCount++;
+        }
+        if (blockCount >= LEVEL_BLOCK) {
+          onLevel?.(Math.sqrt(blockEnergy / blockCount));
+          blockEnergy = 0;
+          blockCount = 0;
+        }
       }
-      chunks.length = 0;
-      return merged;
-    },
-    close: release,
-  };
+      if (event.data.type === "flushed") flush?.();
+    };
+    await ctx.resume();
+    signal?.throwIfAborted();
+    return {
+      stop: async () => {
+        if (closed || signal?.aborted) return new Float32Array(0);
+        await new Promise<void>((resolve) => {
+          const timer = setTimeout(resolve, 1000);
+          flush = () => {
+            clearTimeout(timer);
+            resolve();
+          };
+          node!.port.postMessage({ type: "flush" });
+        });
+        flush = undefined;
+        const pcm = new Float32Array(total);
+        let offset = 0;
+        for (const chunk of chunks) {
+          pcm.set(chunk, offset);
+          offset += chunk.length;
+        }
+        chunks.length = 0;
+        return signal?.aborted ? new Float32Array(0) : pcm;
+      },
+      close: release,
+    };
+  } catch (error) {
+    release();
+    throw error;
+  }
 };
 
-/** 等待采集结束（可被取消信号提前唤醒） */
+/** 取消时立即结束等待，不遗留定时器和事件监听器。 */
 export const waitCapture = (durationMs: number, signal: AbortSignal): Promise<void> =>
-  wait(durationMs, signal);
+  new Promise((resolve) => {
+    if (signal.aborted) {
+      resolve();
+      return;
+    }
+    const finish = () => {
+      clearTimeout(timer);
+      signal.removeEventListener("abort", finish);
+      resolve();
+    };
+    const timer = setTimeout(finish, durationMs);
+    signal.addEventListener("abort", finish, { once: true });
+  });

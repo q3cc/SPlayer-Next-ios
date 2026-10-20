@@ -45,6 +45,21 @@ final class LayoutTests: XCTestCase {
         }
     }
 
+    func testPortraitSearchLocalization() {
+        let app = XCUIApplication(bundleIdentifier: "top.imsyy.splayer-next.ios")
+        app.activate()
+        XCUIDevice.shared.orientation = .portrait
+        let search = app.buttons["搜索"].firstMatch
+        XCTAssertTrue(search.waitForExistence(timeout: 30))
+        XCTAssertFalse(app.staticTexts["nav.search"].exists)
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = "ipad-portrait-chinese-navigation"
+        attachment.lifetime = .keepAlways
+        add(attachment)
+        search.tap()
+        XCTAssertTrue(app.staticTexts["请输入关键词开始搜索"].waitForExistence(timeout: 10))
+    }
+
     func testFolderPicker() {
         let app = XCUIApplication(bundleIdentifier: "top.imsyy.splayer-next.ios")
         app.activate()

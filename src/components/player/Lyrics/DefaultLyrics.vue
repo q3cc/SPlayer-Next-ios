@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import type { LyricLine } from "@shared/types/lyrics";
-import { DEFAULTS, type SpringParams, LyricRenderer } from "lyric-dom";
+import type { LyricLine } from "lyric-kit";
+
+import { DEFAULTS, type LyricAlignment, type SpringParams, LyricRenderer } from "lyric-dom";
 import "lyric-dom/renderer.css";
 import LyricCredit from "./LyricCredit.vue";
 
@@ -16,6 +17,8 @@ const props = withDefaults(
      * @default 0.35
      */
     alignPosition?: number;
+    /** 歌词水平对齐方式，auto 按声部自动布局 */
+    alignment?: LyricAlignment;
     /**
      * 逐字掩码渐变宽度比例（相对于文字高度）
      * @range 0 ~ 1（0 = 硬切，1 = 全字高渐变）
@@ -101,6 +104,7 @@ const props = withDefaults(
   {
     playing: false,
     alignPosition: DEFAULTS.alignPosition,
+    alignment: DEFAULTS.alignment,
     wordFadeWidth: DEFAULTS.wordFadeWidth,
     scrollResetDelay: DEFAULTS.scrollResetDelay,
     minInterludeGap: DEFAULTS.minInterludeGap,
@@ -138,6 +142,22 @@ let isFrozen = false;
 /** 冻结期间收到的待应用歌词（父容器 display:none 时无法测量，需延迟） */
 let pendingLyrics: LyricLine[] | null = null;
 
+/** Android WebView 对逐行歌词的标准 mask-image 支持不完整，补齐前缀遮罩。 */
+const applyStaticLineMasks = () => {
+  for (const line of containerRef.value?.querySelectorAll<HTMLElement>(".lp-main") ?? []) {
+    if (line.childElementCount > 0) continue;
+    line.style.setProperty(
+      "-webkit-mask-image",
+      "linear-gradient(rgba(0,0,0,var(--ba)),rgba(0,0,0,var(--ba)))",
+    );
+  }
+};
+
+const setLyrics = (lines: LyricLine[]) => {
+  renderer?.setLyrics(lines);
+  applyStaticLineMasks();
+};
+
 /**
  * 推送当前播放时间（毫秒）
  *
@@ -159,10 +179,11 @@ const resume = () => {
   isFrozen = false;
   // 应用冻结期间缓冲的歌词变更
   if (pendingLyrics) {
-    renderer?.setLyrics(pendingLyrics);
+    setLyrics(pendingLyrics);
     pendingLyrics = null;
   }
   renderer?.resume();
+  applyStaticLineMasks();
 };
 
 defineExpose({ setCurrentTime, freeze, resume });
@@ -183,7 +204,7 @@ onMounted(() => {
     renderer.setCurrentTime(props.initialTime);
   }
   if (props.lyricLines.length > 0) {
-    renderer.setLyrics(props.lyricLines);
+    setLyrics(props.lyricLines);
   }
   bottomLineEl.value = renderer.getBottomLineElement();
 });
@@ -198,7 +219,7 @@ const updateLyrics = (): void => {
   if (isFrozen) {
     pendingLyrics = props.lyricLines;
   } else {
-    renderer?.setLyrics(props.lyricLines);
+    setLyrics(props.lyricLines);
   }
 };
 
@@ -217,6 +238,11 @@ watch(
 watch(
   () => props.wordFadeWidth,
   (v) => renderer?.setConfig({ wordFadeWidth: v }),
+);
+
+watch(
+  () => props.alignment,
+  (v) => renderer?.setConfig({ alignment: v }),
 );
 
 watch(

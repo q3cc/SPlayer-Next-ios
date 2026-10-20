@@ -36,11 +36,31 @@ const splitArtists = (text: string | undefined | null): string[] =>
 
 /** Track 全部歌手归一化 */
 export const normalizeTrackArtists = (track: Track): string[] =>
-  track.artists.map((artist) => normalize(artist.name)).filter(Boolean);
+  track.artists
+    .map((artist) => normalize(artist.name))
+    .filter(
+      (artist) =>
+        artist && !["unknownartist", "unknown", "未知歌手", "未知艺术家"].includes(artist),
+    );
+
+/** 从常见的“歌手 - 歌名”文件名中提取匹配信息。 */
+const lyricIdentity = (track: Track): { title: string; artists: string[] } => {
+  const artists = track.artists
+    .map((artist) => artist.name.trim())
+    .filter(
+      (artist) =>
+        artist &&
+        !["unknownartist", "unknown", "未知歌手", "未知艺术家"].includes(normalize(artist)),
+    );
+  if (artists.length > 0) return { title: track.title, artists };
+  const parts = track.title.split(/\s*[-–—]\s*/);
+  if (parts.length < 2) return { title: track.title, artists: [] };
+  return { title: parts.slice(1).join(" - "), artists: [parts[0]] };
+};
 
 /** 搜索关键词用全部歌手，减少平台返回同名异歌手候选 */
 export const buildLyricSearchKeyword = (track: Track): string =>
-  [track.title, track.artists.map((artist) => artist.name).join(" ")]
+  [lyricIdentity(track).title, lyricIdentity(track).artists.join(" ")]
     .map((part) => part.trim())
     .filter(Boolean)
     .join(" ");
@@ -104,8 +124,9 @@ export const pickBestCandidate = <E>(
   candidates: LyricCandidate<E>[],
   track: Track,
 ): LyricCandidate<E> | null => {
-  const trackName = normalize(track.title);
-  const trackArtists = normalizeTrackArtists(track);
+  const identity = lyricIdentity(track);
+  const trackName = normalize(identity.title);
+  const trackArtists = identity.artists;
   const trackAlbum = normalize(track.album?.name);
   const trackDuration = track.duration;
 

@@ -18,6 +18,7 @@ import {
 } from "@/services/recognition/microphoneCapture";
 import * as player from "@/core/player";
 import { useStatusStore } from "@/stores/status";
+import { isIOS, isMobile } from "@/utils/config";
 
 /** 默认采集时长 */
 const DEFAULT_DURATION_MS = 8000;
@@ -112,6 +113,7 @@ export const useRecognitionSession = () => {
       }
       await window.api.recognition.submitPcm(pcm);
     } catch (err) {
+      captureHandle?.close();
       captureHandle = null;
       if (signal.aborted) {
         if (resetAfterAbort) reset();
@@ -133,8 +135,10 @@ export const useRecognitionSession = () => {
     reset();
     resetAfterAbort = true;
     source.value = input;
-    phase.value = "capturing";
-    if (supported.value) {
+    phase.value = isIOS && input === "system" ? "waiting" : "capturing";
+    if (input === "microphone" && isMobile) {
+      await captureInRenderer();
+    } else if (supported.value) {
       await window.api.recognition.start({ source: input, durationMs: DEFAULT_DURATION_MS });
     } else if (input === "microphone") {
       await captureInRenderer();

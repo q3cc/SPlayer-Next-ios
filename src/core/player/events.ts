@@ -1,5 +1,8 @@
+import { queueEntries } from "@/stores/queue";
 import type { PlayerEvent } from "@shared/types/player";
 import { isIOS } from "@/utils/config";
+import i18n from "@/i18n";
+import { toast } from "@/composables/useToast";
 import { useMediaStore } from "@/stores/media";
 import { useStatusStore } from "@/stores/status";
 import { useFavorite } from "@/composables/useFavorite";
@@ -11,6 +14,8 @@ import * as playStats from "./stats";
 import {
   hasReachedSeekTarget,
   insertManyToQueue,
+  invalidatePlaybackOperation,
+  isSmartTransitionActive,
   isSeeking,
   markSeek,
   nextTrack,
@@ -20,9 +25,10 @@ import {
   prevTrack,
   recoverFromSourceFailure,
   refreshDevices,
-  seek,
+  restartCurrentTrack,
   setRepeatMode,
   setShuffleMode,
+  trySmartTransition,
 } from "./index";
 
 /** 防止 ended 事件重入 */
@@ -42,10 +48,8 @@ const finishCurrentTrack = async (): Promise<void> => {
     playStats.onTrackEnded(repeatOne && !stopByTimer);
     // 定时关闭"等本曲结束"模式
     if (stopByTimer) return;
-    // 单曲循环：seek 回开头继续播放
     if (repeatOne) {
-      await seek(0);
-      await play();
+      await restartCurrentTrack();
     } else {
       await nextTrack();
     }
@@ -64,6 +68,14 @@ export const handleEvent = async (event: PlayerEvent): Promise<void> => {
     case "status":
       // 歌曲加载中或 loading 事件不更新 UI，保持当前封面/进度/播放状态平滑过渡
       if (event.data.state === "loading" || status.trackLoading) break;
+      /** 失败路径已置为空闲时，迟到的停止通知不能取消待执行的自动跳曲 */
+      if (
+        (event.data.state === "idle" || event.data.state === "stopped") &&
+        status.state !== "idle" &&
+        status.state !== "stopped"
+      ) {
+        invalidatePlaybackOperation();
+      }
       status.state = event.data.state;
       // seek 期间不从 status 事件更新 position，避免回跳；position 更新统一由 position 事件负责
       if (!isSeeking()) {
@@ -80,6 +92,13 @@ export const handleEvent = async (event: PlayerEvent): Promise<void> => {
       break;
     case "seek":
       markSeek(event.data.position);
+      break;
+    case "transition":
+      status.transitioning = event.data.active;
+      if (event.data.active) console.info("[player:transition] 实际淡化开始");
+      break;
+    case "transitionReady":
+      await trySmartTransition(event.data.position, event.data.id, event.data.endPosition);
       break;
     case "position": {
       // 歌曲加载中不更新进度
@@ -104,9 +123,13 @@ export const handleEvent = async (event: PlayerEvent): Promise<void> => {
       abLoop.checkLoop(adjusted);
       // 推进延时缓存调度
       cacheScheduler.tick(adjusted);
+      void trySmartTransition(adjusted).catch((error) => {
+        console.warn("[player] 播放过渡失败", error);
+      });
       const track = useMediaStore().track;
       if (track?.cueEndMs != null && status.isPlaying && status.duration > 0) {
-        if (adjusted >= status.duration - 250) await finishCurrentTrack();
+        if (adjusted >= status.duration - 250 && !isSmartTransitionActive())
+          await finishCurrentTrack();
       }
       break;
     }
@@ -114,6 +137,7 @@ export const handleEvent = async (event: PlayerEvent): Promise<void> => {
       playback.setFftFrame(event.data.ldata, event.data.rdata);
       break;
     case "ended": {
+      if (isSmartTransitionActive()) break;
       await finishCurrentTrack();
       break;
     }
@@ -124,6 +148,17 @@ export const handleEvent = async (event: PlayerEvent): Promise<void> => {
     case "play":
       await play();
       break;
+    case "getQueue": {
+      const { requestId, offset, limit } = event.data;
+      const entries = queueEntries.value;
+      window.api.player.respondQueue(requestId, {
+        tracks: entries.slice(offset, offset + limit).map((item) => toRaw(item.track)),
+        total: entries.length,
+        currentIndex: status.currentIndex,
+        offset,
+      });
+      break;
+    }
     case "playTrack":
       await playNow(event.data.track);
       break;
@@ -150,6 +185,15 @@ export const handleEvent = async (event: PlayerEvent): Promise<void> => {
       break;
     case "deviceChanged": {
       refreshDevices();
+      break;
+    }
+    case "outputFallback": {
+      // WASAPI 独占模式不可用已回退共享，按原因分类提示
+      const key = `settings.audioOutputMode.fallback.${event.data.reason}`;
+      const message = i18n.global.te(key)
+        ? i18n.global.t(key)
+        : i18n.global.t("settings.audioOutputMode.fallback.unavailable");
+      toast.warning(message);
       break;
     }
   }

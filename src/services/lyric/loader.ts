@@ -3,7 +3,9 @@
  */
 
 import type { Track, TrackDetail } from "@shared/types/player";
-import type { LyricData, LyricFormat, LyricInput } from "@shared/types/lyrics";
+import type { LyricFormat, LyricInput } from "lyric-kit";
+import type { LyricData } from "@shared/types/lyrics";
+
 import { isPlatform } from "@shared/types/platform";
 import { useMediaStore } from "@/stores/media";
 import { useSettingsStore } from "@/stores/settings";
@@ -62,11 +64,41 @@ const readLocal = async (
   const idx = bestExternalIndex(detail.externalLyrics, order);
   if (idx !== -1) {
     const ext = detail.externalLyrics[idx];
-    const result = await window.api.player.readLyricFile(ext.path);
-    if (!result.success || result.data == null) return null;
-    return { source: { source: "external", format: ext.format }, content: result.data };
+    try {
+      const result = await window.api.player.readLyricFile(ext.path);
+      if (result.success && result.data?.trim()) {
+        return { source: { source: "external", format: ext.format }, content: result.data };
+      }
+    } catch {
+      // 外置文件不可访问时继续尝试音频标签中的内嵌歌词。
+    }
   }
   return embeddedLyricFromDetail(detail);
+};
+
+/**
+ * 读取并立即应用用户选择的外置歌词。
+ * @param path - 歌词文件路径
+ * @param format - 歌词格式
+ * @returns 是否成功解析并应用
+ */
+export const loadExternalLyricFile = async (
+  path: string,
+  format: LyricFormat,
+): Promise<boolean> => {
+  const token = ++currentToken;
+  try {
+    const result = await window.api.player.readLyricFile(path);
+    if (token !== currentToken || !result.success || !result.data?.trim()) return false;
+    const media = useMediaStore();
+    const detail = media.detail;
+    if (detail && !detail.externalLyrics.some((item) => item.path === path)) {
+      detail.externalLyrics = [...detail.externalLyrics, { format, path }];
+    }
+    return commitAndHasParsed(token, { source: "external", format }, { content: result.data });
+  } catch {
+    return false;
+  }
 };
 
 /**
@@ -349,6 +381,11 @@ export const loadForTrack = async (detail: TrackDetail | null): Promise<void> =>
       commit(token, null, null);
       return;
     }
+    if (detail?.downloaded) {
+      const local = await readLocal(detail);
+      if (token !== currentToken) return;
+      if (local && commitAndHasParsed(token, local.source, { content: local.content })) return;
+    }
     const preloaded = await consumePreloadedLyric(track);
     if (token !== currentToken) return;
     if (preloaded.hit) {
@@ -364,6 +401,13 @@ export const loadForTrack = async (detail: TrackDetail | null): Promise<void> =>
     // 本地 TTML 歌词库最高优先
     if (await tryLocalRepo(token, track)) return;
     if (token !== currentToken) return;
+    if (track.source === "plugin") {
+      const plugin = await resolvePluginLyric(track);
+      if (token !== currentToken) return;
+      if (plugin) commitIfBetter(token, plugin.source, plugin.input);
+      else if (media.parsedLyric.length === 0) commit(token, null, null);
+      return;
+    }
     // 在线歌曲（任一在线平台）
     if (isPlatform(track.source)) {
       await loadPlatformLyric(token, track);
@@ -421,9 +465,21 @@ const refreshPreference = async (): Promise<void> => {
   const media = useMediaStore();
   const track = media.track;
   if (!track) return;
+  if (media.detail?.downloaded) {
+    const local = await readLocal(media.detail);
+    if (token !== currentToken) return;
+    if (local && commitAndHasParsed(token, local.source, { content: local.content })) return;
+  }
   // 本地 TTML 歌词库最高优先
   if (await tryLocalRepo(token, track)) return;
   if (token !== currentToken) return;
+  if (track.source === "plugin") {
+    const plugin = await resolvePluginLyric(track);
+    if (token !== currentToken) return;
+    if (plugin) commitIfBetter(token, plugin.source, plugin.input);
+    else commit(token, null, null);
+    return;
+  }
   if (track.source === "streaming") {
     await loadStreamingLyric(token, track, media.detail);
     return;

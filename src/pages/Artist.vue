@@ -61,18 +61,20 @@ const handleListScroll = (event: Event) => {
   }
 };
 
-/** 加载数据 */
+/** 加载当前服务器的歌手详情，并作废上一轮请求 */
 const loadArtist = async (): Promise<void> => {
   collapsed.value = false;
   loadAbort?.abort();
   const myAbort = new AbortController();
   loadAbort = myAbort;
   loading.value = true;
+  artist.value = null;
   error.value = "";
   hasMoreSongs.value = false;
 
   try {
     await loadArtistService(source, id, {
+      serverId: typeof route.query.serverId === "string" ? route.query.serverId : undefined,
       fallbackName: typeof route.query.name === "string" ? route.query.name : undefined,
       signal: myAbort.signal,
       onUpdate: (next) => {
@@ -127,7 +129,7 @@ const onReachBottom = async (): Promise<void> => {
   }
 };
 
-loadArtist();
+watch(() => route.query.serverId, loadArtist, { immediate: true });
 
 onBeforeUnmount(() => {
   loadAbort?.abort();
@@ -149,10 +151,10 @@ const playbackContext = computed<PlaybackContext>(() => ({
 
 const handlePlayAll = () => {
   if (!artist.value?.tracks.length) return;
-  player.playFrom(artist.value.tracks, 0, playbackContext.value);
+  player.playFrom(artist.value.tracks, { context: playbackContext.value });
 };
 
-/** 收藏歌手仅支持网易云 */
+/** 收藏歌手仅支持 NCM */
 const canSubscribeArtist = computed(() => artist.value?.source === "netease");
 
 /** 当前歌手是否已收藏（依据用户收藏歌手列表） */
@@ -377,7 +379,15 @@ const albumItems = computed<CoverItem[]>(() => {
               :items="albumItems"
               :padding-x="20"
               :padding-bottom="24"
-              @click="(item) => navigateToAlbum(item.title, { source, albumId: item.id })"
+              @click="
+                (item) =>
+                  navigateToAlbum(item.title, {
+                    source,
+                    albumId: item.id,
+                    serverId:
+                      typeof route.query.serverId === 'string' ? route.query.serverId : undefined,
+                  })
+              "
             />
           </div>
         </Transition>

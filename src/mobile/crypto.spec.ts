@@ -1,4 +1,6 @@
-import { describe, expect, it, vi } from "vitest";
+import { Buffer as BrowserBuffer } from "buffer/";
+import { Buffer as NativeBuffer } from "node:buffer";
+import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import { xeapi, xeapiDecryptPublicKey } from "../../electron/main/apis/netease/core/crypto";
 
 vi.mock("node:crypto", async (importOriginal) => ({
@@ -7,6 +9,8 @@ vi.mock("node:crypto", async (importOriginal) => ({
 }));
 
 describe("移动端匿名会话加密与 Node 服务端互通", () => {
+  beforeEach(() => vi.stubGlobal("Buffer", BrowserBuffer));
+  afterEach(() => vi.unstubAllGlobals());
   it("通过浏览器 AES 解密公钥包，不读取 null IV 的 length", async () => {
     const native = await vi.importActual<typeof import("node:crypto")>("node:crypto");
     const key = Buffer.from(
@@ -51,6 +55,6 @@ describe("移动端匿名会话加密与 Node 服务端互通", () => {
     expect(plaintext.toString()).toBe(
       `${Buffer.from("0123456789abcdef").toString("base64")}|android|server-key`,
     );
-    expect(Buffer.from(encrypted.B, "base64").length).toBeGreaterThan(0);
+    expect(NativeBuffer.from(encrypted.C, "base64url").length).toBeGreaterThan(0);
   });
 });

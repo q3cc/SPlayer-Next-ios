@@ -1,20 +1,27 @@
 <script setup lang="ts">
+import { isMobile } from "@/utils/config";
 import { settingsSchema } from "@/settings/schema";
+import type { SettingItem } from "@/types/settings-schema";
 
 const emit = defineEmits<{
-  select: [categoryId: string, itemKey: string];
+  select: [categoryId: string, itemKey: string, parentKeys: string[]];
   "active-change": [active: boolean];
 }>();
 
-const { t } = useI18n();
+const { t, te } = useI18n();
 const query = ref("");
-const isSearchActive = computed(() => query.value.length > 0);
+const isFocused = ref(false);
+
+const isSearchActive = computed(
+  () => (isMobile || isFocused.value) && query.value.trim().length > 0,
+);
 
 watch(isSearchActive, (v) => emit("active-change", v));
 
 interface SearchResult {
   categoryId: string;
   itemKey: string;
+  parentKeys: string[];
   label: string;
   description: string;
   categoryLabel: string;
@@ -25,38 +32,67 @@ const results = computed<SearchResult[]>(() => {
   if (!q) return [];
   const out: SearchResult[] = [];
   for (const cat of settingsSchema) {
-    for (const sec of cat.sections ?? []) {
-      if (sec.visible && !sec.visible()) continue;
-      for (const item of sec.items) {
+    /**
+     * 检索设置项及子项
+     * @param items - 当前层设置项
+     * @param parentKeys - 从外到内的父项键名
+     */
+    const searchItems = (items: SettingItem[], parentKeys: string[]): void => {
+      for (const item of items) {
         if (item.visible && !item.visible()) continue;
-        if (item.searchable === false) continue;
-        const label = t(`settings.${item.key}.label`);
-        const desc = item.hideDescription ? "" : t(`settings.${item.key}.description`);
-        const kw = item.keywords?.map((k) => t(k)).join(" ") ?? "";
-        if (`${label} ${desc} ${kw}`.toLowerCase().includes(q)) {
-          out.push({
-            categoryId: cat.id,
-            itemKey: item.key,
-            label,
-            description: desc,
-            categoryLabel: t(`settings.group.${cat.id}`),
-          });
+        if (item.searchable !== false) {
+          const labelKey = `settings.${item.key}.label`;
+          const descriptionKey = item.descriptionKey ?? `settings.${item.key}.description`;
+          const label = te(labelKey) ? t(labelKey) : "";
+          const desc = !item.hideDescription && te(descriptionKey) ? t(descriptionKey) : "";
+          const kw =
+            item.keywords
+              ?.filter((key) => te(key))
+              .map((key) => t(key))
+              .join(" ") ?? "";
+          if (label && `${label} ${desc} ${kw}`.toLowerCase().includes(q)) {
+            out.push({
+              categoryId: cat.id,
+              itemKey: item.key,
+              parentKeys,
+              label,
+              description: desc,
+              categoryLabel: t(`settings.group.${cat.id}`),
+            });
+          }
+        }
+        if (item.children) {
+          searchItems(item.children, [...parentKeys, item.key]);
         }
       }
+    };
+    for (const sec of cat.sections ?? []) {
+      if (sec.visible && !sec.visible()) continue;
+      searchItems(sec.items, []);
     }
   }
   return out;
 });
 
+/**
+ * 定位搜索结果并清空输入
+ * @param r - 选中的设置项
+ */
 const handleSelect = (r: SearchResult) => {
-  emit("select", r.categoryId, r.itemKey);
+  emit("select", r.categoryId, r.itemKey, r.parentKeys);
   query.value = "";
 };
 </script>
 
 <template>
   <div class="relative">
-    <SInput v-model="query" :placeholder="t('settings.search')" clearable>
+    <SInput
+      v-model="query"
+      :placeholder="t('settings.search')"
+      clearable
+      @focus="isFocused = true"
+      @blur="isFocused = false"
+    >
       <template #prefix>
         <IconLucideSearch class="size-3.5 text-on-surface-variant/50" />
       </template>

@@ -1,13 +1,16 @@
 <script setup lang="ts">
+import { ErrorCode } from "@shared/types/errors";
 import { useLibraryStore } from "@/stores/library";
 import { toast } from "@/composables/useToast";
 import IconLucideFolder from "~icons/lucide/folder";
 import IconLucideFolderPlus from "~icons/lucide/folder-plus";
+import IconLucideMusic2 from "~icons/lucide/music-2";
 import IconLucideTrash2 from "~icons/lucide/trash-2";
 
 const { t } = useI18n();
 const libraryStore = useLibraryStore();
 const { scanDirs } = storeToRefs(libraryStore);
+const mobile = typeof window !== "undefined" && Boolean(window.api?.library?.addTracksFromFiles);
 
 const emit = defineEmits<{
   (e: "added"): void;
@@ -32,9 +35,34 @@ const handleAdd = async (): Promise<void> => {
       emit("added");
     } else if (res.error === "nested") {
       toast.warning(t("library.nestedHint"));
-    } else if (res.error) {
+    } else if (
+      res.error &&
+      res.error !== "canceled" &&
+      res.error !== ErrorCode.SCAN_DIR_NOT_SELECTED
+    ) {
       toast.error(res.error);
     }
+  } catch (error) {
+    toast.error(error instanceof Error ? error.message : String(error));
+  } finally {
+    adding.value = false;
+  }
+};
+
+const handleAddSongs = async (): Promise<void> => {
+  if (adding.value) return;
+  adding.value = true;
+  try {
+    const res = await libraryStore.addTracksFromFiles();
+    if (res.success) {
+      await libraryStore.load();
+      emit("added");
+      if (res.data) toast.success(t("library.songsAdded", { count: res.data }));
+    } else if (res.error && res.error !== "canceled") {
+      toast.error(res.error);
+    }
+  } catch (error) {
+    toast.error(error instanceof Error ? error.message : String(error));
   } finally {
     adding.value = false;
   }
@@ -61,28 +89,42 @@ onMounted(() => {
 
 <template>
   <div class="flex flex-col gap-2">
-    <div
-      v-for="dir in scanDirs"
-      :key="dir"
-      class="flex items-center gap-3 px-3 py-2 rounded-lg bg-on-surface/4"
-    >
-      <IconLucideFolder class="size-4 text-on-surface-variant shrink-0" />
-      <div class="flex-1 min-w-0">
-        <div class="text-sm truncate text-on-surface">{{ folderName(dir) }}</div>
-        <div class="text-xs truncate text-on-surface-variant/60">{{ dir }}</div>
+    <template v-if="!mobile">
+      <div
+        v-for="dir in scanDirs"
+        :key="dir"
+        class="flex items-center gap-3 px-3 py-2 rounded-lg bg-on-surface/4"
+      >
+        <IconLucideFolder class="size-4 text-on-surface-variant shrink-0" />
+        <div class="flex-1 min-w-0">
+          <div class="text-sm truncate text-on-surface">{{ folderName(dir) }}</div>
+          <div class="text-xs truncate text-on-surface-variant/60">{{ dir }}</div>
+        </div>
+        <SButton variant="ghost" size="small" @click="confirmRemove(dir)">
+          <template #icon><IconLucideTrash2 /></template>
+        </SButton>
       </div>
-      <SButton variant="ghost" size="small" @click="confirmRemove(dir)">
-        <template #icon><IconLucideTrash2 /></template>
+
+      <div v-if="scanDirs.length === 0" class="py-6 text-center text-on-surface-variant/50 text-sm">
+        {{ t("library.emptyHint") }}
+      </div>
+
+      <SButton class="mt-1" variant="secondary" :loading="adding" block @click="handleAdd">
+        <template #icon><IconLucideFolderPlus /></template>
+        {{ t("library.addFolder") }}
       </SButton>
-    </div>
+    </template>
 
-    <div v-if="scanDirs.length === 0" class="py-6 text-center text-on-surface-variant/50 text-sm">
-      {{ t("library.emptyHint") }}
-    </div>
-
-    <SButton class="mt-1" variant="secondary" :loading="adding" block @click="handleAdd">
-      <template #icon><IconLucideFolderPlus /></template>
-      {{ t("library.addFolder") }}
+    <SButton
+      v-else
+      class="mt-1"
+      variant="secondary"
+      :loading="adding"
+      block
+      @click="handleAddSongs"
+    >
+      <template #icon><IconLucideMusic2 /></template>
+      {{ t("library.addSongs") }}
     </SButton>
 
     <SDialog v-model:open="removeConfirmOpen" :title="t('library.removeFolder')">

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { isIOS } from "@/utils/config";
+import { isMobile } from "@/utils/config";
 import type { DownloadTask, DownloadStatus } from "@shared/types/download";
 import type { Track } from "@shared/types/player";
 import { useMediaStore } from "@/stores/media";
@@ -78,7 +78,8 @@ const isPlaying = (task: DownloadTask): boolean =>
 /** 在可播放队列中定位并播放 */
 const playTask = (task: DownloadTask): void => {
   const index = playableTasks.value.findIndex((item) => item.taskId === task.taskId);
-  if (index >= 0) void player.playFrom(playableTasks.value.map(toLocalTrack), index);
+  if (index >= 0)
+    void player.playFrom(playableTasks.value.map(toLocalTrack), { startIndex: index });
 };
 
 /** 序号位点击：正在播放则切换，否则播放 */
@@ -115,7 +116,7 @@ const confirmDelete = async (task: DownloadTask): Promise<void> => {
 /** 播放全部已完成（供下载页顶栏调用） */
 const playAll = (): void => {
   if (playableTasks.value.length > 0) {
-    void player.playFrom(playableTasks.value.map(toLocalTrack), 0);
+    void player.playFrom(playableTasks.value.map(toLocalTrack));
   }
 };
 
@@ -135,14 +136,20 @@ defineExpose({ playAll });
     <template #header>
       <div class="pr-1.5">
         <div
-          class="flex items-center gap-2 sm:gap-3 pl-2 sm:pl-3 pr-2 sm:pr-6 mx-3 h-10 text-sm text-on-surface-variant/60"
+          class="flex items-center gap-2 sm:gap-3 pl-2 sm:pl-3 pr-2 sm:pr-6 mx-3 h-10 border-2 border-solid border-transparent text-sm text-on-surface-variant/60"
         >
           <div class="w-8 shrink-0 flex items-center justify-center"><span>#</span></div>
           <div class="flex-1 min-w-0 px-1.5">{{ t("songList.title") }}</div>
           <div class="w-16 sm:w-32 shrink-0">{{ t("download.colStatus") }}</div>
-          <div class="hidden sm:block w-20 shrink-0 text-center">{{ t("download.colSize") }}</div>
-          <div class="hidden sm:block w-16 shrink-0 text-center">{{ t("songList.duration") }}</div>
-          <div class="hidden sm:block w-20 shrink-0 text-center">{{ t("songList.actions") }}</div>
+          <div class="hidden sm:block w-20 shrink-0 text-center whitespace-nowrap">
+            {{ t("download.colSize") }}
+          </div>
+          <div class="hidden sm:block w-16 shrink-0 text-center whitespace-nowrap">
+            {{ t("songList.duration") }}
+          </div>
+          <div class="hidden sm:block w-20 shrink-0 text-center whitespace-nowrap">
+            {{ t("songList.actions") }}
+          </div>
         </div>
       </div>
     </template>
@@ -198,26 +205,24 @@ defineExpose({ playAll });
                   {{ item.track.title }}
                 </span>
                 <IconLucideTriangleAlert
-                  v-if="item.tagWarning"
+                  v-if="item.tagWarning || item.mediaWarning"
                   class="size-3.5 shrink-0 self-center text-amber-500"
-                  :title="t('download.tagWarning')"
+                  :title="t(item.mediaWarning ? 'download.mediaWarning' : 'download.tagWarning')"
                 />
               </div>
               <div
                 class="text-sm mt-1 truncate flex items-center gap-1"
                 :class="isPlaying(item) ? 'text-primary/70' : 'text-on-surface-variant'"
               >
-                <span
+                <STag
                   v-if="item.track.quality"
-                  class="shrink-0 px-1 rounded text-[10px] leading-[18px] font-bold border border-solid"
-                  :class="
-                    isLosslessQuality(item.track.quality)
-                      ? 'text-amber-500 border-amber-500/40'
-                      : 'text-on-surface-variant border-on-surface-variant/40'
-                  "
+                  :type="isLosslessQuality(item.track.quality) ? 'warning' : 'default'"
+                  variant="outline"
+                  size="tiny"
+                  class="shrink-0"
                 >
                   {{ getQualityLabel(item.track.quality) }}
-                </span>
+                </STag>
                 <span class="truncate">{{ artistText(item) }}</span>
               </div>
             </div>
@@ -289,7 +294,7 @@ defineExpose({ playAll });
                 variant="ghost"
                 circle
                 size="small"
-                v-if="!isIOS"
+                v-if="!isMobile"
                 :title="t('download.openFolder')"
                 @click="openFolder(item)"
               >

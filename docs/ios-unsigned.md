@@ -13,13 +13,19 @@
 
 ## 本地开发要求
 
-本地调试需要 macOS、Xcode、Rust iOS target、Node.js 22 和 pnpm。首次生成工程后可运行：
+本地调试需要 macOS、Xcode、Rust、Node.js >= 22.19.0 和 pnpm。Tauri 初始化还会检查 XcodeGen、libimobiledevice 和 CocoaPods，请先安装这些工具。
 
 ```bash
-pnpm install
+rustup target add aarch64-apple-ios aarch64-apple-ios-sim
+rustup component add llvm-tools
+pnpm install --frozen-lockfile
 pnpm ios:init
 pnpm ios:dev
 ```
+
+Xcode 27 下，Swift 静态库的 C 桥接符号需要通过 `llvm-tools` 中的 `llvm-objcopy` 导出。若日志提示 `llvm-objcopy not found`，先安装该组件，再重新构建受影响的原生包。
+
+未签名设备包使用 `pnpm ios:build --ci --no-sign`；Apple Silicon 模拟器使用 `pnpm ios:build --ci --no-sign --target aarch64-sim`。
 
 移动端前端也可单独执行 `pnpm mobile:build` 做静态构建检查。
 
@@ -50,6 +56,7 @@ pnpm ios:dev
 
 ## 添加文件夹
 
-点击“添加文件夹”打开 iOS 系统目录选择器。选定目录会导入应用 Documents/Imported Music，
-原目录不修改；导入的是副本，原目录之后的变化不会自动同步。
-系统目录选择在官方 dialog 插件的本地补丁中实现，曲库仍使用公共添加和扫描接口。
+点击“添加文件夹”打开 iOS 系统目录选择器。选定目录后应用保存 iOS 安全范围书签，
+直接扫描和播放原目录，不复制歌曲；下次启动会自动恢复授权，原目录新增歌曲可通过重新扫描发现。
+移除曲库目录会同时释放授权；若文件夹被移动或授权失效，重新添加该文件夹即可恢复。
+系统目录选择和书签恢复在官方 dialog 插件的本地补丁中实现，曲库仍使用公共添加和扫描接口。

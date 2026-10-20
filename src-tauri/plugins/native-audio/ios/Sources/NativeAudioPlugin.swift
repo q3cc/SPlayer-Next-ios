@@ -1,6 +1,8 @@
 import AVFoundation
 import AudioStreaming
+import DirectoryAccess
 import MediaPlayer
+import ImageIO
 import Tauri
 import UIKit
 import WebKit
@@ -9,6 +11,9 @@ private struct SourceRequest: Decodable {
   let source: String
   let autoPlay: Bool
   let trackId: String?
+}
+private struct LyricFileRequest: Decodable {
+  let path: String
 }
 private struct ControlRequest: Decodable {
   let action: String
@@ -29,6 +34,11 @@ private struct ControlLyric: Decodable {
   let end: Double
   let text: String
 }
+private struct ProcessingRequest: Decodable {
+  let fadeDuration: Double
+  let normalization: Bool
+  let fftEnabled: Bool
+}
 private struct VisibilityRequest: Decodable { let visible: Bool }
 private struct SiriRequest: Decodable { let request: String }
 private struct SystemVolumeRequest: Decodable {
@@ -47,10 +57,82 @@ private struct PlaybackCompletion {
 }
 
 final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
+  let systemRecognition = SystemRecognition()
   static let shared = NativeAudioPlugin()
-  let cloudUploader = CloudUploader()
   private var player: AudioPlayer?
   private var audioEffects = AudioEffects()
+  private var analysis = AudioAnalysis()
+  private var normalizationNode = AVAudioUnitEQ(numberOfBands: 0)
+  private var processing = ProcessingRequest(fadeDuration: 0, normalization: false, fftEnabled: false)
+  private var analysisTimer: Timer?
+  private var analysisTapInstalled = false
+  private var fadeTimer: Timer?
+  private var lastSpectrum: JSObject = ["ldata": Array(repeating: 0.0, count: 64), "rdata": Array(repeating: 0.0, count: 64)]
+
+  /// 命令入口保留在主类中，直接引用实现，避免静态链接遗漏仅由运行时查找的扩展。
+  @objc func lastfmCredentials(_ invoke: Invoke) throws {
+    try handleLastfmCredentials(invoke)
+  }
+
+  @objc func audioProcessing(_ invoke: Invoke) throws {
+    let request = try invoke.parseArgs(ProcessingRequest.self)
+    guard request.fadeDuration.isFinite, (0...2000).contains(request.fadeDuration) else { invoke.reject("淡入淡出时长无效"); return }
+    DispatchQueue.main.async {
+      self.processing = request
+      if !request.normalization { self.normalizationNode.globalGain = 0 }
+      self.updateAnalysis()
+      invoke.resolve()
+    }
+  }
+
+  @objc func fftData(_ invoke: Invoke) {
+    DispatchQueue.main.async { invoke.resolve(self.lastSpectrum) }
+  }
+
+  private func updateAnalysis() {
+    analysis.configure(spectrum: processing.fftEnabled && visible, normalize: processing.normalization)
+    analysisTimer?.invalidate()
+    analysisTimer = nil
+    guard let player = player else { return }
+    if analysisTapInstalled {
+      audioEffects.timePitch.removeTap(onBus: 0)
+      analysisTapInstalled = false
+    }
+    guard processing.normalization || (processing.fftEnabled && visible) else { return }
+    let currentAnalysis = analysis
+    // 在标准化节点之前取样，不受标准化和淡入淡出音量影响。
+    audioEffects.timePitch.installTap(onBus: 0, bufferSize: 1024, format: nil) { buffer, _ in currentAnalysis.process(buffer) }
+    analysisTapInstalled = true
+    let timer = Timer(timeInterval: processing.fftEnabled && visible ? 1.0 / 30 : 0.2, repeats: true) { [weak self, weak player] _ in
+      guard let self = self, self.player === player, player?.state == .playing,
+            let result = self.analysis.consume() else { return }
+      self.normalizationNode.globalGain = self.processing.normalization ? 20 * log10(max(result.gain, 0.001)) : 0
+      if self.visible && self.processing.fftEnabled {
+        self.lastSpectrum = ["ldata": result.left.map(Double.init), "rdata": result.right.map(Double.init)]
+        self.trigger("fftData", data: self.lastSpectrum)
+      }
+    }
+    analysisTimer = timer
+    RunLoop.main.add(timer, forMode: .common)
+  }
+
+  private func fade(to target: Float, completion: (() -> Void)? = nil) {
+    fadeTimer?.invalidate(); fadeTimer = nil
+    guard let player = player else { return }
+    let duration = processing.fadeDuration / 1000
+    guard duration > 0 else { player.volume = target; completion?(); return }
+    let start = Date()
+    let initial = player.volume
+    let timer = Timer(timeInterval: 0.01, repeats: true) { [weak self, weak player] timer in
+      guard let self = self, let player = player, self.player === player else { timer.invalidate(); return }
+      let progress = min(1, Float(Date().timeIntervalSince(start) / duration))
+      player.volume = initial + (target - initial) * progress
+      if progress >= 1 { timer.invalidate(); self.fadeTimer = nil; completion?() }
+    }
+    fadeTimer = timer
+    RunLoop.main.add(timer, forMode: .common)
+  }
+
   private var effects: EffectRequest = {
     if let data = UserDefaults.standard.data(forKey: "splayer.native.audio-effects"),
        let value = try? JSONDecoder().decode(EffectRequest.self, from: data) { return value }
@@ -61,6 +143,7 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
   private var loadTimeout: DispatchWorkItem?
   private var autoPlay = true
   private var sourceURL: URL?
+  private var directoryLease: DirectoryLease?
   private(set) var currentTrackId: String?
   private var visible = false
   private var timer: Timer?
@@ -68,6 +151,7 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
   private var observers: [NSObjectProtocol] = []
   private var resumeAfterInterruption = false
   private var artworkTask: URLSessionDataTask?
+  private let artworkQueue = DispatchQueue(label: "splayer.media-artwork", qos: .utility)
   private var artworkURL = ""
   private var mediaEnabled = true
   private var airPlayPlaybackPrepared = false
@@ -124,6 +208,7 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
 
   override func load(webview: WKWebView) {
     super.load(webview: webview)
+    systemRecognition.webView = webview
     volumeWebView = webview
     DispatchQueue.main.async {
       // 在音量和路由控件创建前声明长音频用途，但启动应用时不抢占其他应用的音频。
@@ -170,33 +255,53 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
       if request.show == false { self.dismissSystemVolume() }
       if request.show == true || request.value != nil {
         guard self.visible, let webview = self.volumeWebView, let window = webview.window else { invoke.reject("播放器尚未显示"); return }
-        // 挂在当前窗口顶层，避免 WKWebView 的内容层或播放器全屏层覆盖原生控件。
-        self.volumeOverlay.frame = window.bounds
-        self.volumeOverlay.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        let inset = window.safeAreaInsets
-        let scaleX = webview.bounds.width / CGFloat(max(1, request.viewportWidth ?? Double(webview.bounds.width)))
-        let scaleY = webview.bounds.height / CGFloat(max(1, request.viewportHeight ?? Double(webview.bounds.height)))
-        let anchor = webview.convert(CGPoint(x: CGFloat(request.x ?? Double(webview.bounds.midX)) * scaleX,
-          y: CGFloat(request.y ?? Double(webview.bounds.midY)) * scaleY), to: window)
-        let width = min(240, window.bounds.width - inset.left - inset.right - 24)
-        let x = min(max(anchor.x - width / 2, inset.left + 12), window.bounds.width - inset.right - width - 12)
-        let y = min(max(anchor.y - 88, inset.top + 12), window.bounds.height - inset.bottom - 88)
-        self.volumePanel.frame = CGRect(x: x, y: y, width: width, height: 76)
-        self.volumeView.frame.size.width = width - 32
-        self.volumeLabel.frame.size.width = width - 32
-        window.addSubview(self.volumeOverlay)
-        self.volumePanel.layoutIfNeeded()
+        let temporaryOverlay = request.show != true && request.value != nil && self.volumeOverlay.superview == nil
+        if temporaryOverlay {
+          // MPVolumeView 在窗口中接收设值事件，透明挂载避免拖动网页滑块时弹出第二条音量条。
+          self.volumeOverlay.alpha = 0
+          self.volumeOverlay.frame = window.bounds
+          self.volumePanel.frame = CGRect(x: 0, y: 0, width: 240, height: 76)
+          window.addSubview(self.volumeOverlay)
+          self.volumePanel.layoutIfNeeded()
+        }
+        defer {
+          if temporaryOverlay {
+            self.volumeOverlay.removeFromSuperview()
+            self.volumeOverlay.alpha = 1
+          }
+        }
+        if request.show == true {
+          // 只有用户主动打开系统音量控件时，才把浮层挂到窗口顶层。
+          self.volumeOverlay.frame = window.bounds
+          self.volumeOverlay.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+          let inset = window.safeAreaInsets
+          let scaleX = webview.bounds.width / CGFloat(max(1, request.viewportWidth ?? Double(webview.bounds.width)))
+          let scaleY = webview.bounds.height / CGFloat(max(1, request.viewportHeight ?? Double(webview.bounds.height)))
+          let anchor = webview.convert(CGPoint(x: CGFloat(request.x ?? Double(webview.bounds.midX)) * scaleX,
+            y: CGFloat(request.y ?? Double(webview.bounds.midY)) * scaleY), to: window)
+          let width = min(240, window.bounds.width - inset.left - inset.right - 24)
+          let x = min(max(anchor.x - width / 2, inset.left + 12), window.bounds.width - inset.right - width - 12)
+          let y = min(max(anchor.y - 88, inset.top + 12), window.bounds.height - inset.bottom - 88)
+          self.volumePanel.frame = CGRect(x: x, y: y, width: width, height: 76)
+          self.volumeView.frame.size.width = width - 32
+          self.volumeLabel.frame.size.width = width - 32
+          window.addSubview(self.volumeOverlay)
+          self.volumePanel.layoutIfNeeded()
+        }
         if let value = request.value {
+          self.volumeView.layoutIfNeeded()
           guard value.isFinite, (0...1).contains(value),
                 let slider = self.volumeView.subviews.compactMap({ $0 as? UISlider }).first else { invoke.reject("系统音量控件不可用"); return }
           slider.setValue(value, animated: false)
           slider.sendActions(for: .valueChanged)
         }
-        self.volumeLabel.text = "\(Int((AVAudioSession.sharedInstance().outputVolume * 100).rounded()))%"
-        self.volumeDismiss?.cancel()
-        let dismiss = DispatchWorkItem { [weak self] in self?.dismissSystemVolume() }
-        self.volumeDismiss = dismiss
-        DispatchQueue.main.asyncAfter(deadline: .now() + 3, execute: dismiss)
+        if request.show == true {
+          self.volumeLabel.text = "\(Int((AVAudioSession.sharedInstance().outputVolume * 100).rounded()))%"
+          self.volumeDismiss?.cancel()
+          let dismiss = DispatchWorkItem { [weak self] in self?.dismissSystemVolume() }
+          self.volumeDismiss = dismiss
+          DispatchQueue.main.asyncAfter(deadline: .now() + 3, execute: dismiss)
+        }
       }
       invoke.resolve(["volume": Double(AVAudioSession.sharedInstance().outputVolume)])
     }
@@ -222,12 +327,17 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
       invoke.reject("只读取用户导入的本地音频标签"); return
     }
     Task {
-      let access = url.startAccessingSecurityScopedResource()
-      defer { if access { url.stopAccessingSecurityScopedResource() } }
       do {
-        let asset = AVURLAsset(url: url)
+        let (resolved, lease) = try DirectoryAccess.shared.source(url)
+        let directAccess = lease == nil && resolved.startAccessingSecurityScopedResource()
+        defer {
+          if directAccess { resolved.stopAccessingSecurityScopedResource() }
+          withExtendedLifetime(lease) {}
+        }
+        let asset = AVURLAsset(url: resolved)
         let items = try await asset.load(.commonMetadata)
         var value: JSObject = [:]
+        var embeddedLyric: String?
         for item in items {
           if let text = try? await item.load(.stringValue) {
             switch item.commonKey {
@@ -236,13 +346,61 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
             case .commonKeyAlbumName: value["album"] = text
             default: break
             }
+            let identifier = item.identifier?.rawValue.lowercased() ?? ""
+            if identifier.contains("lyrics") || identifier.contains("unsyncedlyrics") {
+              if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { embeddedLyric = text }
+            }
           }
         }
+        if let embeddedLyric { value["embeddedLyric"] = embeddedLyric }
+        value["externalLyrics"] = Self.externalLyrics(for: resolved)
         if let duration = try? await asset.load(.duration), duration.seconds.isFinite {
           value["duration"] = max(0, duration.seconds * 1000)
         }
         invoke.resolve(value)
       } catch { invoke.reject("音频标签读取失败") }
+    }
+  }
+
+  /** 扫描与音频同名的歌词文件，路径保持原位置以便后续按授权读取。 */
+  private static func externalLyrics(for audioURL: URL) -> [[String: String]] {
+    let extensions = ["ttml", "lys", "qrc", "krc", "yrc", "lrc", "ass", "srt"]
+    let directory = audioURL.deletingLastPathComponent()
+    let stem = audioURL.deletingPathExtension().lastPathComponent
+    guard let urls = try? FileManager.default.contentsOfDirectory(
+      at: directory,
+      includingPropertiesForKeys: [.isRegularFileKey],
+      options: [.skipsHiddenFiles]) else { return [] }
+    return urls.compactMap { url in
+      guard url.deletingPathExtension().lastPathComponent.caseInsensitiveCompare(stem) == .orderedSame,
+            extensions.contains(url.pathExtension.lowercased()) else { return nil }
+      return ["format": url.pathExtension.lowercased(), "path": url.absoluteString]
+    }
+  }
+
+  @objc func readLyricFile(_ invoke: Invoke) throws {
+    let request = try invoke.parseArgs(LyricFileRequest.self)
+    guard let url = request.path.hasPrefix("/") ? URL(fileURLWithPath: request.path) : URL(string: request.path), url.isFileURL else {
+      invoke.reject("只读取用户选择的本地歌词文件"); return
+    }
+    Task {
+      do {
+        let (resolved, lease) = try DirectoryAccess.shared.source(url)
+        let directAccess = lease == nil && resolved.startAccessingSecurityScopedResource()
+        defer {
+          if directAccess { resolved.stopAccessingSecurityScopedResource() }
+          withExtendedLifetime(lease) {}
+        }
+        let data = try Data(contentsOf: resolved)
+        let text = String(data: data, encoding: .utf8)
+          ?? String(data: data, encoding: .utf16)
+          ?? String(data: data, encoding: .utf16LittleEndian)
+          ?? String(data: data, encoding: .utf16BigEndian)
+        guard let text, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+          invoke.reject("歌词文件为空或编码不受支持"); return
+        }
+        invoke.resolve(text)
+      } catch { invoke.reject("歌词文件读取失败") }
     }
   }
 
@@ -278,26 +436,35 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
       self.loadTimeout?.cancel()
       self.pendingLoad?.reject("已切换歌曲")
       self.pendingLoad = nil
+      self.fadeTimer?.invalidate(); self.fadeTimer = nil
+      self.analysisTimer?.invalidate(); self.analysisTimer = nil
+      if self.analysisTapInstalled { self.audioEffects.timePitch.removeTap(onBus: 0); self.analysisTapInstalled = false }
       self.player?.delegate = nil
       self.player?.stop()
       self.player = nil
+      self.directoryLease = nil
       do {
+        let (resolved, lease) = try DirectoryAccess.shared.source(url)
         let session = AVAudioSession.sharedInstance()
         try session.setCategory(.playback, mode: .default, policy: .longFormAudio)
         try session.setActive(true)
         let player = AudioPlayer()
         self.audioEffects = AudioEffects()
-        player.attach(nodes: [self.audioEffects.equalizer, self.audioEffects.timePitch])
+        self.analysis = AudioAnalysis()
+        self.normalizationNode = AVAudioUnitEQ(numberOfBands: 0)
+        player.attach(nodes: [self.audioEffects.equalizer, self.audioEffects.timePitch, self.normalizationNode])
         self.player = player
-        self.sourceURL = url
+        self.sourceURL = resolved
+        self.directoryLease = lease
         self.currentTrackId = trackId
         self.autoPlay = autoPlay
         self.applyEffects()
+        self.updateAnalysis()
         // 预载不应短暂漏出声音，缓冲完成后再恢复目标音量。
-        if !autoPlay { player.volume = 0 }
+        if !autoPlay || self.processing.fadeDuration > 0 { player.volume = 0 }
         self.pendingLoad = invoke
         player.delegate = self
-        player.play(url: url)
+        player.play(url: resolved)
         let timeout = DispatchWorkItem { [weak self, weak player] in
           guard let self = self, self.player === player, let pending = self.pendingLoad else { return }
           self.pendingLoad = nil
@@ -350,15 +517,28 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
       guard let player = self.player else { throw SiriFailure("请先选择一首歌曲") }
       switch action {
       case "play":
-        do { try AVAudioSession.sharedInstance().setActive(true) }
+        do {
+          let session = AVAudioSession.sharedInstance()
+          try session.setCategory(.playback, mode: .default, policy: .longFormAudio)
+          try session.setActive(true)
+        }
         catch { throw error }
         self.autoPlay = true
         if player.state == .stopped, let url = self.sourceURL { player.play(url: url) }
-        else { player.resume() }
+        else {
+          if player.state != .playing { player.volume = 0 }
+          player.resume()
+        }
+        fade(to: 1)
       case "pause":
         self.resumeAfterInterruption = false
-        player.pause()
+        fade(to: 0) { [weak self, weak player] in
+          player?.pause()
+          player?.volume = 1
+          if let self = self { self.trigger("state", data: self.snapshot()) }
+        }
       case "stop":
+        self.fadeTimer?.invalidate(); self.fadeTimer = nil
         self.pendingLoad?.reject("播放已停止")
         self.pendingLoad = nil
         self.loadTimeout?.cancel()
@@ -409,6 +589,7 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
     let request = try invoke.parseArgs(VisibilityRequest.self)
     DispatchQueue.main.async {
       self.visible = request.visible
+      self.updateAnalysis()
       self.airPlayRoutes.setVisible(request.visible)
       if !request.visible {
         Task { @MainActor in SiriService.shared.checkpoint() }
@@ -476,22 +657,45 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
         self.artworkURL = value.cover
         info.removeValue(forKey: MPMediaItemPropertyArtwork)
         if #available(iOS 26.0, *) { StillArtwork.clear(from: &info) }
-        if let url = URL(string: value.cover), ["https", "http"].contains(url.scheme ?? "") {
+        var coverURL = value.cover.hasPrefix("/") ? URL(fileURLWithPath: value.cover) : URL(string: value.cover)
+        if let url = coverURL, url.scheme == "asset", url.host == "localhost",
+           let encoded = URLComponents(url: url, resolvingAgainstBaseURL: false)?.percentEncodedPath,
+           let path = String(encoded.dropFirst()).removingPercentEncoding {
+          coverURL = URL(fileURLWithPath: path)
+        }
+        if let url = coverURL, url.isFileURL {
+          artworkQueue.async { [weak self] in
+            guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+                  let image = Self.artworkThumbnail(source) else { return }
+            DispatchQueue.main.async { self?.installArtwork(image, cover: value.cover) }
+          }
+        } else if let url = coverURL, ["https", "http"].contains(url.scheme ?? "") {
           self.artworkTask = URLSession.shared.dataTask(with: url) { [weak self] data, _, _ in
-            guard let data = data, let image = UIImage(data: data) else { return }
-            DispatchQueue.main.async {
-              guard let self = self, self.artworkURL == value.cover, self.mediaEnabled else { return }
-              var current = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
-              current[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
-              if #available(iOS 26.0, *) { StillArtwork.install(image: image, id: value.cover, into: &current) }
-              MPNowPlayingInfoCenter.default().nowPlayingInfo = current
-            }
+            guard let data, let source = CGImageSourceCreateWithData(data as CFData, nil),
+                  let image = Self.artworkThumbnail(source) else { return }
+            DispatchQueue.main.async { self?.installArtwork(image, cover: value.cover) }
           }
           self.artworkTask?.resume()
         }
       }
       MPNowPlayingInfoCenter.default().nowPlayingInfo = info
       self.updatePosition()
+  }
+
+  /** 系统卡片只解码缩略图，避免原始封面常驻播放进程。 */
+  private static func artworkThumbnail(_ source: CGImageSource) -> UIImage? {
+    let options: [CFString: Any] = [kCGImageSourceCreateThumbnailFromImageAlways: true,
+      kCGImageSourceCreateThumbnailWithTransform: true, kCGImageSourceThumbnailMaxPixelSize: 1024]
+    guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary) else { return nil }
+    return UIImage(cgImage: image)
+  }
+
+  private func installArtwork(_ image: UIImage, cover: String) {
+    guard artworkURL == cover, mediaEnabled else { return }
+    var current = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? [:]
+    current[MPMediaItemPropertyArtwork] = MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+    if #available(iOS 26.0, *) { StillArtwork.install(image: image, id: cover, into: &current) }
+    MPNowPlayingInfoCenter.default().nowPlayingInfo = current
   }
 
   private func installControls() {
@@ -505,11 +709,19 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
         guard let self = self, let player = self.player else { return .noSuchContent }
         DispatchQueue.main.async {
           if action == "play" || (action == "toggle" && player.state != .playing) {
-            do { try AVAudioSession.sharedInstance().setActive(true) }
+            do {
+              let session = AVAudioSession.sharedInstance()
+              try session.setCategory(.playback, mode: .default, policy: .longFormAudio)
+              try session.setActive(true)
+            }
             catch { self.trigger("error", data: ["message": error.localizedDescription]); return }
             self.autoPlay = true
             if player.state == .stopped, let url = self.sourceURL { player.play(url: url) }
-            else { player.resume() }
+            else {
+              if player.state != .playing { player.volume = 0 }
+              player.resume()
+            }
+            self.fade(to: 1)
           }
           else if action == "pause" || action == "toggle" { self.resumeAfterInterruption = false; player.pause() }
           else {
@@ -581,6 +793,7 @@ final class NativeAudioPlugin: Plugin, AudioPlayerDelegate {
       if newState == .playing, player.state == .playing, let pending = self.pendingLoad {
         self.loadTimeout?.cancel()
         if !self.autoPlay { player.pause(); player.volume = 1 }
+        else { self.fade(to: 1) }
         self.pendingLoad = nil
         pending.resolve(self.snapshot())
       }

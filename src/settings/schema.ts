@@ -12,8 +12,9 @@ import downloadCategory from "./categories/download";
 import localCacheCategory from "./categories/localCache";
 import pluginsCategory from "./categories/plugins";
 import otherCategory from "./categories/other";
+import { updateSection } from "./sections/update";
 import AboutSettings from "@/components/settings/custom/AboutSettings.vue";
-import { isIOS } from "@/utils/config";
+import { isIOS, isMobile } from "@/utils/config";
 import IconLucideInfo from "~icons/lucide/info";
 import LyricPipPreview from "@/components/settings/custom/LyricPipPreview.vue";
 import siriCategory from "./categories/siri";
@@ -73,13 +74,13 @@ export const settingsSchema: SettingCategory[] = [
   appearanceCategory,
   playerCategory,
   lyricCategory,
-  ...(isIOS ? [mobileExternalLyric] : [externalLyricCategory, hotkeysCategory]),
+  ...(isIOS ? [mobileExternalLyric] : isMobile ? [] : [externalLyricCategory, hotkeysCategory]),
   servicesCategory,
-  ...(isIOS ? [] : [aiIntegrationCategory]),
+  aiIntegrationCategory,
   mediaSourceCategory,
   downloadCategory,
   localCacheCategory,
-  ...(isIOS ? [] : [pluginsCategory]),
+  pluginsCategory,
   otherCategory,
-  { id: "about", icon: IconLucideInfo, component: AboutSettings },
+  { id: "about", icon: IconLucideInfo, component: AboutSettings, sections: [updateSection] },
 ];

@@ -1,9 +1,9 @@
 {
   "name": "splayer-next",
-  "productName": "SPlayer-Next",
+  "productName": "SPlayer-Next-ios",
   "desktopName": "top.imsyy.splayer_next",
-  "version": "2.0.0",
-  "description": "SPlayer Next adapted for iOS and iPadOS",
+  "version": "2.1.0",
+  "description": "SPlayer Next for iOS, iPadOS, and Android",
   "type": "module",
   "packageManager": "pnpm@11.5.2",
   "main": "./out/main/index.js",
@@ -50,10 +50,14 @@
     "build:mac": "pnpm build && electron-builder --config electron-builder.config.ts --mac",
     "build:linux": "pnpm build && electron-builder --config electron-builder.config.ts --linux",
     "mobile:dev": "vite --mode mobile --host 0.0.0.0",
-    "mobile:build": "vite build --config vite.siri.config.ts --mode mobile && node scripts/configure-ios-siri.mjs && vite build --mode mobile && node scripts/verify-mobile-bundle.ts",
+    "mobile:build": "VITE_MOBILE_TARGET=ios vite build --config vite.siri.config.ts --mode mobile && node scripts/configure-ios-siri.mjs && VITE_MOBILE_TARGET=ios vite build --mode mobile && tsx scripts/verify-mobile-bundle.ts",
+    "mobile:build:android": "VITE_MOBILE_TARGET=android vite build --mode mobile && tsx scripts/verify-mobile-bundle.ts --android",
     "ios:init": "tauri ios init",
     "ios:dev": "tauri ios dev",
     "ios:build": "tauri ios build",
+    "android:init": "tauri android init && node scripts/configure-android-icons.mjs",
+    "android:dev": "tauri android dev",
+    "android:build": "node scripts/configure-android-icons.mjs && tauri android build",
     "docs:dev": "vitepress dev docs",
     "docs:build": "vitepress build docs",
     "docs:preview": "vitepress preview docs"
@@ -78,10 +82,10 @@
     "font-list": "^2.1.0",
     "hono": "^4.13.0",
     "set-cookie-parser": "^3.1.2",
+    "lyric-kit": "^0.6.1",
     "undici": "^8.10.0",
     "ws": "^8.21.2",
-    "zod": "^4.4.3",
-    "lyric-kit": "^0.5.4"
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@applemusic-like-lyrics/core": "^0.5.2",
@@ -122,6 +126,7 @@
     "eslint-plugin-vue": "^10.10.0",
     "happy-dom": "^20.11.1",
     "localforage": "^1.10.0",
+    "lyric-dom": "^0.2.1",
     "marked": "^18.0.9",
     "pinia": "^4.0.2",
     "pinia-plugin-persistedstate": "^4.7.1",
@@ -141,12 +146,12 @@
     "vite": "^7.3.6",
     "vite-plugin-node-polyfills": "^0.24.0",
     "vitepress": "2.0.0-alpha.15",
+    "vitepress-plugin-llms": "1.14.0",
     "vitest": "^4.1.10",
     "vue": "^3.5.41",
     "vue-eslint-parser": "^10.4.0",
     "vue-i18n": "^11.4.8",
     "vue-router": "^5.2.0",
-    "vue-tsc": "^3.3.9",
-    "lyric-dom": "^0.1.2"
+    "vue-tsc": "^3.3.9"
   }
 }

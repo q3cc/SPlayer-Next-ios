@@ -3,6 +3,7 @@ import type { Track } from "@shared/types/player";
 import { findLyricIndex } from "lyric-kit";
 import { getLineText } from "@shared/utils/lyrics";
 import { originalArtwork } from "@shared/utils/artwork";
+import { neteaseCdnUrl } from "@shared/utils/neteaseCdnUrl";
 import { store } from "./shims/store";
 import { invoke, isTauri } from "@tauri-apps/api/core";
 
@@ -17,6 +18,9 @@ let artworkSize = "";
 let pendingArtwork: HTMLImageElement | null = null;
 let nativeKey = "";
 let nativeLyrics: NowPlayingUpdatePayload["lyric"] | undefined;
+let liked = false;
+let favoriteSupported = false;
+let nativeCleared = false;
 
 /** 只保留当前歌曲的一次高清封面加载，切歌后释放旧图片请求。 */
 const clearArtwork = (): void => {
@@ -38,7 +42,7 @@ const prepareArtwork = (value: Track): void => {
   if (key === artworkKey) return;
   clearArtwork();
   artworkKey = key;
-  artworkCover = value.cover || "";
+  artworkCover = neteaseCdnUrl(value.cover || "");
   if (!candidate || candidate === artworkCover) return;
   const image = new Image();
   pendingArtwork = image;
@@ -64,15 +68,17 @@ const prepareArtwork = (value: Track): void => {
 
 /** 复用公共解析结果与音频时间事件，只在显示内容变化时更新系统卡片。 */
 const refresh = (): void => {
-  if (!("mediaSession" in navigator) && !isTauri()) return;
+  const nativeAudio = isTauri();
+  if (!("mediaSession" in navigator) && !nativeAudio) return;
   if (!track || !store.get("media.systemMediaControls")) {
     clearArtwork();
     // 原生模式只更新 MPNowPlayingInfoCenter，不能让 WebKit 的空会话参与系统卡片竞争。
-    if (!isTauri() && "mediaSession" in navigator) navigator.mediaSession.metadata = null;
+    if (!nativeAudio && "mediaSession" in navigator) navigator.mediaSession.metadata = null;
     lastMetadata = null;
     nativeKey = "";
     nativeLyrics = undefined;
-    if (isTauri())
+    if (nativeAudio && !nativeCleared) {
+      nativeCleared = true;
       void invoke("plugin:native-audio|metadata", {
         title: "",
         artist: "",
@@ -80,9 +86,11 @@ const refresh = (): void => {
         cover: "",
         enabled: false,
       }).catch((error) => console.warn("[native-audio] 清除系统卡片失败", error));
+    }
     return;
   }
-  if (isTauri()) {
+  if (nativeAudio) {
+    nativeCleared = false;
     const artist = track.artists.map((item) => item.name).join(" / ");
     const dynamic = store.get("media.dynamicLyrics") === true;
     const lines =
@@ -99,6 +107,8 @@ const refresh = (): void => {
       cover,
       dynamic,
       offset,
+      liked,
+      favoriteSupported,
     ]);
     if (key === nativeKey && lines === nativeLyrics) return;
     nativeKey = key;
@@ -111,6 +121,8 @@ const refresh = (): void => {
       enabled: true,
       dynamic,
       offset,
+      liked,
+      favoriteSupported,
       lines: dynamic
         ? (lines ?? [])
             .filter((line) => !line.isBG)
@@ -174,6 +186,11 @@ const refresh = (): void => {
 
 export const mobileMediaSession = {
   refresh,
+  setLikeState(value: boolean, supported = false): void {
+    liked = value;
+    favoriteSupported = supported;
+    refresh();
+  },
   setTrack(value: Track | null): void {
     track = value;
     position = 0;

@@ -1,14 +1,18 @@
 <script setup lang="ts">
+import { isMobile } from "@/utils/config";
 import type { DropdownMenuItem } from "@/components/ui/SDropdownMenu.vue";
 import AirPlayControl from "./AirPlayControl.vue";
 import { useStatusStore } from "@/stores/status";
 import { useSettingsStore } from "@/stores/settings";
+import * as player from "@/core/player";
+import { VOLUME_STEP, volumeGainToPosition, volumePositionToGain } from "@/utils/volume";
 import IconLucideSliders from "~icons/lucide/sliders-horizontal";
 import IconLucideGauge from "~icons/lucide/gauge";
 import IconLucideMoreVertical from "~icons/lucide/more-vertical";
 import IconLucideClock from "~icons/lucide/clock";
 import IconLucideRepeat2 from "~icons/lucide/repeat-2";
 import IconLucideRadio from "~icons/lucide/radio";
+import IconLucideAudioWaveform from "~icons/lucide/audio-waveform";
 
 const props = withDefaults(
   defineProps<{
@@ -30,6 +34,26 @@ const lyricButtonType = computed(() =>
   isDesktopLyricOpen.value ? (props.cover ? "cover" : "primary") : buttonType.value,
 );
 
+const volumePosition = computed(() => volumeGainToPosition(status.volume));
+const volumePercent = computed(() => Math.round(volumePosition.value * 100));
+
+/** 静音前的音量，用于解除静音时恢复 */
+const lastVolume = ref(status.volume || 0.7);
+
+const onVolumeWheel = (e: WheelEvent): void => {
+  const delta = e.deltaY < 0 ? VOLUME_STEP : -VOLUME_STEP;
+  player.setVolume(volumePositionToGain(volumePosition.value + delta));
+};
+
+const toggleMute = (): void => {
+  if (status.volume > 0) {
+    lastVolume.value = status.volume;
+    player.setVolume(0);
+  } else {
+    player.setVolume(lastVolume.value || 0.7);
+  }
+};
+
 const toggleDesktopLyric = (): void => {
   window.api.window.toggleDesktopLyric().catch(() => {});
 };
@@ -41,6 +65,7 @@ const abLoopOpen = ref(false);
 const fmModeOpen = ref(false);
 
 const moreMenuItems = computed<DropdownMenuItem[]>(() => [
+  { key: "audioInfo", label: t("quality.outputInfo"), icon: IconLucideAudioWaveform },
   { key: "equalizer", label: t("equalizer.title"), icon: IconLucideSliders },
   { key: "speed", label: t("speed.title"), icon: IconLucideGauge },
   { key: "abLoop", label: t("abLoop.title"), icon: IconLucideRepeat2 },
@@ -48,7 +73,8 @@ const moreMenuItems = computed<DropdownMenuItem[]>(() => [
 ]);
 
 const onMoreMenuSelect = (key: string): void => {
-  if (key === "equalizer") equalizerOpen.value = true;
+  if (key === "audioInfo") status.audioInfoOpen = true;
+  else if (key === "equalizer") equalizerOpen.value = true;
   else if (key === "speed") speedOpen.value = true;
   else if (key === "abLoop") abLoopOpen.value = true;
   else if (key === "autoClose") autoCloseOpen.value = true;
@@ -59,8 +85,45 @@ const onMoreMenuSelect = (key: string): void => {
   <div class="flex items-center gap-1">
     <!-- 在线音质 -->
     <QualityControl v-if="settings.appearance.showQualitySwitch" :cover="cover" />
-    <VolumeControl :cover="cover" />
-    <AirPlayControl :cover="cover" />
+    <template v-if="isMobile">
+      <VolumeControl :cover="cover" />
+      <AirPlayControl :cover="cover" />
+    </template>
+    <SPopover v-else trigger="hover" side="top" :cover="cover" content-class="px-3 pb-2 pt-3">
+      <template #trigger>
+        <SButton
+          :type="buttonType"
+          variant="ghost"
+          circle
+          size="large"
+          :class="mutedClass"
+          @click="toggleMute"
+          @wheel.prevent="onVolumeWheel"
+        >
+          <template #icon>
+            <IconLucideVolumeX v-if="volumePercent === 0" />
+            <IconLucideVolume1 v-else-if="volumePercent < 50" />
+            <IconLucideVolume2 v-else />
+          </template>
+        </SButton>
+      </template>
+      <div class="flex flex-col items-center w-7" @wheel.prevent="onVolumeWheel">
+        <div class="h-30">
+          <SSlider
+            :model-value="volumePosition"
+            :min="0"
+            :max="1"
+            :step="0.01"
+            :thumb-size="15"
+            :track-height="5"
+            :cover="cover"
+            vertical
+            @change="player.setVolume(volumePositionToGain($event))"
+          />
+        </div>
+        <span class="text-xs tabular-nums mt-2">{{ volumePercent }}%</span>
+      </div>
+    </SPopover>
     <SButton
       :type="lyricButtonType"
       :variant="isDesktopLyricOpen ? 'tertiary' : 'ghost'"

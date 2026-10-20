@@ -1,6 +1,7 @@
 import type { Album, Artist, AudioQuality, Playlist, Track } from "@shared/types/player";
 import type { UserSubcount } from "@/types/user";
-import type { NeteaseSong } from "@/types/netease";
+import type { NeteaseSong } from "@shared/types/platform/netease";
+import { neteaseCdnUrl } from "@shared/utils/neteaseCdnUrl";
 
 interface NeteaseError {
   code?: number;
@@ -9,7 +10,7 @@ interface NeteaseError {
 }
 
 /**
- * 校验网易云接口响应
+ * 校验 NCM 接口响应
  * code !== 200 时抛 Error，message 取自 body.message / body.msg
  */
 export const ensureOk = <T>(body: T): T => {
@@ -27,8 +28,9 @@ export const ensureOk = <T>(body: T): T => {
  */
 export const withPicSize = (url: string | undefined, size = 300): string | undefined => {
   if (!url) return undefined;
-  if (url.includes("?param=")) return url;
-  return `${url}?param=${size}y${size}`;
+  const secureUrl = neteaseCdnUrl(url);
+  if (secureUrl.includes("?param=")) return secureUrl;
+  return `${secureUrl}?param=${size}y${size}`;
 };
 
 /**
@@ -85,7 +87,9 @@ export const songToTrack = (song: NeteaseSong): Track => {
     source: "netease",
     title: song.name,
     comment,
-    artists: ar.map((artist) => ({ id: String(artist.id), name: artist.name })),
+    artists: ar
+      .filter((artist) => artist.name?.trim())
+      .map((artist) => ({ id: String(artist.id), name: artist.name.trim() })),
     album: album ? { id: String(album.id), name: album.name, cover } : undefined,
     duration: song.dt ?? song.duration ?? 0,
     cover,

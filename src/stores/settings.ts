@@ -18,7 +18,8 @@ import {
 import type { SystemConfig, LocaleCode } from "@shared/types/settings";
 import { ALL_PLATFORMS } from "@shared/types/platform";
 import { defaultSystemConfig } from "@shared/defaults/settings";
-import { setByPath } from "@shared/utils/path";
+import { toast } from "@/composables/useToast";
+import { getByPath, setByPath } from "@shared/utils/path";
 
 /**
  * 对账有序集合：保留存档中仍有效的项（顺序不变），
@@ -151,6 +152,8 @@ export const useSettingsStore = defineStore(
       snapToLyric: false,
       showLyricInBar: true,
       preloadNextTrack: false,
+      transitionMode: "none",
+      transitionPreference: "standard",
       searchPlayBehavior: "current",
     });
 
@@ -174,6 +177,8 @@ export const useSettingsStore = defineStore(
       cjkTransform: "none",
       adaptiveFontSize: true,
       fontSize: 48,
+      translationFontSizeFollowMain: true,
+      translationFontSize: 24,
       fontWeight: 700,
       lyricBlendMode: "normal",
       fontFamily: "",
@@ -197,6 +202,7 @@ export const useSettingsStore = defineStore(
       springDamping: 15,
       springStiffness: 90,
       alignPosition: 0.35,
+      alignment: "auto",
       wordFadeWidth: 0.5,
       inactiveAlpha: 0.2,
       enableExcludeLyrics: true,
@@ -319,11 +325,16 @@ export const useSettingsStore = defineStore(
      * 先就地 mutate 叶子保证 UI 即时反馈，IPC 落盘异步执行
      */
     const setSystem = async (keyPath: string, value: unknown): Promise<void> => {
+      const previous = getByPath(system, keyPath);
       setByPath(system, keyPath, value);
       try {
         await window.api.config.set(keyPath, value);
       } catch (err) {
         console.error("[settings] config.set failed", keyPath, err);
+        if (keyPath === "player.loudnessNormalization") {
+          setByPath(system, keyPath, previous);
+          toast.error(err instanceof Error ? err.message : String(err));
+        }
       }
       if (keyPath === "player.fadeEnabled" || keyPath === "player.fadeDuration") {
         await window.api.player.setFadeDuration(
@@ -363,9 +374,10 @@ export const useSettingsStore = defineStore(
       omit: ["system"],
       afterHydrate: ({ store }) => {
         const { lyric, appearance, player } = store as unknown as {
-          player: PlayerSettings;
           lyric: LyricSettings;
           appearance: AppearanceSettings;
+          preset: PresetSettings;
+          player: PlayerSettings;
         };
         if (player.theme !== "apple-music") player.theme = "original";
         const legacyLyric = lyric as LyricSettings & {
@@ -383,6 +395,13 @@ export const useSettingsStore = defineStore(
         }
         delete legacyLyric.amllShowLineRomanization;
         delete legacyLyric.amllShowWordRomanization;
+        if (player.transitionMode !== "crossfade") player.transitionMode = "none";
+        if (
+          player.transitionPreference !== "conservative" &&
+          player.transitionPreference !== "eager"
+        ) {
+          player.transitionPreference = "standard";
+        }
         if (typeof lyric.detectBackgroundLyrics !== "boolean") {
           lyric.detectBackgroundLyrics = true;
         }

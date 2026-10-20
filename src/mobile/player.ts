@@ -1,3 +1,5 @@
+import type { StreamingPlaybackSession } from "@main/services/streaming/playbackSession";
+import { streamingSourceForTrack } from "@shared/utils/streamingSource";
 import type {
   AudioDevice,
   FftData,
@@ -14,6 +16,9 @@ import { mobileMediaSession } from "./mediaSession";
 import { mobileLyricPip } from "./lyricPip";
 import { isTauri } from "@tauri-apps/api/core";
 import { createNativePlayer } from "./nativePlayer";
+import { isAndroid } from "./platform";
+import { open } from "@tauri-apps/plugin-dialog";
+import type { LyricFormat } from "@shared/types/lyrics";
 
 type PlayerListener = (event: PlayerEvent) => void;
 
@@ -22,6 +27,8 @@ const audio = new Audio();
 audio.preload = "auto";
 audio.setAttribute("playsinline", "true");
 
+let streamingSession: StreamingPlaybackSession | undefined;
+let loadGeneration = 0;
 let currentMeta: LoadOptions["meta"];
 let state: PlayerState = "idle";
 let fadeDuration = 0;
@@ -47,14 +54,17 @@ const status = (): PlayerStatus => ({
 });
 
 audio.addEventListener("play", () => {
+  streamingSession?.state(true);
   state = "playing";
   emit({ type: "status", data: status() });
 });
 audio.addEventListener("pause", () => {
+  streamingSession?.state(false);
   if (!audio.ended) state = "paused";
   emit({ type: "status", data: status() });
 });
 audio.addEventListener("timeupdate", () => {
+  streamingSession?.position(positionMs());
   mobileMediaSession.setPosition(positionMs());
   emit({ type: "position", data: { position: positionMs(), duration: durationMs() } });
   if (
@@ -73,6 +83,8 @@ audio.addEventListener("timeupdate", () => {
   }
 });
 audio.addEventListener("ended", () => {
+  void streamingSession?.stop();
+  streamingSession = undefined;
   state = "stopped";
   emit({ type: "ended" });
 });
@@ -141,14 +153,34 @@ const load = async (
   source: string,
   options: LoadOptions = {},
 ): Promise<IpcResponse<LoadResult>> => {
+  const generation = ++loadGeneration;
   try {
     state = "loading";
     currentMeta = options.meta;
     mobileMediaSession.setTrack(currentMeta ?? null);
     audio.pause();
-    audio.src = resolveMobileAudioSource(source);
+    void streamingSession?.stop();
+    streamingSession = undefined;
+    const identity = source.startsWith("streaming://")
+      ? source
+      : options.meta?.source === "streaming"
+        ? streamingSourceForTrack(options.meta)
+        : undefined;
+    const prepared = identity
+      ? await (
+          await import("./streaming")
+        ).prepareMobileStreamingPlayback(
+          identity,
+          options.meta?.duration ?? 0,
+          source.startsWith("streaming://") ? undefined : source,
+        )
+      : undefined;
+    if (generation !== loadGeneration) return { success: false, error: "已切换歌曲" };
+    audio.src = resolveMobileAudioSource(prepared?.source ?? source);
     audio.load();
     await waitUntilReady();
+    if (generation !== loadGeneration) return { success: false, error: "已切换歌曲" };
+    streamingSession = prepared?.session;
     const metaDuration = currentMeta?.duration ?? 0;
     const duration = durationMs() || metaDuration;
     const codec = source.split("?")[0].split(".").pop()?.toUpperCase() ?? "Audio";
@@ -183,10 +215,26 @@ const load = async (
 };
 
 const ok = (): IpcResponse => ({ success: true });
-const device: AudioDevice = { id: "ios-default", name: "iPhone / iPad", isDefault: true };
+const device: AudioDevice = {
+  id: isAndroid ? "android-default" : "ios-default",
+  name: isAndroid ? "Android" : "iPhone / iPad",
+  isDefault: true,
+};
 const emptyFft = (): FftData => ({ ldata: Array(64).fill(0), rdata: Array(64).fill(0) });
 
 const webPlayer: PlayerApi = {
+  prepareNext: async () => false,
+  cancelPrepared: async () => {
+    /* 移动引擎不创建桌面预载槽位 */
+  },
+  transitionPrepared: async () => ({ success: false, error: "移动音频引擎不支持交叉过渡" }),
+  getStreamInfo: async () => ({ success: false, error: "移动音频引擎暂未提供输出流诊断" }),
+  syncQueueIndex: () => {
+    /* 移动端与渲染端共享队列，无跨进程索引副本 */
+  },
+  respondQueue: () => {
+    /* 移动端宿主直接读取共享队列，不发送 IPC 队列查询 */
+  },
   load,
   play: async () => {
     try {
@@ -203,6 +251,9 @@ const webPlayer: PlayerApi = {
     return ok();
   },
   stop: async () => {
+    loadGeneration++;
+    void streamingSession?.stop();
+    streamingSession = undefined;
     audio.pause();
     audio.currentTime = 0;
     state = "stopped";
@@ -212,6 +263,7 @@ const webPlayer: PlayerApi = {
   },
   seek: async (position) => {
     audio.currentTime = Math.max(0, position / 1000);
+    streamingSession?.seek(positionMs());
     mobileMediaSession.setPosition(positionMs());
     emit({ type: "position", data: { position, duration: durationMs() } });
     return ok();
@@ -234,7 +286,37 @@ const webPlayer: PlayerApi = {
     success: true,
     data: currentMeta?.coverOriginal ?? currentMeta?.cover ?? null,
   }),
-  readLyricFile: async () => ({ success: false, error: "local lyric files are not available" }),
+  readLyricFile: async (filePath) => {
+    if (!isTauri()) return { success: false, error: "local lyric files are not available" };
+    try {
+      const { readTextFile } = await import("@tauri-apps/plugin-fs");
+      return { success: true, data: await readTextFile(filePath) };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  },
+  pickLyricFile: async () => {
+    if (!isTauri()) return { success: false, error: "local lyric files are not available" };
+    try {
+      const selected = await open({
+        multiple: false,
+        directory: false,
+        fileAccessMode: isAndroid ? "copy" : "scoped",
+        filters: [
+          { name: "Lyrics", extensions: ["ttml", "lys", "qrc", "krc", "yrc", "lrc", "ass", "srt"] },
+        ],
+      });
+      if (!selected || Array.isArray(selected)) return { success: false, error: "canceled" };
+      const path = String(selected);
+      const ext = path.split(".").pop()?.toLowerCase() as LyricFormat | undefined;
+      if (!ext || !["ttml", "lys", "qrc", "krc", "yrc", "lrc", "ass", "srt"].includes(ext)) {
+        return { success: false, error: "不支持的歌词文件类型" };
+      }
+      return { success: true, data: { path, format: ext } };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  },
   reinit: async () => ok(),
   setNormalizationEnabled: async () => ok(),
   setEqualizerEnabled: async () => ok(),

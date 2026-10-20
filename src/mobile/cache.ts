@@ -1,301 +1,253 @@
-import { appCacheDir, join } from "@tauri-apps/api/path";
-import { exists, mkdir, open, readDir, remove, rename, stat } from "@tauri-apps/plugin-fs";
+import { clearLyricStorage } from "./shims/lyricStorage";
 import localforage from "localforage";
+import type { TrackSource } from "@shared/types/player";
+import { isTauri } from "@tauri-apps/api/core";
+import { appCacheDir, join } from "@tauri-apps/api/path";
+import { exists, mkdir, remove, writeFile } from "@tauri-apps/plugin-fs";
 import { fetchWithProxy } from "./shims/proxy";
 import { store } from "./shims/store";
-import { clearLyricStorage } from "./shims/lyricStorage";
 
-type CacheApi = Window["api"]["cache"];
-interface Entry {
-  name: string;
+const categories = [
+  { id: "lyric", prefix: "splayer.mobile.lyric." },
+  { id: "lyricTTML", prefix: "splayer.mobile.ttml." },
+  { id: "lyricMatch", prefix: "splayer.mobile.lyric-match." },
+];
+const SONG_CACHE_NAME = "splayer-mobile-songs-v1";
+const NATIVE_SONG_CACHE_DIR = "splayer-song-cache";
+const songMeta = localforage.createInstance({ name: "splayer", storeName: "song-cache" });
+interface SongMeta {
+  key: string;
+  source: TrackSource;
   size: number;
-  used: number;
+  lastUsedAt: number;
+  filePath?: string;
 }
-const MAX_ENTRIES = 2048;
-const storage = localforage.createInstance({ name: "splayer", storeName: "song-cache" });
-const prefixes: Record<string, string> = {
-  lyric: "splayer.mobile.lyric.",
-  lyricTTML: "splayer.mobile.ttml.",
-  lyricMatch: "splayer.mobile.lyric-match.",
-};
-let entries: Entry[] = [];
-let initialized: Promise<void> | undefined;
-let locked = Promise.resolve();
-let protectedName: string | undefined;
-let clearing = 0;
-let active:
-  { key: string; controller: AbortController; promise: Promise<string | null> } | undefined;
-const getDir = async (): Promise<string> => join(await appCacheDir(), "offline-songs");
-const limit = (): number => {
-  const gb = store.get("cache.songCache.sizeLimitGb");
-  return gb > 0 ? gb * 1024 ** 3 : Infinity;
-};
 
-/** 元数据操作串行执行，防止清理与下载完成互相覆盖。 */
-const exclusive = <T>(work: () => Promise<T>): Promise<T> => {
-  const result = locked.then(work);
-  locked = result.then(
-    () => undefined,
-    () => undefined,
-  );
-  return result;
-};
-const save = async (): Promise<void> => {
-  await storage.setItem("entries", entries);
-};
-const initialize = (): Promise<void> => {
-  initialized ??= (async () => {
-    const root = await getDir();
-    await mkdir(root, { recursive: true });
-    const saved = await storage.getItem<Entry[]>("entries");
-    const names = new Map(
-      (Array.isArray(saved) ? saved : [])
-        .slice(0, MAX_ENTRIES)
-        .filter((entry) => entry && /^[a-f0-9]{64}\.[a-z0-9]+$/.test(entry.name))
-        .map((entry) => [entry.name, entry]),
-    );
-    entries = [];
-    for (const file of await readDir(root)) {
-      if (!file.isFile || file.isSymlink) continue;
-      const path = await join(root, file.name);
-      const previous = names.get(file.name);
-      if (!previous) {
-        await remove(path);
-        continue;
-      }
-      const info = await stat(path);
-      if (info.size <= 0 || info.size !== previous.size) {
-        await remove(path);
-        continue;
-      }
-      entries.push({ name: file.name, size: info.size, used: Number(previous.used) || 0 });
-    }
-    await save();
-  })().catch((error) => {
-    initialized = undefined;
-    throw error;
-  });
-  return initialized;
-};
-const hashKey = async (key: string): Promise<string> => {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(key));
-  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
-};
+const cacheRequest = (key: string): Request =>
+  new Request(`https://splayer.invalid/mobile-cache/${encodeURIComponent(key)}`);
+const cacheStorage = (): CacheStorage | null =>
+  typeof globalThis.caches === "undefined" ? null : globalThis.caches;
 
-/** 淘汰最久未播放的缓存；保留最近命中的文件，避免打断正在播放的音频。 */
-const trim = async (reserve = 0, incoming = 0): Promise<boolean> => {
-  entries.sort((a, b) => a.used - b.used);
-  let size = entries.reduce((sum, entry) => sum + entry.size, 0);
-  for (const entry of [...entries]) {
-    if (size + reserve <= limit() && entries.length + incoming <= MAX_ENTRIES) break;
-    if (entry.name === protectedName) continue;
-    const path = await join(await getDir(), entry.name);
-    if (await exists(path)) await remove(path);
-    entries.splice(entries.indexOf(entry), 1);
-    size -= entry.size;
+const keyFingerprint = (value: string): string => {
+  let first = 2166136261;
+  let second = 2246822519;
+  for (let index = 0; index < value.length; index++) {
+    const code = value.charCodeAt(index);
+    first = Math.imul(first ^ code, 16777619);
+    second = Math.imul(second ^ code, 3267000013);
   }
-  await save();
-  return size + reserve <= limit() && entries.length + incoming <= MAX_ENTRIES;
+  return `${(first >>> 0).toString(16).padStart(8, "0")}-${(second >>> 0).toString(16).padStart(8, "0")}`;
 };
-const lookup = async (key: string, protect = true): Promise<string | null> => {
+
+const nativeAudioExtension = (url: string, mimeType: string | null, data?: Uint8Array): string => {
+  const mime = mimeType?.split(";", 1)[0].toLowerCase();
+  const byMime: Record<string, string> = {
+    "audio/aac": "aac",
+    "audio/flac": "flac",
+    "audio/mp4": "m4a",
+    "audio/mpeg": "mp3",
+    "audio/ogg": "ogg",
+    "audio/opus": "opus",
+    "audio/wav": "wav",
+    "audio/x-m4a": "m4a",
+    "audio/x-wav": "wav",
+  };
+  if (mime && byMime[mime]) return byMime[mime];
   try {
-    const hash = await hashKey(key);
-    return await exclusive(async () => {
-      await initialize();
-      const entry = entries.find((item) => item.name.startsWith(hash + "."));
-      if (protect && entry) protectedName = entry.name;
-      if (!entry) {
-        await trim();
-        return null;
-      }
-      const path = await join(await getDir(), entry.name);
-      if (!(await exists(path)) || (await stat(path)).size !== entry.size) {
-        entries.splice(entries.indexOf(entry), 1);
-        if (protect) protectedName = undefined;
-        await save();
-        return null;
-      }
-      entry.used = Date.now();
-      await trim();
-      return path;
-    });
-  } catch {
-    return null;
+    const extension = new URL(url).pathname.split(".").pop()?.toLowerCase();
+    if (extension && /^(aac|ape|flac|m4a|mp3|ogg|opus|wav)$/.test(extension)) return extension;
+  } catch {}
+  if (data) {
+    const text = (offset: number, length: number): string =>
+      String.fromCharCode(...data.slice(offset, offset + length));
+    if (text(0, 4) === "fLaC") return "flac";
+    if (text(0, 4) === "OggS") return "ogg";
+    if (text(0, 4) === "RIFF" && text(8, 4) === "WAVE") return "wav";
+    if (text(4, 4) === "ftyp") return "m4a";
+    if (text(0, 3) === "ID3" || (data[0] === 0xff && (data[1] & 0xe0) === 0xe0)) return "mp3";
   }
+  return "mp3";
 };
 
-/** 缓存下载只保留一个活动流，不排队持有过期链接，也不把整首音频读进内存。 */
-const download = async (
+const nativeSongDirectory = async (): Promise<string> => {
+  const directory = await join(await appCacheDir(), NATIVE_SONG_CACHE_DIR);
+  await mkdir(directory, { recursive: true });
+  return directory;
+};
+
+const fileUrl = (path: string): string =>
+  `file://${path
+    .split("/")
+    .map((part) => encodeURIComponent(part))
+    .join("/")}`;
+
+const removeNativeSong = async (value: SongMeta | null | undefined): Promise<void> => {
+  if (value?.filePath) await remove(value.filePath).catch(() => undefined);
+};
+
+const writeNativeSong = async (
   key: string,
   url: string,
-  controller: AbortController,
-): Promise<string | null> => {
-  let temporary: string | undefined;
-  let file: Awaited<ReturnType<typeof open>> | undefined;
-  let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
-  const check = (): void => {
-    if (controller.signal.aborted || !store.get("cache.songCache.enabled"))
-      throw new Error("canceled");
-  };
-  try {
-    const cached = await lookup(key, false);
-    if (cached) return cached;
-    check();
-    const parsed = new URL(url);
-    if (!["https:", "http:"].includes(parsed.protocol)) return null;
-    const response = await fetchWithProxy(parsed, { signal: controller.signal });
-    reader = response.body?.getReader();
-    if (response.status !== 200 || !reader) throw new Error("invalid cache response");
-    const mime = response.headers.get("content-type")?.split(";")[0] ?? "";
-    if (mime.startsWith("text/") || mime.includes("json") || mime.includes("mpegurl"))
-      throw new Error("invalid audio response");
-    const expected = Number(response.headers.get("content-length")) || 0;
-    if (expected > limit()) return null;
-    const suffix = parsed.pathname.split(".").pop()?.toLowerCase();
-    const extensions = ["mp3", "m4a", "aac", "flac", "wav", "ogg", "opus", "aiff", "alac", "ape"];
-    const extension =
-      suffix && extensions.includes(suffix)
-        ? suffix
-        : ((
-            {
-              "audio/mp4": "m4a",
-              "audio/flac": "flac",
-              "audio/x-flac": "flac",
-              "audio/wav": "wav",
-              "audio/ogg": "ogg",
-            } as Record<string, string>
-          )[mime] ?? "mp3");
-    const name = (await hashKey(key)) + "." + extension;
-    const root = await getDir();
-    temporary = await join(root, name + ".part");
-    check();
-    file = await open(temporary, { create: true, write: true, truncate: true });
-    let size = 0;
-    while (true) {
-      check();
-      const chunk = await reader.read();
-      check();
-      if (chunk.done) break;
-      size += chunk.value.length;
-      if (size > limit()) throw new Error("cache size limit");
-      let offset = 0;
-      while (offset < chunk.value.length) {
-        check();
-        const written = await file.write(chunk.value.subarray(offset));
-        if (written <= 0) throw new Error("cache write failed");
-        offset += written;
-      }
-    }
-    if (!size || (expected > 0 && !response.headers.get("content-encoding") && expected !== size))
-      throw new Error("incomplete audio response");
-    await file.close();
-    file = undefined;
-    return await exclusive(async () => {
-      check();
-      if (!(await trim(size, 1))) return null;
-      check();
-      const path = await join(root, name);
-      await rename(temporary!, path);
-      temporary = undefined;
-      entries.push({ name, size, used: Date.now() });
-      await save();
-      return path;
-    });
-  } catch {
-    // 缓存失败不影响在线播放，也不把带凭据的链接写入日志。
-    return null;
-  } finally {
-    await reader?.cancel().catch(() => undefined);
-    await file?.close().catch(() => undefined);
-    if (temporary) await remove(temporary).catch(() => undefined);
+  response: Response,
+  value: SongMeta | null,
+): Promise<{ path: string; size: number }> => {
+  const data = new Uint8Array(await response.arrayBuffer());
+  const directory = await nativeSongDirectory();
+  const extension = nativeAudioExtension(url, response.headers.get("content-type"), data);
+  const path = await join(directory, `${keyFingerprint(key)}.${extension}`);
+  if (value?.filePath && value.filePath !== path) await removeNativeSong(value);
+  await writeFile(path, data);
+  return { path, size: data.byteLength };
+};
+
+const songLimit = (): number => {
+  const gb = Number(store.get("cache.songCache.sizeLimitGb"));
+  return Number.isFinite(gb) && gb > 0 ? gb * 1024 ** 3 : Infinity;
+};
+
+const evictSongs = async (): Promise<void> => {
+  const storage = cacheStorage();
+  const cache = storage ? await storage.open(SONG_CACHE_NAME) : null;
+  const keys = await songMeta.keys();
+  const entries = (
+    await Promise.all(
+      keys.map(async (key) => ({ key, value: await songMeta.getItem<SongMeta>(key) })),
+    )
+  ).filter((item): item is { key: string; value: SongMeta } => Boolean(item.value));
+  let total = entries.reduce((sum, item) => sum + item.value.size, 0);
+  for (const item of entries.sort((a, b) => a.value.lastUsedAt - b.value.lastUsedAt)) {
+    if (total <= songLimit()) break;
+    await cache?.delete(cacheRequest(item.value.key));
+    await removeNativeSong(item.value);
+    await songMeta.removeItem(item.key);
+    total -= item.value.size;
   }
 };
-const fetchSong: CacheApi["song"]["fetch"] = (key, source, url) => {
-  if (
-    clearing ||
-    !store.get("cache.songCache.enabled") ||
-    source === "local" ||
-    (source === "streaming" && !store.get("cache.songCache.cacheStreaming"))
-  )
-    return Promise.resolve(null);
-  if (active) return active.key === key ? active.promise : Promise.resolve(null);
-  const controller = new AbortController();
-  const promise = download(key, url, controller).finally(() => {
-    active = undefined;
-  });
-  active = { key, controller, promise };
-  return promise;
-};
-const clear: CacheApi["clear"] = async (id) => {
-  if (Object.hasOwn(prefixes, id)) {
-    clearLyricStorage(prefixes[id]);
-    return;
-  }
-  if (id !== "songs") throw new Error("Unknown cache category");
-  clearing++;
-  try {
-    active?.controller.abort();
-    await active?.promise;
-    await exclusive(async () => {
-      await initialize();
-      const root = await getDir();
-      for (const file of await readDir(root)) {
-        if (file.isFile && !file.isSymlink) await remove(await join(root, file.name));
-      }
-      entries = [];
-      protectedName = undefined;
-      await save();
-    });
-  } finally {
-    clearing--;
-  }
-};
-export const mobileCache: CacheApi = {
-  getDir,
-  pickDir: async () => ({ ok: false, dir: await getDir(), reason: "canceled" }),
-  resetDir: getDir,
-  clear,
-  clearAllByKind: async (kind) => {
-    for (const id of kind === "file" ? ["songs"] : Object.keys(prefixes)) await clear(id);
-  },
-  getStats: async () =>
-    exclusive(async () => {
-      await initialize();
-      for (const entry of [...entries]) {
-        const path = await join(await getDir(), entry.name);
-        if (!(await exists(path)) || (await stat(path)).size !== entry.size) {
-          entries.splice(entries.indexOf(entry), 1);
-          if (entry.name === protectedName) protectedName = undefined;
-        }
-      }
-      await trim();
-      const result: Awaited<ReturnType<CacheApi["getStats"]>> = [
-        {
-          id: "songs",
-          kind: "file",
-          path: await getDir(),
-          size: entries.reduce((sum, entry) => sum + entry.size, 0),
-        },
-      ];
-      for (const [id, prefix] of Object.entries(prefixes)) {
+
+/** 统计可重新获取的歌词与歌曲缓存，不包含账号、歌单与下载文件。 */
+export const mobileCache = {
+  getStats: async () => {
+    const stats = await Promise.all(
+      categories.map(async ({ id, prefix }) => {
         let size = 0;
-        for (let i = 0; i < localStorage.length; i++) {
-          const key = localStorage.key(i);
+        for (let index = 0; index < localStorage.length; index++) {
+          const key = localStorage.key(index);
           if (key?.startsWith(prefix))
             size += (key.length + (localStorage.getItem(key)?.length ?? 0)) * 2;
         }
-        result.push({ id, kind: "db", path: "", size });
+        return { id, kind: "db" as const, path: "localStorage", size };
+      }),
+    );
+    const keys = await songMeta.keys();
+    const values = await Promise.all(keys.map((key) => songMeta.getItem<SongMeta>(key)));
+    const songSize = values.reduce((sum, value) => sum + (value?.size ?? 0), 0);
+    return songSize > 0
+      ? [
+          ...stats,
+          {
+            id: "songs",
+            kind: "db" as const,
+            path: isTauri() ? "App Cache" : "Cache Storage",
+            size: songSize,
+          },
+        ]
+      : stats;
+  },
+  clear: async (id: string) => {
+    if (id === "songs") {
+      const storage = cacheStorage();
+      if (storage) {
+        const cache = await storage.open(SONG_CACHE_NAME);
+        await Promise.all((await cache.keys()).map((request) => cache.delete(request)));
       }
-      return result;
-    }),
+      const keys = await songMeta.keys();
+      await Promise.all(
+        keys.map(async (key) => removeNativeSong(await songMeta.getItem<SongMeta>(key))),
+      );
+      await songMeta.clear();
+      return;
+    }
+    const category = categories.find((item) => item.id === id);
+    if (!category) throw new Error("未知的缓存分类");
+    clearLyricStorage(category.prefix);
+  },
+  clearAllByKind: async (kind: "file" | "db") => {
+    if (kind === "db") {
+      categories.forEach(({ prefix }) => clearLyricStorage(prefix));
+      await mobileCache.clear("songs");
+    }
+  },
+  getDir: async () => "",
+  pickDir: async () => ({ ok: false as const, reason: "canceled" as const }),
+  resetDir: async () => "",
   song: {
-    lookup,
-    fetch: fetchSong,
-    cancel: async (key) => {
-      if (active?.key === key) {
-        active.controller.abort();
-        await active.promise;
+    lookup: async (key: string) => {
+      if (!store.get("cache.songCache.enabled")) return null;
+      const storage = cacheStorage();
+      const value = await songMeta.getItem<SongMeta>(key);
+      if (isTauri() && value?.filePath && (await exists(value.filePath))) {
+        await songMeta.setItem(key, { ...value, lastUsedAt: Date.now() });
+        return fileUrl(value.filePath);
       }
+      if (!storage) return null;
+      const response = await (await storage.open(SONG_CACHE_NAME)).match(cacheRequest(key));
+      if (!response) return null;
+      if (isTauri()) {
+        try {
+          const native = await writeNativeSong(key, key, response, value);
+          const next = value
+            ? {
+                ...value,
+                filePath: native.path,
+                size: value.size || native.size,
+                lastUsedAt: Date.now(),
+              }
+            : {
+                key,
+                source: "netease" as TrackSource,
+                size: native.size,
+                filePath: native.path,
+                lastUsedAt: Date.now(),
+              };
+          await songMeta.setItem(key, next);
+          return fileUrl(native.path);
+        } catch {
+          return null;
+        }
+      }
+      if (value) await songMeta.setItem(key, { ...value, lastUsedAt: Date.now() });
+      return URL.createObjectURL(await response.blob());
     },
+    fetch: async (key: string, source: TrackSource, streamUrl: string) => {
+      if (!store.get("cache.songCache.enabled")) return null;
+      if (streamUrl.startsWith("streaming://"))
+        streamUrl = await (await import("./streaming")).resolveMobileStreamingDownload(streamUrl);
+      const response = await fetchWithProxy(streamUrl);
+      if (!response.ok || !response.body) return null;
+      const storage = cacheStorage();
+      if (!storage && !isTauri()) return null;
+      const cache = storage && !isTauri() ? await storage.open(SONG_CACHE_NAME) : null;
+      const value = await songMeta.getItem<SongMeta>(key);
+      const nativeResponse = isTauri() ? response : null;
+      const size = Number(response.headers.get("content-length")) || 0;
+      let filePath = value?.filePath;
+      let nativeSize = 0;
+      if (cache) await cache.put(cacheRequest(key), response.clone());
+      if (nativeResponse) {
+        const native = await writeNativeSong(key, streamUrl, nativeResponse, value);
+        filePath = native.path;
+        nativeSize = native.size;
+      }
+      await songMeta.setItem(key, {
+        key,
+        source,
+        size: size || nativeSize,
+        lastUsedAt: Date.now(),
+        ...(filePath ? { filePath } : {}),
+      });
+      await evictSongs();
+      return mobileCache.song.lookup(key);
+    },
+    cancel: async () => undefined,
   },
 };

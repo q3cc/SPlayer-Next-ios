@@ -6,10 +6,10 @@
 
 import type { HotkeyActionId } from "@shared/types/hotkey";
 import { useStatusStore } from "@/stores/status";
+import { useSettingsDialog } from "@/settings/useSettingsDialog";
 import * as player from "@/core/player";
+import { VOLUME_STEP, volumeGainToPosition, volumePositionToGain } from "@/utils/volume";
 
-/** 调音量步长 */
-const VOLUME_STEP = 0.05;
 /** 快进/快退步长（毫秒） */
 const SEEK_STEP_MS = 5000;
 
@@ -45,12 +45,12 @@ export const buildRegistry = (): void => {
   // 音量增加
   handlers.set("player.volumeUp", () => {
     const status = useStatusStore();
-    player.setVolume(Math.min(1, status.volume + VOLUME_STEP));
+    player.setVolume(volumePositionToGain(volumeGainToPosition(status.volume) + VOLUME_STEP));
   });
   // 音量减少
   handlers.set("player.volumeDown", () => {
     const status = useStatusStore();
-    player.setVolume(Math.max(0, status.volume - VOLUME_STEP));
+    player.setVolume(volumePositionToGain(volumeGainToPosition(status.volume) - VOLUME_STEP));
   });
   // 循环模式
   handlers.set("player.cycleRepeat", () => player.cycleRepeatMode());
@@ -101,6 +101,10 @@ export const buildRegistry = (): void => {
     if (document.activeElement !== el) return false;
     el.select();
     return true;
+  });
+  // 打开设置
+  handlers.set("view.openSettings", () => {
+    useSettingsDialog().show();
   });
 };
 

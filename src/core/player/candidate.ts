@@ -1,5 +1,4 @@
-import type { Track } from "@shared/types/player";
-import type { ShuffleMode } from "@/stores/status";
+import type { Track, ShuffleMode } from "@shared/types/player";
 import { shouldSkipDjTrack } from "@/utils/preset/djMode";
 
 /** 候选歌曲计算上下文 */

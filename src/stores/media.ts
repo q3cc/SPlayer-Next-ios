@@ -1,5 +1,7 @@
 import type { MediaInfo, PlaybackContext, Track, TrackDetail } from "@shared/types/player";
-import type { LyricData, LyricFormat, LyricInput, LyricLine } from "@shared/types/lyrics";
+import type { LyricFormat, LyricInput, LyricLine } from "lyric-kit";
+import type { LyricData } from "@shared/types/lyrics";
+
 import { useSettingsStore } from "@/stores/settings";
 import { watchLyricPreference } from "@/services/lyric/loader";
 import {
@@ -102,7 +104,16 @@ export const useMediaStore = defineStore("media", () => {
           : track.value.artists,
       album: track.value.album ?? info.album,
       duration: track.value.duration > 0 ? track.value.duration : info.duration,
-      cover: isStreaming ? track.value.cover : (track.value.cover ?? info.cover),
+      cover:
+        newDetail?.downloaded && info.cover
+          ? info.cover
+          : isStreaming
+            ? track.value.cover
+            : (track.value.cover ?? info.cover),
+      coverOriginal:
+        newDetail?.downloaded && info.coverOriginal
+          ? info.coverOriginal
+          : track.value.coverOriginal,
       quality: track.value.quality ?? info.quality,
     };
     if (newDetail) detail.value = newDetail;

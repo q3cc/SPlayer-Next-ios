@@ -7,7 +7,7 @@ import downloadCategory from "@/settings/categories/download";
 import zhCN from "@/i18n/locales/zh-CN.json";
 
 const mocks = vi.hoisted(() => ({ confirm: vi.fn(), model: undefined as unknown }));
-vi.mock("@/utils/config", () => ({ isIOS: true }));
+vi.mock("@/utils/config", () => ({ isIOS: true, isMobile: true }));
 vi.mock("@/settings/useSettingModel", () => ({ useSettingModel: () => mocks.model }));
 vi.mock("@/composables/useDialog", () => ({ dialog: { confirm: mocks.confirm } }));
 

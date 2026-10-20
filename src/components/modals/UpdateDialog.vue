@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { marked } from "marked";
 import { useUpdateStore } from "@/stores/update";
-import { APP_VERSION, IS_APPX, isIOS } from "@/utils/config";
+import { APP_VERSION, IS_APPX, isIOS, isAndroid } from "@/utils/config";
 import { formatFileSize } from "@/utils/format";
 
 const { t } = useI18n();
@@ -32,6 +32,9 @@ const releaseDateText = computed(() => {
     @update:open="update.dialogOpen = $event"
   >
     <div class="flex flex-col gap-4">
+      <p v-if="update.phase === 'error'" role="alert" class="text-sm text-error">
+        {{ t("update.failed") }}
+      </p>
       <!-- 版本 + 元信息 -->
       <div v-if="update.meta" class="flex items-center gap-2 text-sm">
         <STag type="default" size="small">v{{ APP_VERSION }}</STag>
@@ -63,7 +66,7 @@ const releaseDateText = computed(() => {
         <!-- eslint-enable vue/no-v-html -->
       </div>
       <div
-        v-if="isIOS && update.phase === 'downloading'"
+        v-if="(isIOS || isAndroid) && update.phase === 'downloading'"
         class="flex flex-col gap-2"
         aria-live="polite"
       >
@@ -103,13 +106,36 @@ const releaseDateText = computed(() => {
         >
           {{ t("update.goDownload") }}
         </SButton>
-        <SButton v-if="update.phase === 'downloaded'" type="primary" @click="update.install()">
-          {{ t(isIOS ? "update.openInApp" : "update.installNow") }}
+        <SButton
+          v-if="update.phase === 'downloaded' || update.errorSource === 'install'"
+          type="primary"
+          @click="update.install()"
+        >
+          {{
+            t(
+              isIOS
+                ? "update.openInApp"
+                : isAndroid
+                  ? "update.androidInstallNow"
+                  : "update.installNow",
+            )
+          }}
+        </SButton>
+        <SButton v-else-if="update.phase === 'installing'" type="primary" disabled>
+          {{ t("update.installing") }}
         </SButton>
         <SButton v-else-if="update.phase === 'downloading'" type="primary" disabled>
-          {{ t("update.downloading") }} {{ update.percent.toFixed(1) }}%
+          {{ t("update.downloading") }}
+          <span class="tabular-nums">{{ update.percent }}%</span>
         </SButton>
-        <SButton v-else type="primary" @click="update.download()">
+        <SButton
+          v-else-if="update.errorSource === 'download'"
+          type="primary"
+          @click="update.checkManually()"
+        >
+          {{ t("settings.about.checkUpdate") }}
+        </SButton>
+        <SButton v-else-if="update.phase === 'available'" type="primary" @click="update.download()">
           {{ t(isIOS ? "update.updateNow" : "update.download") }}
         </SButton>
       </template>

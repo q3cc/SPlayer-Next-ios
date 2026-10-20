@@ -4,6 +4,8 @@ use std::{
     path::PathBuf,
     sync::{Mutex, OnceLock},
 };
+#[cfg(target_os = "android")]
+use tauri::Manager;
 
 struct SessionLog {
     file: File,
@@ -24,7 +26,7 @@ pub fn init() -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn set_diagnostic_logging(enabled: bool) -> Result<(), String> {
+pub fn set_diagnostic_logging(app: tauri::AppHandle, enabled: bool) -> Result<(), String> {
     let mut state = SESSION_LOG.lock().map_err(|e| e.to_string())?;
     if !enabled {
         if let Some(log) = state.as_mut() {
@@ -52,8 +54,16 @@ pub fn set_diagnostic_logging(enabled: bool) -> Result<(), String> {
     #[cfg(target_os = "ios")]
     let directory = PathBuf::from(std::env::var_os("HOME").ok_or("iOS sandbox HOME missing")?)
         .join("Documents/logs");
-    #[cfg(not(target_os = "ios"))]
+    #[cfg(target_os = "android")]
+    let directory = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| e.to_string())?
+        .join("logs");
+    #[cfg(not(any(target_os = "ios", target_os = "android")))]
     let directory = std::env::temp_dir().join("splayer-logs");
+    #[cfg(not(target_os = "android"))]
+    let _ = app;
     std::fs::create_dir_all(&directory).map_err(|e| e.to_string())?;
     let started = STARTED_AT.get_or_init(chrono::Local::now);
     let path = directory.join(format!("{}.log", started.format("%Y-%m-%d_%H-%M-%S%.3f%z")));
@@ -133,4 +143,40 @@ pub fn diagnostic_log_path() -> Result<String, String> {
         .as_ref()
         .map(|log| log.path.to_string_lossy().into_owned())
         .ok_or_else(|| "diagnostic logging disabled".into())
+}
+
+#[cfg(target_os = "android")]
+#[tauri::command]
+pub fn prepare_diagnostic_log_share(app: tauri::AppHandle) -> Result<String, String> {
+    let directory = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| e.to_string())?
+        .join("logs");
+    let active = {
+        let mut state = SESSION_LOG.lock().map_err(|e| e.to_string())?;
+        if let Some(log) = state.as_mut() {
+            log.file.flush().map_err(|e| e.to_string())?;
+        }
+        state.as_ref().map(|log| log.path.clone())
+    };
+    let source = match active {
+        Some(path) => path,
+        None => std::fs::read_dir(&directory)
+            .map_err(|e| e.to_string())?
+            .filter_map(Result::ok)
+            .map(|entry| entry.path())
+            .filter(|path| path.extension().is_some_and(|ext| ext == "log"))
+            .max()
+            .ok_or("没有可分享的日志")?,
+    };
+    let destination = app
+        .path()
+        .app_cache_dir()
+        .map_err(|e| e.to_string())?
+        .join("diagnostics");
+    std::fs::create_dir_all(&destination).map_err(|e| e.to_string())?;
+    let target = destination.join(source.file_name().ok_or("日志文件名无效")?);
+    std::fs::copy(source, &target).map_err(|e| e.to_string())?;
+    Ok(target.to_string_lossy().into_owned())
 }

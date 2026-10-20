@@ -52,6 +52,7 @@ const containerStyle = computed(() => ({
 
 const emit = defineEmits<{
   "update:open": [value: boolean];
+  openAutoFocus: [event: Event];
 }>();
 
 const isOpen = ref(props.open ?? false);
@@ -132,6 +133,7 @@ const setOpen = (val: boolean): void => {
             ? 'bg-black/55 backdrop-blur-xl backdrop-saturate-160 border border-solid border-white/10 text-cover'
             : 'bg-surface-alt border border-solid border-outline-variant/30 text-on-surface',
         ]"
+        @open-auto-focus="emit('openAutoFocus', $event)"
       >
         <!-- 标题 + 描述 -->
         <div v-if="title" class="shrink-0 px-5 pt-4 pb-3 pr-12">

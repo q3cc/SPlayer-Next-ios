@@ -6,6 +6,7 @@ import { deepMerge, getByPath, setByPath } from "@root/electron/main/store/utils
 const STORAGE_KEY = "splayer.mobile.settings";
 const mobileDefaults: SystemConfig = {
   ...defaultSystemConfig,
+  media: { ...defaultSystemConfig.media, dynamicLyrics: true },
   desktopLyric: { ...defaultSystemConfig.desktopLyric, doubleLine: false },
 };
 

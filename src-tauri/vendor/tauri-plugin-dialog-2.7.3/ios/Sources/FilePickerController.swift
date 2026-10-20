@@ -134,17 +134,32 @@ public class FilePickerController: NSObject {
 }
 
 extension FilePickerController: UIDocumentPickerDelegate {
-	public func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
-		do {
-			self.plugin.onFilePickerEvent(.selected(urls))
-		} catch {
-			self.plugin.onFilePickerEvent(.error("Failed to create a temporary copy of the file"))
-		}
-	}
+  private func handlePickedDocuments(_ controller: UIDocumentPickerViewController, urls: [URL]) {
+    let trace = plugin.pickerTrace
+    trace?.log("delegate-selected", "count=\(urls.count) presented=\(controller.presentingViewController != nil)")
+    // 即使结果已经消费，也关闭仍可交互的系统面板，避免“使用文件夹”反复触发。
+    controller.view.isUserInteractionEnabled = false
+    trace?.log("dismiss-request")
+    dismissViewController(controller) { trace?.log("dismiss-completed") }
+    plugin.onFilePickerEvent(.selected(urls))
+  }
 
-	public func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
-		self.plugin.onFilePickerEvent(.cancelled)
-	}
+  public func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
+    handlePickedDocuments(controller, urls: urls)
+  }
+
+  @available(iOS, deprecated: 11.0)
+  public func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentAt url: URL) {
+    handlePickedDocuments(controller, urls: [url])
+  }
+
+  public func documentPickerWasCancelled(_ controller: UIDocumentPickerViewController) {
+    let trace = plugin.pickerTrace
+    trace?.log("delegate-cancelled")
+    controller.view.isUserInteractionEnabled = false
+    dismissViewController(controller) { trace?.log("cancel-dismiss-completed") }
+    plugin.onFilePickerEvent(.cancelled)
+  }
 }
 
 extension FilePickerController: UIImagePickerControllerDelegate, UINavigationControllerDelegate, UIPopoverPresentationControllerDelegate {

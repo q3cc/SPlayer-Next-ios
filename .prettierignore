@@ -11,3 +11,4 @@ native/*/index.d.ts
 
 # 保留第三方源包格式，只格式化我们自己的补丁说明。
 src-tauri/vendor/tauri-plugin-dialog-2.7.3
+src-tauri/ios-recognition/afp-runtime.js

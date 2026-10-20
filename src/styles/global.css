@@ -64,6 +64,11 @@ html.mobile #app {
   overflow: hidden;
 }
 
+html.android,
+html.android * {
+  -webkit-tap-highlight-color: transparent;
+}
+
 @media (max-width: 900px), (pointer: coarse) {
   html,
   body {

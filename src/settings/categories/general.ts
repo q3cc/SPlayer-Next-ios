@@ -1,9 +1,8 @@
 import type { SettingCategory, SettingSection } from "@/types/settings-schema";
 import { LOCALES } from "@shared/types/settings";
 import StorageManager from "@/components/settings/custom/StorageManager.vue";
-import { useUpdateStore } from "@/stores/update";
 import IconLucideCog from "~icons/lucide/cog";
-import { isIOS } from "@/utils/config";
+import { isMobile } from "@/utils/config";
 
 const generalCategory: SettingCategory = {
   id: "general",
@@ -21,7 +20,7 @@ const generalCategory: SettingCategory = {
         },
       ],
     },
-    ...(isIOS
+    ...(isMobile
       ? []
       : ([
           {
@@ -88,40 +87,6 @@ const generalCategory: SettingCategory = {
           },
         ] satisfies SettingSection[])),
     {
-      id: "update",
-      items: [
-        {
-          key: "updateChannel",
-          type: "select",
-          binding: { store: "settings", path: "system.update.channel" },
-          options: [
-            { value: "stable", labelKey: "settings.updateChannel.stable" },
-            { value: "beta", labelKey: "settings.updateChannel.beta" },
-            { value: "alpha", labelKey: "settings.updateChannel.alpha" },
-            ...(isIOS ? [{ value: "action", labelKey: "settings.updateChannel.action" }] : []),
-          ],
-          defaultValue: "stable",
-          confirm: {
-            when: (next) => next === "beta" || next === "alpha" || next === "action",
-            titleKey: "settings.confirm.testChannelTitle",
-            contentKey: "settings.confirm.testChannelContent",
-            type: "warning",
-          },
-        },
-        {
-          key: "autoCheckUpdate",
-          type: "switch",
-          binding: { store: "settings", path: "system.update.autoCheck" },
-          defaultValue: true,
-        },
-        {
-          key: "checkUpdate",
-          type: "button",
-          action: () => useUpdateStore().checkManually(),
-        },
-      ],
-    },
-    {
       id: "debug",
       items: [
         {
@@ -129,7 +94,7 @@ const generalCategory: SettingCategory = {
           type: "switch",
           binding: { store: "settings", path: "system.system.diagnosticLogging" },
           defaultValue: false,
-          visible: () => isIOS,
+          visible: () => isMobile,
         },
         {
           key: "showPerformanceMonitor",
@@ -147,7 +112,12 @@ const generalCategory: SettingCategory = {
           type: "custom",
           component: StorageManager,
           fullWidth: true,
-          keywords: ["backup.label", "restore.label", "resetSettings.label", "resetAll.label"],
+          keywords: [
+            "settings.backup.label",
+            "settings.restore.label",
+            "settings.resetSettings.label",
+            "settings.resetAll.label",
+          ],
         },
       ],
     },

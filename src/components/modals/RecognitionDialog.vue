@@ -6,6 +6,7 @@ import { toast } from "@/composables/useToast";
 import { useRecognitionSession } from "@/composables/useRecognitionSession";
 import * as player from "@/core/player";
 import { withPicSize } from "@/utils/format/netease";
+import { isIOS } from "@/utils/config";
 import IconLucideArrowLeft from "~icons/lucide/arrow-left";
 import IconLucideAudioWaveform from "~icons/lucide/audio-waveform";
 import IconLucidePlay from "~icons/lucide/play";
@@ -18,7 +19,9 @@ const emit = defineEmits<{ "update:open": [value: boolean] }>();
 const session = useRecognitionSession();
 const { phase, level, candidates, error, supported, source } = session;
 
-const isBusy = computed(() => ["capturing", "fingerprinting", "matching"].includes(phase.value));
+const isBusy = computed(() =>
+  ["waiting", "capturing", "fingerprinting", "matching"].includes(phase.value),
+);
 const trackCache = shallowRef(new Map<string, Track>());
 const playingId = ref<string | null>(null);
 
@@ -29,7 +32,11 @@ watch(candidates, () => {
 
 watch(phase, (value) => {
   if (value === "error") {
-    toast.error(t(`recognition.error.${error.value?.code ?? "unknown"}`));
+    toast.error(
+      isIOS && source.value === "system" && error.value?.message
+        ? error.value.message
+        : t(`recognition.error.${error.value?.code ?? "unknown"}`),
+    );
     session.reset();
     return;
   }
@@ -141,12 +148,18 @@ const start = (): void => {
             </div>
           </div>
 
-          <div class="flex h-12 shrink-0 flex-col items-center">
+          <div class="flex min-h-12 shrink-0 flex-col items-center">
             <p class="text-sm font-medium text-on-surface">
               {{ isBusy ? t(`recognition.phase.${phase}`) : t("recognition.description") }}
             </p>
             <p class="mt-1 max-w-80 text-xs leading-5 text-on-surface-variant/60 text-pretty">
-              {{ isBusy ? t(`recognition.source.${source}`) : t(`recognition.hint.${source}`) }}
+              {{
+                isIOS && source === "system"
+                  ? t("recognition.broadcastHint")
+                  : isBusy
+                    ? t(`recognition.source.${source}`)
+                    : t(`recognition.hint.${source}`)
+              }}
             </p>
           </div>
         </div>

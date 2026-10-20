@@ -1,12 +1,24 @@
+import json
+import pathlib
 import plistlib
 import sys
 import zipfile
+
+config = json.loads((pathlib.Path(__file__).resolve().parents[2] / "src-tauri/tauri.conf.json").read_text())
 
 with zipfile.ZipFile(sys.argv[1]) as archive:
     names = archive.namelist()
     info_path = next(name for name in names if name.startswith("Payload/") and name.endswith(".app/Info.plist"))
     root = info_path.removesuffix("Info.plist")
     info = plistlib.loads(archive.read(info_path))
+    broadcast = plistlib.loads(archive.read(root + "PlugIns/RecognitionBroadcast.appex/Info.plist"))
+    for bundle in [info, broadcast]:
+        assert bundle.get("CFBundleShortVersionString") == config["version"], f"安装包版本与 Tauri 配置不一致: {bundle.get('CFBundleIdentifier')} = {bundle.get('CFBundleShortVersionString')}, 期望 {config['version']}"
+        assert bundle.get("MinimumOSVersion") == config["bundle"]["iOS"]["minimumSystemVersion"], f"安装包最低系统版本与 Tauri 配置不一致: {bundle.get('CFBundleIdentifier')} = {bundle.get('MinimumOSVersion')}, 期望 {config['bundle']['iOS']['minimumSystemVersion']}"
+    assert broadcast["NSExtension"]["NSExtensionPointIdentifier"] == "com.apple.broadcast-services-upload", "缺少听歌识曲广播扩展"
+    assert broadcast["NSExtension"]["RPBroadcastProcessMode"] == "RPBroadcastProcessModeSampleBuffer", "广播扩展未配置音频样本模式"
+    assert len(archive.read(root + "PlugIns/RecognitionBroadcast.appex/afp-runtime.js")) > 100000, "后台指纹模块未打包"
+    assert info.get("NSMicrophoneUsageDescription"), "缺少麦克风权限说明"
     assert info.get("AVInitialRouteSharingPolicy") == "LongFormAudio", "缺少 AirPlay 音乐路由策略"
     assert info.get("NSSiriUsageDescription"), "缺少 Siri 权限说明"
     assert "INPlayMediaIntent" in info.get("INIntentsSupported", []), "未注册媒体意图"

@@ -7,6 +7,7 @@ package app.tauri.dialog
 import android.app.Activity
 import android.content.Intent
 import android.net.Uri
+import android.provider.OpenableColumns
 import android.os.Handler
 import android.os.Looper
 import android.webkit.MimeTypeMap
@@ -21,6 +22,8 @@ import app.tauri.plugin.JSArray
 import app.tauri.plugin.JSObject
 import app.tauri.plugin.Plugin
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import java.io.File
+import java.util.UUID
 
 @InvokeArg
 class Filter {
@@ -32,6 +35,7 @@ class FilePickerOptions {
   lateinit var filters: Array<Filter>
   var multiple: Boolean? = null
   var pickerMode: String? = null
+  var fileAccessMode: String? = null
 }
 
 @InvokeArg
@@ -57,6 +61,7 @@ class DialogPlugin(private val activity: Activity): Plugin(activity) {
   fun showFilePicker(invoke: Invoke) {
     try {
       val args = invoke.parseArgs(FilePickerOptions::class.java)
+      filePickerOptions = args
       val parsedTypes = parseFiltersOption(args.filters)
 
       // TODO: ACTION_OPEN_DOCUMENT ??
@@ -102,6 +107,30 @@ class DialogPlugin(private val activity: Activity): Plugin(activity) {
       val message = ex.message ?: "Failed to read file pick result"
       Logger.error(message)
       invoke.reject(message)
+    } finally {
+      filePickerOptions = null
+    }
+  }
+
+  private fun copyPickedFile(uri: Uri): String {
+    val name = activity.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+      ?.use { cursor ->
+        if (cursor.moveToFirst()) cursor.getString(0) else null
+      } ?: "audio"
+    val safeName = name.substringAfterLast('/').substringAfterLast('\\')
+      .replace(Regex("[^\\p{L}\\p{N}._ -]"), "_")
+      .take(120).ifBlank { "audio" }
+    val directory = File(activity.filesDir, "Imported Files")
+    check(directory.isDirectory || directory.mkdirs()) { "Failed to create music directory" }
+    val target = File(directory, "${UUID.randomUUID()}-$safeName")
+    try {
+      val input = activity.contentResolver.openInputStream(uri)
+        ?: error("Failed to open selected file")
+      input.use { source -> target.outputStream().use { output -> source.copyTo(output) } }
+      return target.absolutePath
+    } catch (error: Exception) {
+      target.delete()
+      throw error
     }
   }
 
@@ -114,11 +143,11 @@ class DialogPlugin(private val activity: Activity): Plugin(activity) {
     val uris: MutableList<String?> = ArrayList()
     if (data.clipData == null) {
       val uri: Uri? = data.data
-      uris.add(uri?.toString())
+      uris.add(uri?.let { if (filePickerOptions?.fileAccessMode == "copy") copyPickedFile(it) else it.toString() })
     } else {
       for (i in 0 until data.clipData!!.itemCount) {
         val uri: Uri = data.clipData!!.getItemAt(i).uri
-        uris.add(uri.toString())
+        uris.add(if (filePickerOptions?.fileAccessMode == "copy") copyPickedFile(uri) else uri.toString())
       }
     }
     callResult.put("files", JSArray.from(uris.toTypedArray()))

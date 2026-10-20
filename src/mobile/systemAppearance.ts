@@ -1,10 +1,17 @@
 import { addPluginListener, invoke, isTauri } from "@tauri-apps/api/core";
+import { isAndroid } from "./platform";
 
 /** 原生通知补足 WebKit 主题事件，恢复前台时重新读取；只更新系统偏好，不修改用户选择。 */
 export const observeSystemAppearance = async (
   update: (dark: boolean) => void,
 ): Promise<() => void> => {
-  if (!isTauri()) return () => {};
+  if (!isTauri() || isAndroid) {
+    const media = matchMedia("(prefers-color-scheme: dark)");
+    const refresh = (): void => update(media.matches);
+    media.addEventListener("change", refresh);
+    refresh();
+    return () => media.removeEventListener("change", refresh);
+  }
   let disposed = false;
   let revision = 0;
   const listener = await addPluginListener<{ dark: boolean }>(

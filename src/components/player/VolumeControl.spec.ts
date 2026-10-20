@@ -8,7 +8,7 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock("@/stores/status", () => ({ useStatusStore: () => mocks.status }));
 vi.mock("@/core/player", () => ({ setVolume: vi.fn() }));
-vi.mock("@/utils/config", () => ({ isIOS: true }));
+vi.mock("@/utils/config", () => ({ isIOS: true, isMobile: true }));
 vi.mock("@tauri-apps/api/core", () => ({ invoke: mocks.invoke }));
 const create = (cover: boolean) =>
   mount(VolumeControl, {

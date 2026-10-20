@@ -118,3 +118,5 @@ it("加载期间忽略拖动和外部跳转通知", async () => {
   expect(isSeeking()).toBe(false);
   expect(mocks.status.position).toBe(1000);
 });
+
+vi.mock("./index", () => ({ invalidatePlaybackOperation: vi.fn() }));

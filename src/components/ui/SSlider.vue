@@ -106,6 +106,7 @@ const dragValue = ref(props.modelValue);
 /** popover 为避免贴边溢出的水平修正量 */
 const popoverShift = ref(0);
 let popoverFrame = 0;
+let activePointerId: number | undefined;
 
 /** 外部 modelValue 变化时同步到内部（拖拽中忽略，避免冲突） */
 watch(
@@ -219,8 +220,9 @@ const calcValueFromEvent = (e: MouseEvent | TouchEvent): number => {
 
 /** 按下：开始拖拽，捕获指针 */
 const onPointerDown = (e: PointerEvent): void => {
-  if (props.disabled) return;
+  if (props.disabled || activePointerId !== undefined || !e.isPrimary || e.button !== 0) return;
   e.preventDefault();
+  activePointerId = e.pointerId;
   (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
   isDragging.value = true;
   const value = calcValueFromEvent(e);
@@ -231,18 +233,27 @@ const onPointerDown = (e: PointerEvent): void => {
 
 /** 移动：更新拖拽值 */
 const onPointerMove = (e: PointerEvent): void => {
-  if (!isDragging.value) return;
+  if (e.pointerId !== activePointerId) return;
   const value = calcValueFromEvent(e);
   dragValue.value = value;
   emit("change", value);
 };
 
 /** 松手：结束拖拽，同步最终值给父组件 */
-const onPointerUp = (): void => {
-  if (!isDragging.value) return;
+const onPointerUp = (e: PointerEvent): void => {
+  if (e.pointerId !== activePointerId) return;
+  activePointerId = undefined;
+  dragValue.value = calcValueFromEvent(e);
   isDragging.value = false;
   emit("update:modelValue", dragValue.value);
   emit("dragEnd", dragValue.value);
+};
+
+const onPointerCancel = (e: PointerEvent): void => {
+  if (e.pointerId !== activePointerId) return;
+  activePointerId = undefined;
+  isDragging.value = false;
+  dragValue.value = props.modelValue;
 };
 </script>
 
@@ -265,12 +276,13 @@ const onPointerUp = (): void => {
     <div
       v-if="!vertical"
       ref="trackRef"
-      class="s-slider-hitbox relative flex items-center"
+      class="s-slider-hitbox s-slider-hitbox-horizontal relative flex items-center touch-none"
       :style="{ height: `${thumbSize}px` }"
       @pointerdown="onPointerDown"
       @pointermove="onPointerMove"
       @pointerup="onPointerUp"
-      @pointercancel="onPointerUp"
+      @pointercancel="onPointerCancel"
+      @lostpointercapture="onPointerCancel"
     >
       <div
         class="s-slider-track absolute left-0 right-0 rounded-full"
@@ -327,7 +339,8 @@ const onPointerUp = (): void => {
       @pointerdown="onPointerDown"
       @pointermove="onPointerMove"
       @pointerup="onPointerUp"
-      @pointercancel="onPointerUp"
+      @pointercancel="onPointerCancel"
+      @lostpointercapture="onPointerCancel"
     >
       <div
         class="s-slider-track absolute top-0 bottom-0 rounded-full"
@@ -446,3 +459,11 @@ const onPointerUp = (): void => {
     </div>
   </div>
 </template>
+
+<style>
+@media (any-pointer: coarse) {
+  .s-slider-hitbox-horizontal {
+    min-height: 32px;
+  }
+}
+</style>

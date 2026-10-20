@@ -6,7 +6,7 @@ import { useImmersiveMode } from "./useImmersiveMode";
 vi.mock("@/stores/settings", () => ({
   useSettingsStore: () => ({ player: { autoImmersive: false } }),
 }));
-vi.mock("@/utils/config", () => ({ isIOS: true }));
+vi.mock("@/utils/config", () => ({ isIOS: true, isMobile: true }));
 afterEach(() => vi.useRealTimers());
 
 it("展开五秒自动隐藏，操作恢复，拖动期间不隐藏，收起清理计时", async () => {

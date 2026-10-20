@@ -12,7 +12,10 @@ vi.mock("@/stores/data", () => ({
   useDataStore: () => ({ searchHistory: [], addSearchHistory: mocks.history }),
 }));
 vi.mock("@/stores/status", () => ({ useStatusStore: () => reactive({ searchOpen: true }) }));
-vi.mock("vue-router", () => ({ useRouter: () => ({ push: mocks.push }) }));
+vi.mock("vue-router", () => ({
+  useRoute: () => ({ name: "home", query: {} }),
+  useRouter: () => ({ push: mocks.push }),
+}));
 vi.mock("vue-i18n", () => ({ useI18n: () => ({ t: (key: string) => key, locale: "zh-CN" }) }));
 vi.mock("@vueuse/core", () => ({
   useDebounceFn: (fn: unknown) => fn,
@@ -37,7 +40,7 @@ vi.mock("@/utils/navigate", () => ({
   navigateToPlaylist: vi.fn(),
 }));
 vi.mock("@/utils/link", () => ({ parseMusicLink: () => null }));
-vi.mock("@/utils/config", () => ({ isIOS: true }));
+vi.mock("@/utils/config", () => ({ isIOS: true, isMobile: true }));
 vi.mock("~icons/lucide/music", () => ({ default: {} }));
 vi.mock("~icons/lucide/user", () => ({ default: {} }));
 vi.mock("~icons/lucide/disc", () => ({ default: {} }));
@@ -45,6 +48,26 @@ vi.mock("~icons/lucide/list-music", () => ({ default: {} }));
 vi.mock("~icons/lucide/audio-waveform", () => ({ default: {} }));
 
 beforeEach(() => vi.clearAllMocks());
+
+it("移动端显示听歌识曲入口并打开识别弹窗", async () => {
+  const wrapper = shallowMount(NavSearch, {
+    global: {
+      renderStubDefaultSlot: true,
+      stubs: {
+        RecognitionDialog: {
+          name: "RecognitionDialog",
+          props: ["open"],
+          template: "<div />",
+        },
+      },
+    },
+  });
+  const dialog = wrapper.findComponent({ name: "RecognitionDialog" });
+  expect(dialog.props("open")).toBe(false);
+  await wrapper.get('[aria-label="recognition.title"]').trigger("click");
+  expect(dialog.props("open")).toBe(true);
+  wrapper.unmount();
+});
 
 it("点击歌曲建议记录完整歌名，而不是模糊输入", async () => {
   const wrapper = shallowMount(NavSearch, { global: { renderStubDefaultSlot: true } });

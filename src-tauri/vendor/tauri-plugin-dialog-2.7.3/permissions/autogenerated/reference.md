@@ -12,6 +12,7 @@ All dialog types are enabled.
 - `allow-message`
 - `allow-save`
 - `allow-open`
+- `allow-directory-access`
 
 ## Permission Table
 
@@ -44,6 +45,32 @@ Enables the ask command without any pre-configured scope. (**DEPRECATED**: This 
 <td>
 
 Denies the ask command without any pre-configured scope. (**DEPRECATED**: This is now an alias to `deny-message` and will be removed in v3)
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`dialog:allow-directory-access`
+
+</td>
+<td>
+
+Enables the directory_access command without any pre-configured scope.
+
+</td>
+</tr>
+
+<tr>
+<td>
+
+`dialog:deny-directory-access`
+
+</td>
+<td>
+
+Denies the directory_access command without any pre-configured scope.
 
 </td>
 </tr>

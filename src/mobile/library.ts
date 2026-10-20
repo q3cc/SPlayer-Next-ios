@@ -4,10 +4,14 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { readDir, remove, stat } from "@tauri-apps/plugin-fs";
 import type { AlbumSummary, ArtistSummary, LibraryApi, ScanProgress } from "@shared/types/library";
 import type { Track } from "@shared/types/player";
+import { startFolderTrace } from "./folderTrace";
+import { isAndroid } from "./platform";
+import { readDownloadMedia } from "./downloadMedia";
 
 const TRACKS_STORAGE_KEY = "splayer.mobile.library";
 const DIRECTORIES_STORAGE_KEY = "splayer.mobile.scanDirs";
 const AUDIO_EXTENSIONS = new Set(["mp3", "m4a", "aac", "wav", "flac", "ogg", "opus", "ape"]);
+const AUDIO_FILTER_EXTENSIONS = [...AUDIO_EXTENSIONS];
 const listeners = new Set<(progress: ScanProgress) => void>();
 
 const readJson = <T>(key: string, fallback: T): T => {
@@ -20,6 +24,39 @@ const readJson = <T>(key: string, fallback: T): T => {
 
 let tracks = readJson<Track[]>(TRACKS_STORAGE_KEY, []);
 let scanDirs = readJson<string[]>(DIRECTORIES_STORAGE_KEY, []);
+let addingDirectory = false;
+let grantsReady: Promise<void> | undefined;
+let directoryGrants: DirectoryGrant[] = [];
+
+type DirectoryGrant = { directory: string; path: string | null; error: string | null };
+
+const restoreDirectoryGrants = async (): Promise<void> => {
+  if (!isTauri() || isAndroid) return;
+  const response = await invoke<{ directories: DirectoryGrant[] }>(
+    "plugin:dialog|directory_access",
+    {
+      options: { directory: null },
+    },
+  );
+  const grants = response.directories ?? [];
+  directoryGrants = grants;
+  const restored = grants.filter((grant) => grant.path).map((grant) => grant.path as string);
+  const failed = grants.filter((grant) => grant.error);
+  if (restored.length || failed.length) {
+    const grantDirectories = new Set(grants.map((grant) => grant.directory));
+    const preserved = scanDirs.filter(
+      (directory) => !grantDirectories.has(directory) && !restored.includes(directory),
+    );
+    scanDirs = [...new Set([...preserved, ...restored, ...failed.map((grant) => grant.directory)])];
+    persist();
+  }
+};
+
+const ensureDirectoryGrants = (): Promise<void> =>
+  (grantsReady ??= restoreDirectoryGrants().catch((error) => {
+    grantsReady = undefined;
+    throw error;
+  }));
 
 const persist = (): void => {
   localStorage.setItem(TRACKS_STORAGE_KEY, JSON.stringify(tracks));
@@ -49,13 +86,22 @@ const childPath = async (parent: string, name: string): Promise<string> => {
   return join(parent, name);
 };
 
-const listAudioFiles = async (root: string): Promise<string[]> => {
+const listAudioFiles = async (
+  root: string,
+  trace: ReturnType<typeof startFolderTrace>,
+): Promise<string[]> => {
   const files: string[] = [];
   const pending = [root];
+  let visited = 0;
   while (pending.length) {
     const current = pending.pop();
     if (!current) continue;
-    for (const entry of await readDir(current)) {
+    const sampled = visited < 10 || visited % 100 === 0;
+    if (sampled) trace.log("read-dir-begin", { index: visited });
+    const entries = await readDir(current);
+    if (sampled) trace.log("read-dir-end", { index: visited, count: entries.length });
+    visited++;
+    for (const entry of entries) {
       const path = await childPath(current, entry.name);
       if (entry.isDirectory) pending.push(path);
       else if (entry.isFile && AUDIO_EXTENSIONS.has(extensionOf(entry.name))) files.push(path);
@@ -66,6 +112,7 @@ const listAudioFiles = async (root: string): Promise<string[]> => {
 
 const trackFromFile = async (path: string): Promise<Track> => {
   const info = await stat(path);
+  const downloaded = isTauri() ? await readDownloadMedia(path).catch(() => null) : null;
   const tags = isTauri()
     ? await invoke<{ title?: string; artist?: string; album?: string; duration?: number }>(
         "plugin:native-audio|read_metadata",
@@ -77,10 +124,12 @@ const trackFromFile = async (path: string): Promise<Track> => {
     id: idFor(path),
     source: "local",
     path,
-    title: tags.title || withoutExtension(pathName(path)),
-    artists: [{ name: tags.artist || "Unknown Artist" }],
-    album: tags.album ? { name: tags.album } : undefined,
-    duration: tags.duration ?? 0,
+    title: downloaded?.track.title || tags.title || withoutExtension(pathName(path)),
+    artists: downloaded?.track.artists ?? [{ name: tags.artist || "Unknown Artist" }],
+    album: downloaded?.track.album ?? (tags.album ? { name: tags.album } : undefined),
+    duration: tags.duration || downloaded?.track.duration || 0,
+    cover: downloaded?.coverPath ? convertFileSrc(downloaded.coverPath) : undefined,
+    coverOriginal: downloaded?.coverPath ? convertFileSrc(downloaded.coverPath) : undefined,
     fileSize: info.size,
     mtime: info.mtime?.getTime() ?? fallbackTime,
     ctime: info.birthtime?.getTime() ?? fallbackTime,
@@ -93,11 +142,16 @@ const trackFromFile = async (path: string): Promise<Track> => {
  * @returns 可直接交给公共曲库 store 的曲目
  */
 export const scanMobileDirectories = async (directories: readonly string[]): Promise<Track[]> => {
-  const paths = (await Promise.all(directories.map(listAudioFiles))).flat();
+  const trace = startFolderTrace();
+  trace.log("scan-begin", { directories: directories.length });
+  const paths = (await Promise.all(directories.map((dir) => listAudioFiles(dir, trace)))).flat();
+  trace.log("enumerate-end", { audioFiles: paths.length });
   const next: Track[] = [];
   announce({ phase: "scanning", total: paths.length, scanned: 0 });
   for (const [index, path] of paths.entries()) {
+    if (index < 10 || index % 100 === 0) trace.log("track-read-begin", { index });
     next.push(await trackFromFile(path));
+    if (index < 10 || index % 100 === 0) trace.log("track-read-end", { index });
     announce({
       phase: "scanning",
       total: paths.length,
@@ -105,11 +159,23 @@ export const scanMobileDirectories = async (directories: readonly string[]): Pro
       current: pathName(path),
     });
   }
+  trace.log("scan-end", { tracks: next.length });
   return next;
 };
 
 const scanDirectories = async (): Promise<void> => {
-  tracks = await scanMobileDirectories(scanDirs);
+  if (isTauri()) {
+    await ensureDirectoryGrants();
+    const failed = directoryGrants.find((grant) => grant.error);
+    if (failed) throw new Error(failed.error!);
+  }
+  const scanned = await scanMobileDirectories(scanDirs);
+  const scannedDirectories = scanDirs;
+  const imported = tracks.filter(
+    (track) =>
+      !track.path || !scannedDirectories.some((directory) => isWithin(track.path!, directory)),
+  );
+  tracks = [...imported, ...scanned];
   persist();
   announce({ phase: "done", total: tracks.length, scanned: tracks.length });
 };
@@ -123,20 +189,48 @@ export const resolveMobileAudioSource = (source: string): string => {
   if (source.startsWith("file:")) {
     return convertFileSrc(decodeURIComponent(new URL(source).pathname));
   }
-  if (/^(https?|blob|data|asset):/i.test(source)) return source;
+  if (/^(https?|blob|data|asset|content):/i.test(source)) return source;
   return convertFileSrc(source);
 };
 
 export const getMobileTrack = (id: string): Track | undefined =>
   tracks.find((track) => track.id === id);
 
+const importFiles = (paths: string[]): number => {
+  const known = new Set(tracks.map((track) => track.path));
+  const now = Date.now();
+  const additions = paths
+    .filter((path) => {
+      if (!AUDIO_EXTENSIONS.has(extensionOf(path)) || known.has(path)) return false;
+      known.add(path);
+      return true;
+    })
+    .map<Track>((path) => ({
+      id: idFor(path),
+      source: "local",
+      path,
+      title: withoutExtension(pathName(path)),
+      artists: [{ name: "Unknown Artist" }],
+      duration: 0,
+      mtime: now,
+      ctime: now,
+    }));
+  if (!additions.length) return 0;
+  tracks = [...tracks, ...additions];
+  persist();
+  return additions.length;
+};
+
 export const mobileLibrary: LibraryApi = {
   scan: async () => {
+    const trace = startFolderTrace();
     try {
       await scanDirectories();
+      trace.log("scan-persisted");
       return success();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
+      trace.log("scan-error", { errorType: error instanceof Error ? error.name : typeof error });
       announce({ phase: "error", total: 0, scanned: 0, error: message });
       return { success: false, error: message };
     }
@@ -196,31 +290,99 @@ export const mobileLibrary: LibraryApi = {
   getRandomTracks: async (limit) =>
     success([...tracks].sort(() => Math.random() - 0.5).slice(0, limit)),
   isScanning: async () => success(false),
-  addScanDir: async () => {
+  addTracksFromFiles: async () => {
+    if (addingDirectory) return { success: false, error: "文件选择或导入正在进行中" };
+    addingDirectory = true;
     try {
       const selected = await open({
-        directory: true,
-        multiple: false,
-        recursive: true,
-        fileAccessMode: "copy",
+        multiple: true,
+        directory: false,
+        ...(isAndroid ? { fileAccessMode: "copy" as const } : {}),
+        filters: [{ name: "Audio", extensions: AUDIO_FILTER_EXTENSIONS }],
       });
-      if (!selected) return { success: false, error: "canceled" };
-      if (!scanDirs.includes(selected)) {
-        scanDirs = [...scanDirs, selected];
-        persist();
-      }
-      return success(selected);
+      const paths = selected == null ? [] : Array.isArray(selected) ? selected : [selected];
+      if (!paths.length) return { success: false, error: "canceled" };
+      const added = importFiles(paths);
+      announce({ phase: "done", total: added, scanned: added });
+      return success(added);
     } catch (error) {
       return { success: false, error: error instanceof Error ? error.message : String(error) };
+    } finally {
+      addingDirectory = false;
+    }
+  },
+  addScanDir: async () => {
+    if (isAndroid) return { success: false, error: "请使用添加歌曲导入音频文件" };
+    const trace = startFolderTrace();
+    trace.log("add-enter", { busy: addingDirectory, directories: scanDirs.length });
+    if (addingDirectory) return { success: false, error: "文件夹选择或导入正在进行中" };
+    addingDirectory = true;
+    let stage = "open-pending";
+    const pendingTimer = trace.id
+      ? setTimeout(() => trace.log("still-pending", { waitingFor: stage }), 15000)
+      : undefined;
+    try {
+      if (isTauri()) await ensureDirectoryGrants();
+      const options = {
+        directory: true,
+        multiple: false as const,
+        recursive: true,
+        fileAccessMode: "scoped" as const,
+        ...(trace.id ? { diagnosticId: trace.id } : {}),
+      };
+      trace.log("open-call", { build: __COMMIT_HASH__, visibility: document.visibilityState });
+      const selected = await open(options);
+      trace.log("open-return", { selected: Boolean(selected) });
+      if (!selected) return { success: false, error: "canceled" };
+      if (isTauri()) {
+        grantsReady = undefined;
+        await ensureDirectoryGrants();
+      }
+      stage = "stat-pending";
+      trace.log("stat-begin");
+      if (!(await stat(selected)).isDirectory) {
+        trace.log("stat-not-directory");
+        return { success: false, error: "请选择文件夹，而不是音频文件" };
+      }
+      trace.log("stat-end");
+      if (!scanDirs.includes(selected)) {
+        scanDirs = [...scanDirs, selected];
+        stage = "persist-pending";
+        trace.log("persist-begin");
+        persist();
+        trace.log("persist-end");
+      }
+      trace.log("add-success");
+      return success(selected);
+    } catch (error) {
+      trace.log("add-error", {
+        waitingFor: stage,
+        errorType: error instanceof Error ? error.name : typeof error,
+      });
+      return { success: false, error: error instanceof Error ? error.message : String(error) };
+    } finally {
+      clearTimeout(pendingTimer);
+      addingDirectory = false;
+      trace.log("add-finished");
     }
   },
   removeScanDir: async (directory) => {
+    if (isTauri() && !isAndroid) {
+      await ensureDirectoryGrants();
+      await invoke("plugin:dialog|directory_access", { options: { directory } });
+      directoryGrants = directoryGrants.filter(
+        (grant) => grant.directory !== directory && grant.path !== directory,
+      );
+    }
     scanDirs = scanDirs.filter((item) => item !== directory);
     tracks = tracks.filter((track) => !track.path || !isWithin(track.path, directory));
     persist();
     return success();
   },
-  getScanDirs: async () => success(scanDirs),
+  getScanDirs: async () => {
+    if (isTauri() && !isAndroid) await ensureDirectoryGrants();
+    return success(scanDirs);
+  },
   deleteTracks: async (paths) => {
     let deleted = 0;
     for (const path of paths) {

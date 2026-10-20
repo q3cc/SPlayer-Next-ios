@@ -11,7 +11,12 @@ const { initialCategory, initialHighlight, rememberCategory } = useSettingsDialo
 useSettingsStore().syncSystem();
 const { t } = useI18n();
 
-const activeId = ref(initialCategory.value);
+// 分类存在性在设置页加载后检查，避免入口静态加载整套设置组件
+const activeId = ref(
+  settingsSchema.some((item) => item.id === initialCategory.value)
+    ? initialCategory.value
+    : settingsSchema[0].id,
+);
 const highlightKey = ref(initialHighlight.value);
 const scrollRef = ref<HTMLElement>();
 const isSearchActive = ref(false);
@@ -36,14 +41,23 @@ const onCategorySelect = (id: string) => {
   nextTick(() => scrollRef.value?.scrollTo({ top: 0 }));
 };
 
-const onSearchSelect = (categoryId: string, itemKey: string) => {
+/**
+ * 定位设置项，子项收起时定位最近的父项
+ * @param categoryId - 设置分类
+ * @param itemKey - 设置项键名
+ * @param parentKeys - 从外到内的父项键名
+ */
+const onSearchSelect = (categoryId: string, itemKey: string, parentKeys: string[] = []) => {
   highlightKey.value = itemKey;
   if (activeId.value !== categoryId) {
     activeId.value = categoryId;
   }
   nextTick(() => {
     setTimeout(() => {
-      const el = document.getElementById(`setting-${itemKey}`);
+      const el = [itemKey, ...parentKeys.toReversed()]
+        .map((key) => document.getElementById(`setting-${key}`))
+        .find((element) => element !== null);
+      if (el) highlightKey.value = el.id.slice("setting-".length);
       el?.scrollIntoView({ block: "center", behavior: "smooth" });
       setTimeout(() => {
         highlightKey.value = undefined;
@@ -54,7 +68,7 @@ const onSearchSelect = (categoryId: string, itemKey: string) => {
 
 onMounted(() => {
   if (initialHighlight.value) {
-    onSearchSelect(initialCategory.value, initialHighlight.value);
+    onSearchSelect(activeId.value, initialHighlight.value);
   }
 });
 </script>
@@ -75,7 +89,10 @@ onMounted(() => {
 
       <!-- 菜单 -->
       <Transition name="fade">
-        <div v-show="!isSearchActive" class="flex-1 min-h-0 overflow-y-auto -mr-5 pr-5">
+        <div
+          v-show="!isSearchActive"
+          class="flex-1 min-h-0 overflow-y-auto [scrollbar-gutter:stable] -mr-5 pr-5"
+        >
           <SettingsMenu
             :categories="settingsSchema"
             :active-id="activeId"
@@ -98,10 +115,14 @@ onMounted(() => {
     <!-- 右侧 -->
     <div
       ref="scrollRef"
-      class="settings-scroll flex-1 min-w-0 overflow-y-auto bg-surface py-6 px-8"
+      class="settings-scroll flex-1 min-w-0 overflow-y-auto [scrollbar-gutter:stable] bg-surface py-6 px-8"
     >
       <div v-if="activeCategory" :key="activeCategory.id" class="animate-fade-in">
-        <component :is="activeCategory.component" v-if="activeCategory.component" />
+        <component
+          :is="activeCategory.component"
+          v-if="activeCategory.component"
+          :highlight-key="highlightKey"
+        />
         <template v-else>
           <SettingsSection
             v-for="(sec, si) in activeCategory.sections"

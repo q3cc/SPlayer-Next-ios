@@ -1,4 +1,6 @@
+mod control_server;
 mod diagnostics;
+mod opencc;
 
 fn record_boot_stage(stage: &str) {
     eprintln!("[splayer-boot] {stage}");
@@ -28,13 +30,19 @@ pub fn run() {
     }
     record_boot_stage("native-entry");
 
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_deep_link::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
-        .plugin(tauri_plugin_http::init())
+        .plugin(tauri_plugin_http::init());
+    // Keep iOS extensions out of the Android binary.
+    #[cfg(target_os = "ios")]
+    let builder = builder
         .plugin(tauri_plugin_ipa_update::init())
-        .plugin(tauri_plugin_lyric_pip::init())
+        .plugin(tauri_plugin_lyric_pip::init());
+
+    builder
+        .manage(std::sync::Arc::new(control_server::ControlState::default()))
         .plugin(tauri_plugin_native_audio::init())
         .plugin(tauri_plugin_opener::init())
         .setup(|_| {
@@ -44,9 +52,16 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             report_boot_stage,
+            opencc::convert_lyrics,
+            control_server::control_start,
+            control_server::control_stop,
+            control_server::control_status,
+            control_server::control_reply,
             diagnostics::append_diagnostic_log,
             diagnostics::set_diagnostic_logging,
-            diagnostics::diagnostic_log_path
+            diagnostics::diagnostic_log_path,
+            #[cfg(target_os = "android")]
+            diagnostics::prepare_diagnostic_log_share
         ])
         .run(tauri::generate_context!())
         .expect("error while running SPlayer Next mobile");

@@ -52,17 +52,19 @@ const handleListScroll = (event: Event) => {
   }
 };
 
-/** 加载数据 */
+/** 加载当前服务器的合集详情，并作废上一轮请求 */
 const loadCollection = async (): Promise<void> => {
   collapsed.value = false;
   loadAbort?.abort();
   const myAbort = new AbortController();
   loadAbort = myAbort;
   loading.value = true;
+  collection.value = null;
   error.value = "";
 
   try {
     await loadCollectionService(source, type, id, {
+      serverId: typeof route.query.serverId === "string" ? route.query.serverId : undefined,
       fallbackName: typeof route.query.name === "string" ? route.query.name : undefined,
       signal: myAbort.signal,
       onUpdate: (next) => {
@@ -145,7 +147,7 @@ const playbackContext = computed<PlaybackContext | undefined>(() => {
 
 const handlePlayAll = () => {
   if (!collection.value?.tracks.length) return;
-  player.playFrom(collection.value.tracks, 0, playbackContext.value);
+  player.playFrom(collection.value.tracks, { context: playbackContext.value });
 };
 
 const searchQuery = ref("");
@@ -232,9 +234,7 @@ const handleMoreMenu = (key: string) => {
   }
 };
 
-onMounted(() => {
-  loadCollection();
-});
+watch(() => route.query.serverId, loadCollection, { immediate: true });
 
 onBeforeUnmount(() => {
   loadAbort?.abort();

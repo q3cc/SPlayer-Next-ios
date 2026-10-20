@@ -1,4 +1,4 @@
-import { BrowserWindow, shell } from "electron";
+import { app, BrowserWindow, dialog, shell } from "electron";
 import { join } from "path";
 import { is } from "@electron-toolkit/utils";
 import { createWindow } from "./create";
@@ -11,6 +11,8 @@ import { isAppQuitting } from "@main/utils/lifecycle";
 import { broadcast } from "@main/utils/broadcast";
 import { isWin } from "@main/utils/config";
 import { resolveInitialRoute } from "@shared/utils/initialRoute";
+import { coreLog } from "@main/utils/logger";
+import { setMainWindowVisible, setPlayerExpanded } from "@main/utils/powerBlocker";
 
 /** 判断是否应用内部导航 */
 const isInternalNavigation = (url: string): boolean => {
@@ -20,6 +22,8 @@ const isInternalNavigation = (url: string): boolean => {
 };
 
 let mainWindow: BrowserWindow | null = null;
+let firstPaint: Promise<void> = Promise.resolve();
+let startupShown = false;
 
 /**
  * 创建主窗口
@@ -40,6 +44,8 @@ export const createMainWindow = (): BrowserWindow => {
     webPreferences: {
       partition: MAIN_PARTITION,
       webgl: true,
+      // 首次绘制前不再调用 setZoomFactor，避免 Electron 隐藏窗口的 ready-to-show 回归。
+      zoomFactor: Math.max(0.5, Math.min(2, (store.get("system.uiZoom") ?? 100) / 100)),
     },
   });
 
@@ -53,14 +59,9 @@ export const createMainWindow = (): BrowserWindow => {
     });
   }
 
-  // 恢复最大化状态
-  if (remember && saved?.maximized) {
-    mainWindow.maximize();
-  }
-
-  // 窗口内容就绪
-  mainWindow.once("ready-to-show", () => {
-    mainWindow?.show();
+  startupShown = false;
+  firstPaint = new Promise((resolve) => {
+    mainWindow!.once("ready-to-show", resolve);
   });
 
   // 初始化托盘
@@ -74,9 +75,17 @@ export const createMainWindow = (): BrowserWindow => {
     initThumbar(mainWindow!);
   });
 
-  // 每次加载完成应用界面缩放
+  mainWindow.on("show", () => setMainWindowVisible(!mainWindow!.isMinimized()));
+  mainWindow.on("hide", () => setMainWindowVisible(false));
+  mainWindow.on("minimize", () => setMainWindowVisible(false));
+  mainWindow.on("restore", () => setMainWindowVisible(mainWindow!.isVisible()));
+  mainWindow.webContents.on("render-process-gone", () => setPlayerExpanded(false));
+  mainWindow.webContents.on("did-start-navigation", (_event, _url, inPlace, isMainFrame) => {
+    if (isMainFrame && !inPlace) setPlayerExpanded(false);
+  });
+
   mainWindow.webContents.on("did-finish-load", () => {
-    applyMainWindowZoom();
+    if (startupShown) applyMainWindowZoom();
   });
 
   // 保存窗口状态
@@ -155,23 +164,30 @@ export const createMainWindow = (): BrowserWindow => {
     openExternalSafe(url);
   });
 
-  const initialHash = resolveInitialRoute({
-    onboardingCompleted: store.get("system.onboardingCompleted"),
-    agreedAgreementVersion: store.get("system.agreedAgreementVersion"),
-  });
+  const initialHash =
+    resolveInitialRoute({
+      onboardingCompleted: store.get("system.onboardingCompleted"),
+      agreedAgreementVersion: store.get("system.agreedAgreementVersion"),
+    }) || "/";
 
   // 基于 electron-vite cli 的 HMR
+  let loading: Promise<void>;
   if (is.dev && process.env["ELECTRON_RENDERER_URL"]) {
     const base = process.env["ELECTRON_RENDERER_URL"];
-    mainWindow.loadURL(initialHash ? `${base}#${initialHash}` : base);
+    loading = mainWindow.loadURL(`${base}#${initialHash}`);
   } else {
-    mainWindow.loadFile(
-      join(__dirname, "../renderer/index.html"),
-      initialHash ? { hash: initialHash } : undefined,
-    );
+    loading = mainWindow.loadFile(join(__dirname, "../renderer/index.html"), { hash: initialHash });
   }
+  void loading.catch((error) => {
+    if (isAppQuitting()) return;
+    coreLog.error("主窗口加载失败", error);
+    dialog.showErrorBox(app.getName(), String(error));
+    app.quit();
+  });
 
   mainWindow.on("closed", () => {
+    setMainWindowVisible(false);
+    setPlayerExpanded(false);
     if (saveStateTimer) clearTimeout(saveStateTimer);
     mainWindow = null;
   });
@@ -189,10 +205,29 @@ export const getMainWindow = (): BrowserWindow | null => {
   return null;
 };
 
+/** 静态启动层首次绘制后显示窗口，页面内部负责与主界面的过渡 */
+export const showReadyMainWindow = async (): Promise<void> => {
+  const win = getMainWindow();
+  if (!win) throw new Error("主窗口不存在");
+  await firstPaint;
+  if (win.isDestroyed()) throw new Error("主窗口已关闭");
+  if (startupShown) return;
+  startupShown = true;
+  // file:// 导航可能重置构造参数中的缩放，只在首次绘制完成后校正。
+  applyMainWindowZoom();
+  if (
+    (store.get("system.rememberWindowState") ?? true) &&
+    store.get("windowStates.main")?.maximized
+  ) {
+    win.maximize();
+  }
+  win.show();
+};
+
 /** 显示并聚焦主窗口（最小化时自动恢复） */
 export const focusMainWindow = (): void => {
   const win = getMainWindow();
-  if (!win) return;
+  if (!win || !startupShown) return;
   if (win.isMinimized()) win.restore();
   win.show();
   win.focus();

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useStatusStore } from "@/stores/status";
 import * as player from "@/core/player";
-import { isIOS } from "@/utils/config";
+import { isIOS, isMobile } from "@/utils/config";
 const props = withDefaults(defineProps<{ cover?: boolean }>(), { cover: false });
 const status = useStatusStore();
 const buttonType = computed(() => (props.cover ? "cover" : "default"));
@@ -36,8 +36,8 @@ const hideSystemVolume = (): void => {
       .catch(console.warn);
 };
 onMounted(() => {
+  if (isMobile) window.addEventListener("splayer:system-volume", systemVolumeChanged);
   if (isIOS) {
-    window.addEventListener("splayer:system-volume", systemVolumeChanged);
     window.addEventListener("resize", hideSystemVolume);
   }
 });

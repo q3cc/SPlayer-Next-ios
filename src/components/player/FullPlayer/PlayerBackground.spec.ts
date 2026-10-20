@@ -44,8 +44,10 @@ it("Apple Music 背景随设置切换模式和动画参数", async () => {
     await nextTick();
     expect(renderer().props()).toMatchObject({ playing: false, fps: 30 });
     status.isPlaying = true;
-    await wrapper.setProps({ reducedMotion: true, active: false });
-    expect(renderer().props()).toMatchObject({ playing: false, active: false });
+    await wrapper.setProps({ reducedMotion: true });
+    expect(renderer().props("playing")).toBe(false);
+    await wrapper.setProps({ active: false });
+    expect(renderer().exists()).toBe(false);
     settings.player.playerBgType = "solid";
     await nextTick();
     expect(renderer().exists()).toBe(false);
@@ -59,7 +61,7 @@ it("Apple Music 背景随设置切换模式和动画参数", async () => {
   }
 });
 
-it("只为可见模糊背景解码缩略图，模式切换使旧解码失效", async () => {
+it("可见流体预览和模糊背景使用缩略图，隐藏或切换使旧解码失效", async () => {
   settings.player.playerBgType = "animation";
   status.isPlayerExpanded = true;
   const images: Array<{ src: string; finish: () => void }> = [];
@@ -83,26 +85,31 @@ it("只为可见模糊背景解码缩略图，模式切换使旧解码失效", a
   try {
     media.track.cover = "next-small.jpg";
     await nextTick();
-    expect(images).toHaveLength(0);
-    settings.player.playerBgType = "blur";
-    await nextTick();
     expect(images).toHaveLength(1);
     expect(images[0].src).toBe("next-small.jpg");
+    images[0].finish();
+    await vi.advanceTimersByTimeAsync(100);
+    settings.player.playerBgType = "blur";
+    await nextTick();
+    media.track.cover = "blur-small.jpg";
+    await nextTick();
+    expect(images).toHaveLength(2);
+    expect(images[1].src).toBe("blur-small.jpg");
     settings.player.playerBgType = "solid";
     await nextTick();
-    expect(images[0].src).toBe("");
-    images[0].finish();
+    expect(images[1].src).toBe("");
+    images[1].finish();
     await vi.advanceTimersByTimeAsync(600);
     expect(wrapper.find(".bg-img").exists()).toBe(false);
     await wrapper.setProps({ active: false });
     settings.player.playerBgType = "blur";
     media.track.cover = "latest-small.jpg";
     await nextTick();
-    expect(images).toHaveLength(1);
-    await wrapper.setProps({ active: true });
     expect(images).toHaveLength(2);
-    expect(images[1].src).toBe("latest-small.jpg");
-    images[1].finish();
+    await wrapper.setProps({ active: true });
+    expect(images).toHaveLength(3);
+    expect(images[2].src).toBe("latest-small.jpg");
+    images[2].finish();
     await vi.advanceTimersByTimeAsync(100);
     expect(wrapper.get(".bg-img.active").attributes("src")).toBe("latest-small.jpg");
   } finally {

@@ -2,6 +2,8 @@
   "update": {
     "iosInstallHint": "下载后会弹出分享面板，选择签名工具打开 IPA。仍需重新签名安装。",
     "iosReadyToast": "IPA 已下载，可用其他 App 打开",
+    "androidReadyToast": "更新包已下载，可立即安装",
+    "androidInstallNow": "立即安装",
     "openInApp": "其他 App 打开",
     "updateNow": "立即更新",
     "dialogTitle": "发现新版本",
@@ -11,9 +13,10 @@
     "installNow": "立即重启安装",
     "goDownload": "前往下载页",
     "goStore": "前往商店更新",
-    "upToDate": "已是最新版本",
+    "upToDate": "当前通道暂无更高版本",
     "readyToast": "更新已就绪，可重启安装",
-    "failed": "更新失败，请稍后重试"
+    "failed": "更新失败，请稍后重试",
+    "installing": "正在启动安装程序"
   },
   "onboarding": {
     "next": "下一步",
@@ -52,7 +55,10 @@
     },
     "library": {
       "title": "本地音乐库",
-      "subtitle": "添加要扫描的音乐文件夹，SPlayer-Next 会自动建立曲库索引。可以添加多个目录，也可以之后再添加"
+      "subtitle": "添加要扫描的音乐文件夹，SPlayer-Next 会自动建立曲库索引。可以添加多个目录，也可以之后再添加",
+      "mobileSubtitle": "选择要加入音乐库的歌曲，可以多选，也可以之后再添加",
+      "addSongs": "添加歌曲",
+      "songsAdded": "已添加 {count} 首歌曲"
     },
     "streaming": {
       "title": "流媒体服务器",
@@ -128,7 +134,8 @@
     "totalSongs": "共 {count} 首",
     "totalAlbums": "共 {count} 张专辑",
     "totalArtists": "共 {count} 位歌手",
-    "totalPlaylists": "共 {count} 个歌单"
+    "totalPlaylists": "共 {count} 个歌单",
+    "disabled": "未启用"
   },
   "comments": {
     "name": "歌曲评论",
@@ -234,6 +241,7 @@
     }
   },
   "recognition": {
+    "broadcastHint": "开启广播后切换到音乐 App，最多收听 2 分钟；识别成功即停止并通知你（需允许通知）。不保存画面。",
     "title": "听歌识曲",
     "entry": "听歌识曲",
     "description": "识别正在播放的音乐",
@@ -248,6 +256,7 @@
       "microphone": "麦克风"
     },
     "phase": {
+      "waiting": "请在系统窗口中开始广播…",
       "capturing": "正在收听…",
       "fingerprinting": "正在生成指纹…",
       "matching": "正在匹配曲库…"
@@ -405,7 +414,9 @@
       "albums": "专辑",
       "artists": "歌手",
       "playlists": "歌单"
-    }
+    },
+    "plugins": "插件",
+    "pluginSource": "选择音源"
   },
   "streaming": {
     "hint": "连接到媒体源",
@@ -427,7 +438,8 @@
       "addHint": "点击右上角添加一个开始使用",
       "goToSettings": "前往设置添加",
       "notConnected": "未连接到服务器",
-      "noResults": "没有找到内容"
+      "noResults": "没有找到内容",
+      "noFavorites": "当前服务器暂无收藏歌曲"
     },
     "server": {
       "type": "类型",
@@ -462,7 +474,8 @@
     },
     "actions": {
       "settings": "流媒体配置"
-    }
+    },
+    "favoritesOnly": "仅看收藏"
   },
   "player": {
     "appleMusic": {
@@ -512,6 +525,11 @@
       "title": "歌词偏移",
       "hint": "正值为歌词提前，单位毫秒"
     },
+    "externalLyric": {
+      "pick": "添加外置歌词",
+      "loaded": "外置歌词已加载",
+      "failed": "外置歌词读取或解析失败"
+    },
     "lyricCredit": "歌词制作",
     "copyLyric": {
       "title": "复制歌词",
@@ -540,7 +558,8 @@
     "shuffleMode": {
       "on": "随机播放",
       "off": "顺序播放"
-    }
+    },
+    "transitioning": "过渡"
   },
   "songList": {
     "title": "标题",
@@ -579,7 +598,8 @@
       "more": "更多操作",
       "copyTitle": "复制歌曲名称",
       "copyId": "复制歌曲 ID",
-      "copyUrl": "分享歌曲链接"
+      "copyUrl": "分享歌曲链接",
+      "copyFile": "复制歌曲文件"
     },
     "batch": {
       "manage": "批量管理",
@@ -609,7 +629,14 @@
     "channels": "声道",
     "stereo": "立体声",
     "mono": "单声道",
-    "multiChannel": "多声道"
+    "multiChannel": "多声道",
+    "outputInfo": "输出信息",
+    "outputSection": "输出信息",
+    "outputMode": "输出模式",
+    "dspSection": "音频处理",
+    "tempoPitch": "变速变调",
+    "limiter": "输出限幅器",
+    "resampling": "重采样"
   },
   "playlist": {
     "title": "播放列表",
@@ -651,9 +678,6 @@
       "button": "上传",
       "title": "上传到云盘",
       "selectFile": "选择文件",
-      "pickFailed": "无法选取或读取文件，请确认文件已下载到设备后重试",
-      "mobileHint": "请保持应用在前台直至上传完成；失败后可重试。",
-      "queueFull": "最多同时保留 200 首待上传歌曲，请等待部分上传完成后再添加",
       "emptyHint": "点击「选择文件」添加要上传的歌曲",
       "clearFinished": "清除已完成",
       "instant": "秒传",
@@ -696,6 +720,7 @@
     "deleteConfirmTitle": "删除下载文件",
     "deleteConfirmContent": "将从磁盘永久删除该歌曲文件，此操作不可恢复。确认删除？",
     "tagWarning": "标签写入失败，文件已保存",
+    "mediaWarning": "歌曲已下载，但封面或歌词未能保存",
     "resolveFailed": "无法下载：{title}",
     "alreadyQueued": "该歌曲已在下载队列",
     "alreadyDownloaded": "该歌曲已下载",
@@ -740,10 +765,13 @@
     "title": "音乐库",
     "empty": "音乐库为空",
     "emptyHint": "添加音乐文件夹开始使用",
+    "emptySongsHint": "选择歌曲开始使用",
     "noLocalData": "暂无本地内容",
     "noLocalDataHint": "前往音乐库添加歌曲后将自动聚合",
     "goLibrary": "前往音乐库",
     "addFolder": "添加文件夹",
+    "addSongs": "添加歌曲",
+    "songsAdded": "已添加 {count} 首歌曲",
     "scanAll": "全量扫描",
     "scanning": "正在扫描...",
     "scanProgress": "正在扫描 {scanned}/{total}",
@@ -754,13 +782,20 @@
     "nestedHint": "该目录与已添加目录嵌套，已自动跳过"
   },
   "settings": {
+    "mobileControlHint": "请保持 SPlayer 在前台。局域网控制使用 HTTP，仅在可信网络开启；连接密钥可控制播放，请勿公开。当前支持 REST 控制，不提供 WebSocket 推送。",
+    "mobileControlCopy": "复制外部控制连接配置",
+    "mobileMcpHint": "请保持 SPlayer 在前台。电脑连接手机需开启局域网访问，并使用此处的手机地址。HTTP 连接不加密，仅在可信网络使用，请勿公开密钥。",
+    "mcpAllowLan": {
+      "label": "允许局域网 AI 客户端连接",
+      "description": "仅在可信网络开启，并保持 SPlayer 在前台。HTTP 不加密，请勿公开连接密钥。"
+    },
     "siriSettings": {
       "label": "Siri 语音控制",
       "description": "开启语音控制，设置音乐来源、搜索范围和选歌确认。"
     },
     "diagnosticLogging": {
       "label": "日志记录",
-      "description": "排查问题时开启，立即生效。日志保存在“文件”App 的 SPlayer Next/logs；关闭后停止记录，已有文件保留。"
+      "description": "排查问题时开启，立即生效。安卓可在“关于”中分享日志，iOS 可在“文件”App 的 SPlayer Next/logs 中查看；关闭后已有日志保留。"
     },
     "title": "设置",
     "subtitle": "调整您的专属配置",
@@ -837,18 +872,27 @@
       "backupReset": "备份与重置",
       "debug": "调试",
       "preset": "强迫症配置",
-      "envInfo": "环境信息"
+      "envInfo": "环境信息",
+      "playbackTransition": "播放过渡"
     },
     "about": {
       "checkUpdate": "检查更新",
       "checking": "检查中",
       "newVersion": "发现新版本",
       "openLogs": "打开日志",
+      "shareLogs": "分享日志",
       "officialSite": "官方网站",
+      "iosContributors": "iOS 版本贡献者",
+      "originalContributors": "原版项目贡献者",
       "showMore": "更多贡献者",
       "collapse": "收起",
       "commit": "提交",
-      "date": "日期"
+      "date": "日期",
+      "dependencies": {
+        "lyrics": "类 Apple Music 歌词显示组件库",
+        "neteaseApi": "NCM API 备份 + 增强"
+      },
+      "originalProject": "原版项目"
     },
     "storeVersion": "Store",
     "language": {
@@ -927,7 +971,7 @@
     },
     "preloadNextTrack": {
       "label": "预载下一首歌曲",
-      "description": "提前获取下一首的播放信息，可能会增加网络占用"
+      "description": "提前缓存并解码下一曲，可能会增加网络占用"
     },
     "outputDevice": {
       "label": "输出设备",
@@ -1097,7 +1141,8 @@
         "closePlayer": "关闭播放界面",
         "togglePlaylist": "展开 / 收起播放列表",
         "openSearch": "打开搜索",
-        "searchInPage": "页面内搜索"
+        "searchInPage": "页面内搜索",
+        "openSettings": "打开设置"
       }
     },
     "engine": {
@@ -1116,7 +1161,13 @@
       "testChannelTitle": "切换到测试通道",
       "testChannelContent": "Beta 与 Alpha 通道会提前收到测试版本，其中 Alpha 版本可能非常不稳定。确定切换吗？",
       "kugouLoginVersionTitle": "切换 KG 登录版本",
-      "kugouLoginVersionContent": "切换后当前登录凭据与新版本不匹配，需退出登录并重新扫码，否则会员权益与高音质解析会失效。确定切换吗？"
+      "kugouLoginVersionContent": "切换后当前登录凭据与新版本不匹配，需退出登录并重新扫码，否则会员权益与高音质解析会失效。确定切换吗？",
+      "enableTitle": "确认开启",
+      "scrobbleRiskContent": "听歌打卡功能目前仍处于测试阶段，不保证上报记录会计入有效听歌次数，相关风险尚不明确\n开启后可能触发账号风控等账号安全问题，请充分了解潜在风险后谨慎开启",
+      "exclusiveModeTitle": "切换到独占模式",
+      "exclusiveModeContent": "独占模式绕过系统混音器，优先使用音源采样率与位深，适合外接 DAC / Hi-Fi 设备。播放器的音量、均衡器等处理仍然生效，不保证逐位无损输出。独占期间其他应用可能无法播放声音；独占不可用时会尝试共享模式，若设备被其他应用独占，共享模式也可能无法播放。确定切换吗？",
+      "preloadCacheTitle": "开启预载所需的缓存？",
+      "preloadCacheContent": "歌曲预载需要缓存下一首音频。继续将同时开启歌曲缓存和流媒体缓存，可能增加网络流量和磁盘占用"
     },
     "useAMSpring": {
       "label": "弹簧动画调试开关",
@@ -1184,11 +1235,11 @@
     },
     "adaptiveFontSize": {
       "label": "自适应字号",
-      "description": "歌词字号根据窗口大小自动调整"
+      "description": "歌词字号随窗口高度调整"
     },
     "fontSize": {
       "label": "歌词字号",
-      "description": "关闭自适应后生效"
+      "description": "主行文字大小"
     },
     "fontWeight": {
       "label": "歌词字重",
@@ -1286,7 +1337,7 @@
     },
     "inactiveAlpha": {
       "label": "非激活行透明度",
-      "description": "非当前行的基础透明度"
+      "description": "非当前行的基础透明度，同时影响翻译和音译的透明度"
     },
     "lyricPipDoubleLine": {
       "label": "双行歌词",
@@ -1789,11 +1840,12 @@
     },
     "updateChannel": {
       "label": "更新通道",
-      "description": "选择正式版、Beta 预览版或 Alpha 内测版更新",
+      "description": "选择接收更新的通道，切换通道不会自动降级",
       "stable": "正式版",
       "beta": "Beta 预览版",
       "alpha": "Alpha 内测版",
-      "action": "Action 构建版"
+      "action": "Action 构建版",
+      "nightly": "Nightly 持续构建"
     },
     "checkUpdate": {
       "label": "检查更新",
@@ -1846,12 +1898,12 @@
     },
     "neteaseScrobbleEnabled": {
       "label": "启用听歌打卡",
-      "description": "播放达到一定时长后，自动向 NCM 上报听歌记录"
+      "description": "按实际收听时长同步 NCM 播放记录"
     },
     "neteaseScrobbleMode": {
       "label": "NCM 听歌打卡方式",
-      "description": "选择自动同步 NCM 听歌记录时使用的上报接口",
-      "legacy": "原版日志接口",
+      "description": "选择同步播放记录时使用的上报协议",
+      "legacy": "网页日志接口",
       "ncbl": "NCBL 加密接口"
     },
     "orpheusProtocol": {
@@ -2013,7 +2065,7 @@
       "marketError": "加载失败",
       "publishHint": "想分享你的插件？",
       "publishAction": "前往发布",
-      "importSuccess": "插件导入成功",
+      "importSuccess": "已导入，请查看加载状态",
       "importFailed": "插件导入失败",
       "empty": "暂无已安装的插件",
       "emptyHint": "从本地或在线导入插件以启用扩展能力",
@@ -2028,6 +2080,7 @@
       "pendingUpdate": "待更新",
       "noChangelog": "暂无更新说明",
       "openUpdateUrl": "查看更新",
+      "manualUpdateHint": "请打开更新链接，下载新版脚本后重新导入。",
       "checkUpdate": "检查更新",
       "checkUpdateFailed": "检查更新失败",
       "updateFound": "发现新版本",
@@ -2036,11 +2089,11 @@
       "updateSuccess": "插件已更新",
       "updateFailed": "更新失败，可点「查看更新」手动安装",
       "status": {
-        "ready": "已就绪",
-        "loading": "加载中",
-        "error": "错误",
+        "ready": "可用",
+        "loading": "正在加载",
+        "error": "加载失败",
         "disabled": "已禁用",
-        "unloaded": "未加载"
+        "unloaded": "已导入"
       },
       "sectionSource": "音源插件",
       "sectionControl": "控制插件",
@@ -2077,7 +2130,15 @@
         },
         "ui": {
           "label": "界面",
-          "desc": "插件可扩展或修改应用界面"
+          "desc": "插件可添加歌曲菜单并发送系统通知"
+        },
+        "library": {
+          "label": "曲库",
+          "desc": "插件可搜索本地曲库并读取歌曲信息"
+        },
+        "api": {
+          "label": "平台接口",
+          "desc": "使用当前登录态调用音乐平台接口"
         }
       }
     },
@@ -2116,8 +2177,7 @@
       "switchConfirmDesc": "切换前会清空当前的封面、歌手头像、背景图缓存，新位置必须是空文件夹。歌词等数据库缓存不受影响。",
       "switchConfirmOk": "选择文件夹",
       "resetConfirmTitle": "还原默认缓存目录？",
-      "resetConfirmDesc": "还原前同样会清空当前的文件类缓存",
-      "mobileHint": "开启歌曲缓存后，完整缓存的歌曲可从原歌单或播放队列离线播放。更换音质需重新缓存。系统可能在空间不足时清理缓存；长期保留请使用歌曲下载。清理缓存不会删除已下载的歌曲，但可能中断正在播放的缓存歌曲。"
+      "resetConfirmDesc": "还原前同样会清空当前的文件类缓存"
     },
     "cacheUsage": {
       "label": "占用情况",
@@ -2152,7 +2212,8 @@
     "downloadDir": {
       "label": "下载目录",
       "change": "更换",
-      "mobile": "文件 → 我的 iPhone / iPad → SPlayer → Downloads"
+      "mobile": "文件 → 我的 iPhone / iPad → SPlayer → Downloads",
+      "android": "歌曲保存在应用内的 Downloads 文件夹"
     },
     "downloadQuality": {
       "label": "下载音质",
@@ -2227,6 +2288,97 @@
       "button": "清空全部",
       "confirmTitle": "清空全部数据库缓存？",
       "confirmDesc": "将删除上方全部数据库缓存，操作不可恢复"
+    },
+    "skipKeywordsSongs": {
+      "label": "跳过指定关键词歌曲",
+      "description": "检测到歌曲标题或歌手名包含指定关键词时自动跳过",
+      "button": "管理",
+      "enable": "启用跳过关键词歌曲",
+      "enableDesc": "播放时若命中关键词列表则自动跳至下一首"
+    },
+    "skipKeywordsRules": {
+      "label": "关键词列表",
+      "description": "自定义需要跳过的歌曲关键词列表",
+      "button": "管理",
+      "hint": "当歌曲标题或歌手名包含以下关键词时将自动跳过",
+      "placeholder": "输入关键词",
+      "add": "添加",
+      "clear": "清空当前列表",
+      "empty": "尚未配置任何关键词",
+      "duplicate": "已存在该关键词"
+    },
+    "transitionMode": {
+      "label": "过渡方式",
+      "description": "调整歌曲在交替时的播放效果",
+      "none": "无过渡",
+      "crossfade": "交叉过渡"
+    },
+    "transitionPreference": {
+      "label": "交接倾向",
+      "description": "调整曲尾交接时机和过渡长度，积极档更早、更长",
+      "conservative": "保守",
+      "standard": "标准",
+      "eager": "积极"
+    },
+    "rememberDeviceVolume": {
+      "label": "独立设备音量记忆",
+      "description": "切换或插拔不同音频输出设备时，分别保存并恢复各自的音量大小"
+    },
+    "audioOutputMode": {
+      "label": "音频输出模式",
+      "description": "切换当前 Windows WASAPI 音频的输出模式",
+      "shared": "共享模式",
+      "exclusive": "WASAPI 独占模式",
+      "fallback": {
+        "deviceBusy": "设备无法以独占模式打开，已回退共享模式",
+        "formatUnsupported": "设备不支持独占模式所需的音频格式，已回退共享模式",
+        "unavailable": "独占模式暂不可用，已回退共享模式"
+      }
+    },
+    "translationFontSizeFollowMain": {
+      "label": "副行字号跟随主行",
+      "description": "副行字号为主行的一半"
+    },
+    "translationFontSize": {
+      "label": "翻译/音译字号",
+      "description": "关闭跟随主行后生效"
+    },
+    "keepScreenAwake": {
+      "label": "播放时保持屏幕常亮",
+      "description": "仅在播放页展开时生效"
+    },
+    "lyricAlignment": {
+      "label": "歌词水平对齐",
+      "description": "自动按演唱声部分左右显示，也可统一靠左、居中或靠右",
+      "auto": "自动",
+      "left": "靠左",
+      "center": "居中",
+      "right": "靠右"
+    },
+    "playerBgRenderer": {
+      "label": "渲染引擎",
+      "description": "选择流体背景渲染引擎",
+      "mesh": "网格渐变渲染器",
+      "isolation": "isolation 渲染器",
+      "pixi": "PixiJS 渲染器"
+    },
+    "lastfmAccount": {
+      "label": "Last.fm 账号"
+    },
+    "qmAccount": {
+      "label": "QQ 音乐账号"
+    },
+    "kgAccount": {
+      "label": "酷狗音乐账号"
+    },
+    "streamingServerList": {
+      "label": "媒体源管理"
+    },
+    "pluginImport": {
+      "label": "导入插件"
+    },
+    "pluginList": {
+      "label": "已安装插件"
     }
   },
   "collection": {
@@ -2307,6 +2459,11 @@
     "artists": "歌手",
     "totalDuration": "总时长",
     "totalSize": "总大小",
+    "listenedSongs": "听过歌曲",
+    "listenedAlbums": "听过专辑",
+    "listenedArtists": "听过歌手",
+    "totalListened": "累计听歌",
+    "playCount": "播放次数",
     "topSongs": "最常听的歌曲",
     "topAlbums": "最常听的专辑",
     "topArtists": "最常听的歌手",
@@ -2340,7 +2497,7 @@
     "NETWORK_ERROR": "音源连接失败，请检查网络或更换音源",
     "NETWORK_TIMEOUT": "音源响应超时，请检查网络或更换音源",
     "URL_RESOLVE_FAILED": "无法获取播放地址",
-    "NO_PLUGIN_AVAILABLE": "未找到支持该平台的插件",
+    "NO_PLUGIN_AVAILABLE": "未找到可用的音源插件",
     "NETEASE_LOGIN_EXPIRED": "登录已失效，已切换为游客模式",
     "NETEASE_VIP_REQUIRED": "该歌曲需要会员或单独购买",
     "NETEASE_TRIAL_DISABLED": "该歌曲仅提供试听，请在设置中允许试听播放",
@@ -2352,7 +2509,8 @@
     "TAG_READ_FAILED": "读取标签失败",
     "TAG_WRITE_FAILED": "写入标签失败",
     "MAX_CONSECUTIVE_FAILURES": "连续播放失败次数过多",
-    "UNKNOWN": "操作失败"
+    "UNKNOWN": "操作失败",
+    "PERMISSION_DENIED": "当前账号没有执行此操作的权限"
   },
   "tagEditor": {
     "title": "编辑元数据",

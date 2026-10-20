@@ -1,3 +1,4 @@
+import { invalidatePlaybackOperation } from "./index";
 import { useStatusStore } from "@/stores/status";
 import * as playback from "@/services/playback";
 
@@ -29,17 +30,20 @@ export const isSeeking = (): boolean => seekTarget !== null;
  * 跳转到指定播放位置，失败时恢复跳转前的位置。
  * @param posMs - 目标位置（毫秒）
  */
-export const seek = async (posMs: number): Promise<void> => {
+export const seek = async (posMs: number, restartRound = false): Promise<void> => {
   const status = useStatusStore();
   if (status.trackLoading || !Number.isFinite(posMs)) return;
   const target = Math.max(0, status.duration > 0 ? Math.min(posMs, status.duration) : posMs);
+  invalidatePlaybackOperation();
   const previous = playback.getCurrentTime();
   const token = ++generation;
   playback.setSeeking(true);
   status.position = playback.setCurrentTime(target, { force: true });
   seekTarget = target;
 
-  const result = await window.api.player.seek(target).catch((error: unknown) => ({
+  const result = await (
+    restartRound ? window.api.player.seek(target, true) : window.api.player.seek(target)
+  ).catch((error: unknown) => ({
     success: false,
     error: String(error),
   }));
@@ -64,6 +68,7 @@ export const seek = async (posMs: number): Promise<void> => {
 export const markSeek = (posMs: number): void => {
   const status = useStatusStore();
   if (status.trackLoading) return;
+  invalidatePlaybackOperation();
   generation++;
   playback.setSeeking(true);
   status.position = playback.setCurrentTime(posMs, { force: true });

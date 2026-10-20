@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { isIOS } from "@/utils/config";
 import { toast } from "@/composables/useToast";
 import { dialog } from "@/composables/useDialog";
 import { formatFileSize } from "@/utils/format";
@@ -14,6 +13,7 @@ import IconLucideImagePlus from "~icons/lucide/image-plus";
 import IconLucideMusic from "~icons/lucide/music";
 import IconLucideDatabase from "~icons/lucide/database";
 import { useCacheStats } from "@/composables/useCacheStats";
+import { isMobile } from "@/utils/config";
 
 defineOptions({ inheritAttrs: false });
 
@@ -105,6 +105,7 @@ const requestClearAll = async (): Promise<void> => {
   <div class="flex flex-col gap-3">
     <!-- 缓存目录 -->
     <div
+      v-if="!isMobile"
       class="rounded-xl bg-surface-panel border border-solid border-outline-variant/15 px-4 py-3.5 flex items-center justify-between gap-4"
     >
       <div class="min-w-0 flex-1">
@@ -113,7 +114,7 @@ const requestClearAll = async (): Promise<void> => {
           {{ cacheDir || "—" }}
         </div>
       </div>
-      <div v-if="!isIOS" class="shrink-0 flex items-center gap-2">
+      <div class="shrink-0 flex items-center gap-2">
         <SButton variant="ghost" circle :title="t('settings.cacheDir.open')" @click="handleOpenDir">
           <template #icon><IconLucideFolderOpen /></template>
         </SButton>
@@ -131,12 +132,9 @@ const requestClearAll = async (): Promise<void> => {
       </div>
     </div>
 
-    <p v-if="isIOS" class="text-sm text-on-surface-variant">
-      {{ t("settings.cacheDir.mobileHint") }}
-    </p>
-
     <!-- 占用情况 -->
     <div
+      v-if="!isMobile"
       class="rounded-xl bg-surface-panel border border-solid border-outline-variant/15 overflow-hidden"
     >
       <div class="px-4 py-2.5 flex items-center gap-3 text-sm">

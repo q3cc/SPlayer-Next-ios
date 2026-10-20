@@ -7,7 +7,7 @@ export type RecognitionSource = "system" | "microphone";
 
 /** 识别流程阶段 */
 export type RecognitionPhase =
-  "idle" | "capturing" | "fingerprinting" | "matching" | "done" | "error";
+  "idle" | "waiting" | "capturing" | "fingerprinting" | "matching" | "done" | "error";
 
 /** 识别错误码 */
 export type RecognitionErrorCode =

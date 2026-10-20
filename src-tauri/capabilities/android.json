@@ -1,0 +1,60 @@
+{
+  "$schema": "../gen/schemas/mobile-schema.json",
+  "identifier": "android",
+  "description": "Permissions required by the Android application",
+  "windows": ["main"],
+  "platforms": ["android"],
+  "permissions": [
+    "core:default",
+    "deep-link:default",
+    "dialog:default",
+    "native-audio:allow-load",
+    "native-audio:allow-lastfm-credentials",
+    "native-audio:allow-control",
+    "native-audio:allow-configure",
+    "native-audio:allow-metadata",
+    "native-audio:allow-status",
+    "native-audio:allow-system-volume",
+    "native-audio:allow-keep-awake",
+    "native-audio:allow-share-log",
+    "native-audio:allow-device-abi",
+    "native-audio:allow-download-update",
+    "native-audio:allow-install-update",
+    "native-audio:allow-visibility",
+    "native-audio:allow-read-metadata",
+    "native-audio:allow-read-lyric-file",
+    "native-audio:allow-register-listener",
+    "native-audio:allow-remove-listener",
+    "fs:default",
+    "fs:allow-appcache-read-recursive",
+    "fs:allow-appcache-write-recursive",
+    "fs:allow-appdata-read-recursive",
+    "fs:allow-appdata-write-recursive",
+    "fs:allow-read-dir",
+    "fs:allow-stat",
+    {
+      "identifier": "fs:scope",
+      "allow": [
+        "$APPDATA/Imported Files",
+        "$APPDATA/Imported Files/**",
+        "$DOCUMENT/Downloads",
+        "$DOCUMENT/Downloads/**"
+      ]
+    },
+    {
+      "identifier": "http:default",
+      "allow": ["http://**", "https://**"]
+    },
+    "opener:default",
+    "fs:allow-open",
+    "fs:allow-read-text-file",
+    "fs:allow-write-text-file",
+    "fs:allow-write",
+    "fs:allow-mkdir",
+    "fs:allow-exists",
+    "fs:allow-rename",
+    "fs:allow-remove",
+    "fs:allow-read",
+    "fs:allow-seek"
+  ]
+}

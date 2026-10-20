@@ -7,7 +7,7 @@
  * 被 host.worker.ts 导入，运行在 utilityProcess + vm.Context 外层（注入前）。
  */
 
-import crypto from "node:crypto";
+import * as crypto from "node:crypto";
 import zlib from "node:zlib";
 import type {
   HostApi,
@@ -39,6 +39,7 @@ const LX_TO_HOST_QUALITY: Record<string, PluginQuality> = {
   lossless: "lossless",
   sq: "lossless",
   flac24bit: "hi-res",
+  "24bit": "hi-res",
   hires: "hi-res",
   "hi-res": "hi-res",
 };
@@ -181,9 +182,9 @@ export interface LxMusicInfo {
   types: string[];
   _types: Record<string, unknown>;
   typeUrl: Record<string, unknown>;
-  hash: string;
-  strMediaMid: string;
-  copyrightId: string;
+  hash?: string;
+  strMediaMid?: string;
+  copyrightId?: string;
   albumId: string;
   albumName: string;
   meta: {
@@ -191,14 +192,14 @@ export interface LxMusicInfo {
     albumName: string;
     albumId: string;
     picUrl: string | null;
-    hash: string;
+    hash?: string;
     [key: string]: unknown;
   };
   [key: string]: unknown;
 }
 
 /** 将宿主传入的 musicInfo 归一化 */
-const normalizeLxMusicInfo = (
+export const normalizeLxMusicInfo = (
   raw: MusicUrlReq["musicInfo"] | undefined,
   source: string,
 ): LxMusicInfo => {
@@ -214,15 +215,44 @@ const normalizeLxMusicInfo = (
   const albumId = String(info.albumId ?? meta.albumId ?? "");
   const interval = typeof info.interval === "string" ? info.interval : null;
   const img = (info.img ?? info.pic ?? meta.picUrl ?? null) as string | null;
-  const rawHash = info.hash ?? meta.hash;
-  const hash =
-    typeof rawHash === "string" && rawHash.length > 0
-      ? rawHash
-      : id.length === 32 && /^[0-9a-fA-F]{32}$/.test(id)
-        ? id
-        : "";
 
-  return {
+  const rawHash = info.hash ?? meta.hash;
+  const isKg = source === "kg" || source === "kugou";
+  const hash =
+    typeof rawHash === "string" && rawHash.trim().length > 0
+      ? rawHash.trim()
+      : isKg && id.length === 32 && /^[0-9a-fA-F]{32}$/.test(id)
+        ? id
+        : undefined;
+
+  const rawStrMediaMid = info.strMediaMid ?? meta.strMediaMid;
+  const strMediaMid =
+    typeof rawStrMediaMid === "string" && rawStrMediaMid.trim().length > 0
+      ? rawStrMediaMid.trim()
+      : source === "tx" || source === "qqmusic"
+        ? id
+        : undefined;
+
+  const rawCopyrightId = info.copyrightId ?? meta.copyrightId;
+  const copyrightId =
+    typeof rawCopyrightId === "string" && rawCopyrightId.trim().length > 0
+      ? rawCopyrightId.trim()
+      : undefined;
+
+  const resMeta: Record<string, unknown> = {
+    ...meta,
+    songId: id,
+    albumName,
+    albumId,
+    picUrl: img,
+  };
+  if (hash) {
+    resMeta.hash = hash;
+  } else {
+    delete resMeta.hash;
+  }
+
+  const result: LxMusicInfo = {
     ...info,
     name,
     singer,
@@ -242,18 +272,26 @@ const normalizeLxMusicInfo = (
         ? (info._types as Record<string, unknown>)
         : {},
     typeUrl: {},
-    hash,
-    strMediaMid: typeof info.strMediaMid === "string" ? info.strMediaMid : id,
-    copyrightId: typeof info.copyrightId === "string" ? info.copyrightId : "",
-    meta: {
-      songId: id,
-      albumName,
-      albumId,
-      picUrl: img,
-      hash,
-      ...meta,
-    },
+    meta: resMeta as LxMusicInfo["meta"],
   };
+
+  if (hash) {
+    result.hash = hash;
+  } else {
+    delete (result as Record<string, unknown>).hash;
+  }
+  if (strMediaMid) {
+    result.strMediaMid = strMediaMid;
+  } else {
+    delete (result as Record<string, unknown>).strMediaMid;
+  }
+  if (copyrightId) {
+    result.copyrightId = copyrightId;
+  } else {
+    delete (result as Record<string, unknown>).copyrightId;
+  }
+
+  return result;
 };
 
 /**
@@ -264,6 +302,8 @@ const normalizeLxMusicInfo = (
  * @param onSources 脚本通过 lx.send('inited', {sources}) 注册能力时的回调
  * @param onUpdateAvailable 脚本通过 lx.send('updateAlert', ...) 上报新版本时的回调
  * @param scriptInfo lx 脚本 currentScriptInfo（主进程解析完头注释后传入）
+ * @param environment - 实际运行平台，不影响 LX 协议版本
+ * @returns 初始化与请求处理器均就绪后完成
  */
 export const installLxShim = (
   sandboxGlobal: Record<string, unknown>,
@@ -272,15 +312,23 @@ export const installLxShim = (
   onSources: (sources: Record<string, SourceCapability>) => void,
   onUpdateAvailable: (info: PluginUpdateInfo) => void,
   scriptInfo?: LxCurrentScriptInfo,
-): void => {
+  environment: "desktop" | "mobile" = "desktop",
+): Promise<void> => {
   let requestHandler: LxRequestHandler | null = null;
   let inited = false;
   let updateAlerted = false;
+  const qualityNames = new Map<string, Partial<Record<PluginQuality, string>>>();
+  let resolveInitialization!: () => void;
+  let rejectInitialization!: (error: Error) => void;
+  const initialization = new Promise<void>((resolve, reject) => {
+    resolveInitialization = resolve;
+    rejectInitialization = reject;
+  });
 
   const lxApi = {
     EVENT_NAMES,
     version: "2.0.0",
-    env: "desktop",
+    env: environment,
 
     request(
       url: string,
@@ -390,7 +438,11 @@ export const installLxShim = (
         return Promise.reject(new Error("The event is not supported: " + eventName));
       }
       if (eventName === EVENT_NAMES.request) {
+        if (typeof handler !== "function") {
+          return Promise.reject(new Error("音源请求处理器无效"));
+        }
         requestHandler = handler;
+        if (inited) resolveInitialization();
         return Promise.resolve();
       }
       return Promise.reject(new Error("The event is not supported: " + eventName));
@@ -408,42 +460,73 @@ export const installLxShim = (
               reject(new Error("Script is inited"));
               return;
             }
-            inited = true;
-            // lx 脚本上报的 sources.qualitys / qualities 是 lx 原生音质字符串，
-            // 转成宿主 PluginQuality 去重后再注册给 router
-            const rawSources =
-              (data?.sources as Record<
-                string,
-                {
-                  name?: string;
-                  actions?: string[];
-                  qualitys?: string[];
-                  qualities?: string[];
-                  [key: string]: unknown;
-                }
-              >) ?? {};
-            const normalized: Record<string, SourceCapability> = {};
-            for (const [key, cap] of Object.entries(rawSources)) {
-              const rawQualities = cap.qualitys ?? cap.qualities ?? [];
-              const mapped = new Set<PluginQuality>();
-              for (const q of rawQualities) {
-                const host = mapLxQualityToHost(q);
-                if (host) mapped.add(host);
+            try {
+              if (data?.status === false) {
+                throw new Error(typeof data.message === "string" ? data.message : "音源初始化失败");
               }
-              const actions = (cap.actions ?? []).filter(
-                (action): action is PluginAction => action === "musicUrl",
-              );
-              // 不支持任何宿主已识别动作的源直接丢弃，避免 audioSource 误把
-              // lyric-only 脚本当成 musicUrl 候选去调，结果走到归一校验抛 PLUGIN_INVALID_RESULT
-              if (actions.length === 0) continue;
-              normalized[key] = {
-                name: cap.name ?? key,
-                actions,
-                qualities: Array.from(mapped),
-              };
+              if (
+                !data?.sources ||
+                typeof data.sources !== "object" ||
+                Array.isArray(data.sources)
+              ) {
+                throw new Error("音源未提供初始化信息");
+              }
+              // lx 脚本上报的 sources.qualitys / qualities 是 lx 原生音质字符串，
+              // 转成宿主 PluginQuality 去重后再注册给 router
+              const rawSources =
+                (data?.sources as Record<
+                  string,
+                  {
+                    name?: string;
+                    type?: string;
+                    actions?: string[];
+                    qualitys?: string[];
+                    qualities?: string[];
+                    [key: string]: unknown;
+                  }
+                >) ?? {};
+              const normalized: Record<string, SourceCapability> = {};
+              for (const [key, cap] of Object.entries(rawSources)) {
+                if (!cap || (cap.type !== undefined && cap.type !== "music")) continue;
+                const rawQualities = cap.qualitys ?? cap.qualities ?? [];
+                if (!Array.isArray(rawQualities) || !Array.isArray(cap.actions)) {
+                  throw new Error("音源能力声明无效");
+                }
+                const mapped = new Set<PluginQuality>();
+                const names: Partial<Record<PluginQuality, string>> = {};
+                for (const q of rawQualities) {
+                  if (typeof q !== "string") continue;
+                  const host = mapLxQualityToHost(q);
+                  if (host) {
+                    mapped.add(host);
+                    if (!names[host] || q === mapHostQualityToLx(host)) names[host] = q;
+                  }
+                }
+                const actions = (cap.actions ?? []).filter(
+                  (action): action is PluginAction => action === "musicUrl",
+                );
+                // 不支持任何宿主已识别动作的源直接丢弃，避免 audioSource 误把
+                // lyric-only 脚本当成 musicUrl 候选去调，结果走到归一校验抛 PLUGIN_INVALID_RESULT
+                if (actions.length === 0) continue;
+                qualityNames.set(key, names);
+                normalized[key] = {
+                  name: cap.name ?? key,
+                  actions,
+                  qualities: Array.from(mapped),
+                };
+              }
+              if (Object.keys(normalized).length === 0) {
+                throw new Error("音源未提供可用的播放地址解析能力");
+              }
+              inited = true;
+              onSources(normalized);
+              if (requestHandler) resolveInitialization();
+              resolve();
+            } catch (error) {
+              const failure = error instanceof Error ? error : new Error(String(error));
+              rejectInitialization(failure);
+              reject(failure);
             }
-            onSources(normalized);
-            resolve();
             return;
           }
           case EVENT_NAMES.updateAlert: {
@@ -455,6 +538,7 @@ export const installLxShim = (
             // 上报给宿主，由 UI 层展示"有更新"徽章与打开下载链接按钮；
             // 不再落日志（脚本通常会自己 console.log，重复输出无意义）
             onUpdateAvailable({
+              manual: true,
               log: typeof data?.log === "string" ? (data.log as string) : undefined,
               updateUrl:
                 typeof data?.updateUrl === "string" ? (data.updateUrl as string) : undefined,
@@ -484,12 +568,16 @@ export const installLxShim = (
 
   sandboxGlobal.lx = lxApi;
   // 部分脚本通过 window.lx 访问
-  sandboxGlobal.window = { lx: lxApi };
+  if (typeof sandboxGlobal.window === "object" && sandboxGlobal.window !== null) {
+    (sandboxGlobal.window as Record<string, unknown>).lx = lxApi;
+  } else {
+    sandboxGlobal.window = sandboxGlobal;
+  }
 
   // 为每个 action 安装一个通用分派器：把 router 的 call 转译成 lx 的 request 形状
   const registerAction = (action: PluginAction): void => {
     handlers.set(action, async (req: unknown) => {
-      if (!requestHandler) {
+      if (!inited || !requestHandler) {
         splayer.log.warn("[lx-shim] no request handler registered for action", action);
         throw Object.assign(new Error("lx plugin has not registered request handler"), {
           code: "PLUGIN_NOT_READY",
@@ -499,7 +587,12 @@ export const installLxShim = (
       const source = reqObj.source ?? "";
       // lx 期待 128k/320k/flac/... 音质字符串，宿主的 quality 做一次翻译
       const hostQuality = reqObj.quality;
-      const lxType = hostQuality ? mapHostQualityToLx(hostQuality) : undefined;
+      const lxType = hostQuality ? qualityNames.get(source)?.[hostQuality] : undefined;
+      if (hostQuality && !lxType) {
+        throw Object.assign(new Error("音源不支持所选音质"), {
+          code: "PLUGIN_ACTION_UNSUPPORTED",
+        });
+      }
       const info = {
         type: lxType,
         musicInfo: normalizeLxMusicInfo(reqObj.musicInfo, source),
@@ -518,4 +611,5 @@ export const installLxShim = (
   };
 
   (["musicUrl"] as PluginAction[]).forEach(registerAction);
+  return initialization;
 };

@@ -1,20 +1,85 @@
 import { readFileSync } from "node:fs";
 import { expect, it } from "vitest";
 
+const androidOnly = new Set([
+  "keep_awake",
+  "share_log",
+  "device_abi",
+  "download_update",
+  "install_update",
+]);
+
+it("Android 授权模型配置和 Last.fm 共用的安全凭证命令", () => {
+  const permissions = readFileSync("src-tauri/capabilities/android.json", "utf8");
+  expect(permissions).toContain('"native-audio:allow-lastfm-credentials"');
+});
+
+it("iOS 凭证命令入口随插件主类链接，并直接引用独立文件的实现", () => {
+  const root = "src-tauri/plugins/native-audio/ios/Sources";
+  const plugin = readFileSync(`${root}/NativeAudioPlugin.swift`, "utf8");
+  const credentials = readFileSync(`${root}/LastfmCredentials.swift`, "utf8");
+  expect(plugin).toMatch(
+    /@objc func lastfmCredentials\(_ invoke: Invoke\) throws \{\s*try handleLastfmCredentials\(invoke\)\s*\}/,
+  );
+  expect(credentials).toContain("func handleLastfmCredentials(_ invoke: Invoke) throws");
+  expect(credentials).not.toContain("@objc func lastfmCredentials");
+});
+
+it("广播选择器在页面显示后打开系统确认窗口，并使用播放器窗口", () => {
+  const swift = readFileSync(
+    "src-tauri/plugins/native-audio/ios/Sources/SystemRecognition.swift",
+    "utf8",
+  );
+  expect(swift).toContain("override func viewDidAppear");
+  expect(swift).toContain(".sendActions(for: .touchUpInside)");
+  expect(swift).toContain("webView?.window?.rootViewController");
+  expect(swift).not.toContain("isKeyWindow");
+  expect(swift).toContain('result["status"] as? String == "capturing", !startedCapture');
+});
+
+it("iOS 系统播放控制的异步闭包显式引用淡入淡出方法", () => {
+  const swift = readFileSync(
+    "src-tauri/plugins/native-audio/ios/Sources/NativeAudioPlugin.swift",
+    "utf8",
+  );
+  const controls = swift.split("private func installControls()")[1];
+  expect(controls).toContain("self.fade(to: 1)");
+  expect(controls).not.toMatch(/(?<![\w.])fade\(to:/);
+});
+
 it("原生音频命令匹配 Tauri 转换后的 Swift 方法名", () => {
   const root = `${process.cwd()}/src-tauri/plugins/native-audio`;
   const commands = readFileSync(`${root}/build.rs`, "utf8")
     .split("Builder::new(&[")[1]
     .split("])")[0]
     .matchAll(/"([a-z_]+)"/g);
-  const swift = readFileSync(`${root}/ios/Sources/NativeAudioPlugin.swift`, "utf8");
+  let swift = readFileSync(`${root}/ios/Sources/NativeAudioPlugin.swift`, "utf8");
+  swift += readFileSync(root + "/ios/Sources/LastfmCredentials.swift", "utf8");
+  swift += readFileSync(root + "/ios/Sources/SystemRecognition.swift", "utf8");
   const permissions = readFileSync(`${root}/permissions/default.toml`, "utf8");
   // 监听方法由 Tauri.Plugin 基类提供。
   const inherited = new Set(["register_listener", "remove_listener"]);
   for (const [, command] of commands) {
-    if (inherited.has(command)) continue;
+    if (inherited.has(command) || androidOnly.has(command)) continue;
     expect(permissions, command).toContain(`"allow-${command.replaceAll("_", "-")}"`);
     const selector = command.replace(/_([a-z])/g, (_, char: string) => char.toUpperCase());
     expect(swift, command).toMatch(new RegExp(`@objc func ${selector}\\(_ invoke: Invoke\\)`));
+  }
+});
+
+it("安卓专属命令有原生实现和权限且不授权 iOS", () => {
+  const root = `${process.cwd()}/src-tauri`;
+  const android = readFileSync(
+    `${root}/plugins/native-audio/android/src/main/java/NativeAudioPlugin.kt`,
+    "utf8",
+  );
+  const ios = readFileSync(`${root}/plugins/native-audio/permissions/default.toml`, "utf8");
+  const permissions = readFileSync(`${root}/capabilities/android.json`, "utf8");
+  for (const command of androidOnly) {
+    const selector = command.replace(/_([a-z])/g, (_, char: string) => char.toUpperCase());
+    expect(android, command).toContain(`@Command fun ${selector}(invoke: Invoke)`);
+    const permission = `allow-${command.replaceAll("_", "-")}`;
+    expect(permissions, command).toContain(`"native-audio:${permission}"`);
+    expect(ios, command).not.toContain(`"${permission}"`);
   }
 });

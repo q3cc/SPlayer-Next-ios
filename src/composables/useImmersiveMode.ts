@@ -1,6 +1,6 @@
 import { computed, onBeforeUnmount, ref, watch, type Ref } from "vue";
 import { useSettingsStore } from "@/stores/settings";
-import { isIOS } from "@/utils/config";
+import { isMobile } from "@/utils/config";
 
 /** 沉浸模式闲置时间（ms） */
 const IMMERSIVE_IDLE_MS = 5000;
@@ -18,7 +18,7 @@ export const useImmersiveMode = (isPlayerExpanded: Ref<boolean>) => {
   let idleTimer: ReturnType<typeof setTimeout> | undefined;
 
   const enabled = computed(
-    () => (isIOS || settings.player.autoImmersive) && isPlayerExpanded.value,
+    () => (isMobile || settings.player.autoImmersive) && isPlayerExpanded.value,
   );
 
   const armIdle = (): void => {

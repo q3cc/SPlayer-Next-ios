@@ -4,7 +4,7 @@ import { useMediaStore } from "@/stores/media";
 import { useSettingsStore } from "@/stores/settings";
 import { useOrpheusProtocol } from "@/composables/useOrpheusProtocol";
 import { useExternalFileHandler } from "@/composables/useExternalFileHandler";
-import { isIOS } from "@/utils/config";
+import { isMobile } from "@/utils/config";
 import PlayerSurface from "@/components/player/PlayerSurface.vue";
 
 const route = useRoute();
@@ -20,7 +20,16 @@ useExternalFileHandler();
 /** 有歌曲信息时显示播放栏 */
 const showPlayerBar = computed(() => !!useMediaStore().track);
 const { isPlayerExpanded } = storeToRefs(status);
-const appleTheme = computed(() => settings.player.theme === "apple-music");
+
+/** 播放页展开状态同步与懒加载 */
+watch(
+  isPlayerExpanded,
+  (expanded) => {
+    window.api.window.setPlayerExpanded(expanded);
+  },
+  { immediate: true },
+);
+onBeforeUnmount(() => window.api.window.setPlayerExpanded(false));
 const { appearance } = settings;
 
 /** 路由切换动效 */
@@ -61,6 +70,9 @@ watch(
   (_newPath, oldPath) => {
     if (oldPath && mainContainerRef.value) {
       mainScrollMap.set(oldPath, mainContainerRef.value.scrollTop);
+      if (mainScrollMap.size > 10) {
+        mainScrollMap.delete(mainScrollMap.keys().next().value!);
+      }
     }
   },
 );
@@ -116,7 +128,7 @@ const playerBarInnerClass = computed(() => {
     case "floating":
       return `${base} mx-auto max-w-4xl glass-panel rounded-full shadow-xl border border-solid border-primary/10`;
     default:
-      return `${base} ${isIOS ? "ios-player-bar" : "h-20"} bg-surface-panel border-t border-t-solid border-t-primary/10`;
+      return `${base} ${isMobile ? "ios-player-bar" : "h-20"} bg-surface-panel border-t border-t-solid border-t-primary/10`;
   }
 });
 </script>
@@ -126,10 +138,9 @@ const playerBarInnerClass = computed(() => {
   <div
     class="app-viewport h-screen flex overflow-hidden bg-app text-on-surface transition-[transform,opacity] duration-500 ease-[cubic-bezier(0.7,0,0.3,1)] origin-center"
     :class="[
-      isIOS ? 'ios-app-viewport' : '',
-      isPlayerExpanded && !appleTheme ? 'scale-95 opacity-0 pointer-events-none' : '',
+      isMobile ? 'ios-app-viewport' : '',
+      isPlayerExpanded ? 'scale-95 opacity-0 pointer-events-none' : '',
     ]"
-    :inert="isPlayerExpanded"
   >
     <!-- 侧边栏 -->
     <aside
@@ -179,10 +190,9 @@ const playerBarInnerClass = computed(() => {
   >
     <div
       v-if="showPlayerBar"
-      :inert="isPlayerExpanded"
       :class="playerBarWrapperClass"
       :style="
-        isIOS && !isCompactLayout && appearance.layoutMode === 'floating'
+        isMobile && !isCompactLayout && appearance.layoutMode === 'floating'
           ? { bottom: 'var(--s-safe-bottom)' }
           : undefined
       "
@@ -193,10 +203,7 @@ const playerBarInnerClass = computed(() => {
     </div>
   </Transition>
 
-  <MobileNav
-    v-if="isCompactLayout && (appleTheme || !isPlayerExpanded)"
-    :inert="isPlayerExpanded"
-  />
+  <MobileNav v-if="isCompactLayout && !isPlayerExpanded" />
 
   <!-- Toast -->
   <SToast :max="1" />
@@ -212,6 +219,8 @@ const playerBarInnerClass = computed(() => {
   <UpdateDialog />
   <!-- 评论弹窗 -->
   <MusicCommentsDialog />
+  <!-- 输出信息弹窗 -->
+  <AudioInfoDialog />
 </template>
 
 <style scoped>

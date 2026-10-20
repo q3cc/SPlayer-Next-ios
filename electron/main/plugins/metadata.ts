@@ -5,15 +5,17 @@
  */
 
 import type { Track } from "@shared/types/player";
+import type { MusicCommentPage } from "@shared/types/comment";
 import type {
   MusicLyricRes,
   MusicPicRes,
   MusicSearchCandidate,
   PluginMatchCoverArgs,
   PluginMatchLyricArgs,
+  PluginMatchCommentArgs,
 } from "@shared/types/plugin";
 import { pluginRegistry, type PluginRuntime } from "./registry";
-import { callMusicLyric, callMusicPic, callMusicSearch } from "./router";
+import { callMusicComment, callMusicLyric, callMusicPic, callMusicSearch } from "./router";
 import { pickBestCandidate, type LyricCandidate } from "@main/apis/common/lyric/utils";
 import { pluginLog } from "@main/utils/logger";
 
@@ -25,15 +27,22 @@ const PLATFORM_TO_PLUGIN_SOURCE: Record<string, string> = {
 };
 
 /**
- * 在某插件源里定位与 track 对应的曲目
- * 同源（track 平台映射后 == source）直接用 track.id 省一次搜索；否则 musicSearch + 时长门槛打分
- * @returns 匹配中的候选（含源内 id），无命中返回 null
+ * 在指定插件来源中匹配曲目，所属插件的曲目直接复用来源数据
+ * @param rt - 插件运行时
+ * @param source - 音源标识
+ * @param track - 待匹配曲目
+ * @returns 匹配到的插件曲目数据，无匹配时为 null
  */
 const findMatch = async (
   rt: PluginRuntime,
   source: string,
   track: Track,
 ): Promise<MusicSearchCandidate | null> => {
+  if (track.source === "plugin") {
+    return track.plugin?.pluginId === rt.manifest.id && track.plugin.source === source
+      ? track.plugin.musicInfo
+      : null;
+  }
   if (PLATFORM_TO_PLUGIN_SOURCE[track.source] === source && track.id) {
     return {
       id: track.id,
@@ -92,6 +101,29 @@ export const matchCover = async (args: PluginMatchCoverArgs): Promise<MusicPicRe
     return pic?.url ? pic : null;
   } catch (err) {
     pluginLog.warn("matchCover failed", args.pluginId, args.source, (err as Error)?.message);
+    return null;
+  }
+};
+
+/** 经某插件源兜底取评论，复用与歌词/封面相同的曲目匹配流程。 */
+export const matchComment = async (
+  args: PluginMatchCommentArgs,
+): Promise<MusicCommentPage | null> => {
+  const rt = pluginRegistry.getRuntime(args.pluginId);
+  if (!rt || rt.status.state !== "ready") return null;
+  try {
+    const musicInfo = await findMatch(rt, args.source, args.track);
+    if (!musicInfo) return null;
+    return await callMusicComment(rt, {
+      source: args.source,
+      musicInfo,
+      type: args.type,
+      page: args.page,
+      limit: args.limit,
+      cursor: args.cursor,
+    });
+  } catch (err) {
+    pluginLog.warn("matchComment failed", args.pluginId, args.source, (err as Error)?.message);
     return null;
   }
 };
