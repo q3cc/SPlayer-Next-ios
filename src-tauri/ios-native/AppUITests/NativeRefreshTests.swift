@@ -22,7 +22,7 @@ final class NativeRefreshTests: XCTestCase {
   func testNativeSearchPlaybackAndRotation() {
     continueAfterFailure = false
     let app = XCUIApplication()
-    app.launchArguments = ["--uitest-light"]
+    app.launchArguments = ["--uitest-light", "--uitest-player-am"]
     app.launch()
     XCUIDevice.shared.orientation = .portrait
     XCTAssertTrue(app.tabBars.buttons["搜索"].waitForExistence(timeout: 15), app.debugDescription)
@@ -36,6 +36,8 @@ final class NativeRefreshTests: XCTestCase {
     input.typeText("英雄主义\n")
     let song = app.buttons["native.song.netease:2684510360"]
     XCTAssertTrue(song.waitForExistence(timeout: 35), app.debugDescription)
+    let expectedTitle = song.staticTexts.firstMatch.label
+    XCTAssertFalse(expectedTitle.isEmpty)
     capture(app, "native-portrait-search")
     song.tap()
     let playPause = app.buttons["native.wide.playPause"]
@@ -44,7 +46,7 @@ final class NativeRefreshTests: XCTestCase {
     XCTAssertEqual(XCTWaiter.wait(for: [playing], timeout: 35), .completed, app.debugDescription)
     app.buttons["native.wide.nowPlaying"].tap()
     XCTAssertTrue(app.staticTexts["native.player.title"].waitForExistence(timeout: 5))
-    XCTAssertEqual(app.staticTexts["native.player.title"].label, "英雄主义")
+    XCTAssertEqual(app.staticTexts["native.player.title"].label, expectedTitle)
     let before = app.staticTexts["native.player.position"].label
     Thread.sleep(forTimeInterval: 3)
     XCTAssertNotEqual(app.staticTexts["native.player.position"].label, before)
@@ -52,13 +54,14 @@ final class NativeRefreshTests: XCTestCase {
     XCUIDevice.shared.orientation = .landscapeLeft
     Thread.sleep(forTimeInterval: 2)
     capture(app, "native-landscape-player")
+    app.coordinate(withNormalizedOffset: CGVector(dx: 0.01, dy: 0.5)).tap()
     app.buttons["native.player.playPause"].tap()
     app.buttons["收起播放器"].tap()
     XCTAssertTrue(app.buttons["native.wide.nav.首页"].waitForExistence(timeout: 5))
     app.buttons["native.wide.nav.首页"].tap()
     capture(app, "native-landscape-home")
     app.buttons["播放队列"].firstMatch.tap()
-    XCTAssertTrue(app.staticTexts["英雄主义"].firstMatch.waitForExistence(timeout: 5))
+    XCTAssertTrue(app.staticTexts[expectedTitle].firstMatch.waitForExistence(timeout: 5))
     capture(app, "native-queue")
     app.buttons["关闭"].tap()
     app.buttons["native.wide.settings"].tap()

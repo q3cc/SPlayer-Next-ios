@@ -4,12 +4,22 @@ import SwiftUI
 struct NativeHomeView: View {
   @ObservedObject var player: NativePlayerStore
   @ObservedObject var catalog: NativeCatalogStore
+  @ObservedObject var stats: NativePlayStats
   let openPlaylist: (NativeCover) -> Void
   let importMusic: () -> Void
+  /// 每次进入首页随机挑一条副标题，与原版 useHomeHeader 一致
+  @State private var subtitle = NativeHomeView.plainSubtitles[0]
+  private static let plainSubtitles = ["愿今天有好音乐与你相伴", "戴上耳机，让世界安静一会儿", "音乐已就绪，挑一首开始吧"]
+  /// 最高播放次数达到此值才呈现为“反复聆听”
+  private static let repeatThreshold = 2
+
   private var greeting: String {
     let hour = Calendar.current.component(.hour, from: Date())
-    return hour < 6 ? "凌晨好" : hour < 12 ? "早上好" : hour < 18 ? "下午好" : "晚上好"
+    return hour < 6
+      ? "凌晨好" : hour < 12 ? "早上好" : hour < 14 ? "中午好" : hour < 18 ? "下午好" : "晚上好"
   }
+  private var summary: NativePlayStatsSummary { stats.homeSnapshot().summary }
+  private var continueItems: [NativeRankItem] { stats.homeSnapshot().top }
   var body: some View {
     GeometryReader { geometry in
       ScrollView {
@@ -17,17 +27,14 @@ struct NativeHomeView: View {
           HStack(alignment: .top, spacing: 24) {
             VStack(alignment: .leading, spacing: 8) {
               Text(greeting).font(.system(size: 30, weight: .bold))
-              Text(
-                player.history.isEmpty
-                  ? "今天想听点什么？发现属于你的音乐" : "今天想听点什么？继续上次的 \(player.history.count) 首最近播放吧"
-              )
-              .font(.system(size: 14)).foregroundStyle(.secondary)
+              Text(subtitle).font(.system(size: 14)).foregroundStyle(.secondary)
             }
             Spacer(minLength: 0)
             if geometry.size.width > 600 {
-              metric("\(player.tracks.count)", "首", "本地歌曲")
-              metric("\(player.favoriteTracks.count)", "首", "喜欢的音乐")
-              metric("\(player.history.count)", "首", "最近听过")
+              let summary = summary
+              metric(String(format: "%.1f", summary.weekListenedMs / 3_600_000), "h", "本周时长")
+              metric("\(summary.weekFavoriteAdds)", "首", "新增收藏")
+              metric("\(summary.streakDays)", "天", "连续收听")
             }
           }
           LazyVGrid(
@@ -43,41 +50,22 @@ struct NativeHomeView: View {
               }
             }
             action("每日推荐", "每天为你精选", "calendar") { loadSpecial("daily") }
-            action("心动模式", "播放喜欢的音乐", "heart.circle") {
-              if let track = player.favoriteTracks.randomElement() {
-                player.play(track, in: player.favoriteTracks)
-              } else {
-                player.error = "先收藏喜欢的歌曲，再开启心动模式"
-              }
+            action("心动模式", "根据喜好智能播放", "heart.circle") {
+              Task { await player.startHeartMode() }
             }
-            action("私人 FM", "为你不停推荐", "dot.radiowaves.left.and.right") { loadSpecial("fm") }
-          }
-          VStack(alignment: .leading, spacing: 16) {
-            Text("继续聆听").font(.system(size: 18, weight: .semibold))
-            if player.history.isEmpty {
-              VStack(spacing: 12) {
-                Image(systemName: "headphones").font(.system(size: 28))
-                Text("还没有播放记录，去听点什么吧").font(.system(size: 14))
-              }.foregroundStyle(.secondary).frame(maxWidth: .infinity).frame(height: 136)
-                .overlay(
-                  RoundedRectangle(cornerRadius: 14).stroke(
-                    style: StrokeStyle(lineWidth: 1, dash: [3, 3])
-                  ).foregroundStyle(Color.primary.opacity(0.12)))
-            } else {
-              LazyVGrid(columns: [GridItem(.adaptive(minimum: 300), spacing: 12)], spacing: 12) {
-                ForEach(Array(player.history.prefix(6))) { track in
-                  Button {
-                    player.play(track, in: player.history)
-                  } label: {
-                    NativeTrackRow(track: track, selected: player.current?.id == track.id).padding(
-                      .horizontal, 12)
+            action("私人 FM", "为你不停推荐", "dot.radiowaves.left.and.right") {
+              if player.fmMode {
+                player.error = "已处于私人 FM"
+              } else {
+                Task {
+                  if !(await player.startFM()), player.error == nil {
+                    player.error = "私人 FM 开启失败，请稍后重试"
                   }
-                  .buttonStyle(.plain).background(
-                    Color.nativePanel, in: RoundedRectangle(cornerRadius: 12))
                 }
               }
             }
           }
+          continueSection(wide: geometry.size.width >= 1280)
           VStack(alignment: .leading, spacing: 12) {
             VStack(alignment: .leading, spacing: 6) {
               Text("推荐歌单").font(.system(size: 18, weight: .semibold))
@@ -101,6 +89,7 @@ struct NativeHomeView: View {
                 } label: {
                   VStack(alignment: .leading, spacing: 10) {
                     NativeArtwork(cover: cover.cover, radius: 12).aspectRatio(1, contentMode: .fit)
+                      .nativeCoverAnchor("cover." + cover.id, radius: 12)
                     Text(cover.title).font(.system(size: 14, weight: .medium)).lineLimit(2).frame(
                       height: 38, alignment: .topLeading)
                     if let subtitle = cover.subtitle {
@@ -121,6 +110,81 @@ struct NativeHomeView: View {
           ).accessibilityIdentifier("native.import.home")
         }.padding(24).frame(maxWidth: 1400).frame(maxWidth: .infinity)
       }.refreshable { await catalog.loadHome(refresh: true) }
+    }.task { subtitle = pickSubtitle() }
+  }
+
+  /// 副标题候选池：数据不足的条目不入池，纯问候恒在
+  private func pickSubtitle() -> String {
+    let data = summary
+    var pool = Self.plainSubtitles
+    if data.streakDays >= 2 { pool.append("你已连续收听 \(data.streakDays) 天，继续保持") }
+    if data.weekListenedMs > 0 {
+      pool.append("本周已经听了 " + Self.duration(data.weekListenedMs))
+      let diff = data.weekListenedMs - data.lastWeekListenedMs
+      if data.lastWeekListenedMs > 0 && abs(diff) >= 60000 {
+        pool.append("本周比上周\(diff > 0 ? "多" : "少")听了 " + Self.duration(abs(diff)))
+      }
+    }
+    if data.weekFavoriteAdds > 0 { pool.append("本周新收藏了 \(data.weekFavoriteAdds) 首歌") }
+    if !player.history.isEmpty {
+      pool.append("今天想听点什么？继续上次的 \(player.history.count) 首最近播放吧")
+    }
+    return pool.randomElement() ?? Self.plainSubtitles[0]
+  }
+
+  /// 时长格式化：X 小时 Y 分钟
+  static func duration(_ ms: Double) -> String {
+    let minutes = Int((ms / 60000).rounded())
+    if minutes >= 60 && minutes % 60 > 0 { return "\(minutes / 60) 小时 \(minutes % 60) 分钟" }
+    if minutes >= 60 { return "\(minutes / 60) 小时" }
+    return "\(minutes) 分钟"
+  }
+
+  /// 反复聆听 / 继续聆听：取最常播放曲目，次数都低时等价于最近在听
+  private func continueSection(wide: Bool) -> some View {
+    let items = continueItems
+    let repeating = (items.first?.plays ?? 0) >= Self.repeatThreshold
+    return VStack(alignment: .leading, spacing: 12) {
+      VStack(alignment: .leading, spacing: 2) {
+        Text(repeating ? "反复聆听" : "继续聆听").font(.system(size: 18, weight: .semibold))
+        if !items.isEmpty {
+          Text(repeating ? "你最常听的 \(items.count) 首歌" : "你最近在听的 \(items.count) 首歌")
+            .font(.system(size: 12)).foregroundStyle(.secondary)
+        }
+      }
+      if items.isEmpty {
+        VStack(spacing: 8) {
+          Image(systemName: "headphones").font(.system(size: 28))
+          Text("还没有播放记录，去听点什么吧").font(.system(size: 14))
+        }.foregroundStyle(.secondary).frame(maxWidth: .infinity).padding(.vertical, 40)
+          .overlay(
+            RoundedRectangle(cornerRadius: 14).stroke(style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+              .foregroundStyle(Color.primary.opacity(0.12)))
+      } else {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 3), spacing: 12) {
+          ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+            Button {
+              player.playNow(item.track)
+            } label: {
+              HStack(spacing: 12) {
+                Text(String(format: "%02d", index + 1)).font(.system(size: 14, weight: .semibold).monospacedDigit())
+                  .foregroundStyle(.tertiary).frame(width: 20)
+                NativeArtwork(cover: item.track.cover).frame(width: 48, height: 48)
+                VStack(alignment: .leading, spacing: 2) {
+                  Text(item.track.title).font(.system(size: 14)).lineLimit(1)
+                  Text(item.track.artist).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
+                }
+                Spacer(minLength: 0)
+                if wide {
+                  Text("播放 \(item.plays) 次").font(.system(size: 12).monospacedDigit())
+                    .foregroundStyle(.secondary)
+                }
+              }.padding(12).background(Color.nativePanel, in: RoundedRectangle(cornerRadius: 16))
+                .contentShape(Rectangle())
+            }.buttonStyle(.plain).accessibilityIdentifier("native.home.continue." + item.track.id)
+          }
+        }
+      }
     }
   }
   /// 以数值、单位和标签保持统计项的视觉层级

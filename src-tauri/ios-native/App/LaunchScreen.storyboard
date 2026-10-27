@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<document type="com.apple.InterfaceBuilder3.CocoaTouch.Storyboard.XIB" version="3.0" toolsVersion="23501" targetRuntime="iOS.CocoaTouch" propertyAccessControl="none" useAutolayout="YES" launchScreen="YES" useTraitCollections="YES" useSafeAreas="YES" colorMatched="YES" initialViewController="launch-controller">
+  <device id="ipad11_0rounded" orientation="portrait" layout="fullscreen" appearance="light"/>
+  <dependencies><plugIn identifier="com.apple.InterfaceBuilder.IBCocoaTouchPlugin" version="23500"/><capability name="Named colors" minToolsVersion="9.0"/><capability name="Safe area layout guides" minToolsVersion="9.0"/></dependencies>
+  <scenes><scene sceneID="launch-scene"><objects>
+    <viewController id="launch-controller" sceneMemberID="viewController"><view key="view" contentMode="scaleToFill" id="launch-view">
+      <rect key="frame" x="0.0" y="0.0" width="834" height="1210"/>
+      <subviews><imageView userInteractionEnabled="NO" contentMode="scaleAspectFit" image="LaunchLogo" translatesAutoresizingMaskIntoConstraints="NO" id="launch-logo"><rect key="frame" x="377" y="535" width="80" height="80"/><constraints><constraint firstAttribute="width" constant="80" id="logo-width"/><constraint firstAttribute="height" constant="80" id="logo-height"/></constraints></imageView></subviews>
+      <viewLayoutGuide key="safeArea" id="launch-safe"/><color key="backgroundColor" name="LaunchBackground"/>
+      <constraints><constraint firstItem="launch-logo" firstAttribute="centerX" secondItem="launch-view" secondAttribute="centerX" id="logo-x"/><constraint firstItem="launch-logo" firstAttribute="centerY" secondItem="launch-view" secondAttribute="centerY" constant="-30" id="logo-y"/></constraints>
+    </view></viewController><placeholder placeholderIdentifier="IBFirstResponder" id="launch-responder" sceneMemberID="firstResponder"/>
+  </objects></scene></scenes>
+  <resources><image name="LaunchLogo" width="200" height="200"/><namedColor name="LaunchBackground"><color red="0.965" green="0.965" blue="0.965" alpha="1" colorSpace="custom" customColorSpace="sRGB"/></namedColor></resources>
+</document>

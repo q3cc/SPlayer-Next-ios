@@ -3,7 +3,7 @@ import type {
   RecognitionEvent,
   RecognitionCandidate,
 } from "@shared/types/recognition";
-import { mobileProviders } from "./providers";
+import { matchFingerprint } from "./recognitionMatch";
 import { addPluginListener, invoke } from "@tauri-apps/api/core";
 import { isIOS } from "./platform";
 
@@ -127,37 +127,8 @@ export const mobileRecognition: RecognitionApi = {
       if (current !== generation || !fingerprint) return;
       phase = "matching";
       emit({ phase });
-      const response = await mobileProviders.call("netease", "audio_match", {
-        audioFP: fingerprint,
-        duration: pcm.length / 8000,
-      });
+      const candidates = await matchFingerprint(fingerprint, pcm.length / 8000);
       if (current !== generation) return;
-      const body = response.body as {
-        code?: number;
-        data?: {
-          result?: Array<{
-            startTime?: number;
-            song?: {
-              id: number;
-              name: string;
-              artists: { name: string }[];
-              album?: { name: string; picUrl?: string };
-            };
-          }>;
-        };
-      };
-      if (!response.ok || body?.code !== 200) throw new Error("识曲服务请求失败");
-      const candidates = (body.data?.result ?? [])
-        .filter((item) => item.song)
-        .slice(0, 3)
-        .map(({ song, startTime }) => ({
-          songId: String(song!.id),
-          title: song!.name,
-          artists: song!.artists.map((artist) => artist.name),
-          album: song!.album?.name,
-          cover: song!.album?.picUrl,
-          startTime,
-        }));
       emit({ phase: "done", candidates });
     } catch (error) {
       if (current === generation)

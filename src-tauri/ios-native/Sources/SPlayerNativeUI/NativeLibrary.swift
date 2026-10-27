@@ -41,6 +41,14 @@ public struct NativeLyricWord: Decodable, Equatable {
   let text: String
   let startMs: Double
   let endMs: Double
+  var romanization: String?
+  var ruby: [NativeLyricRuby]?
+}
+
+struct NativeLyricRuby: Equatable, Decodable {
+  let text: String
+  let startMs: Double
+  let endMs: Double
 }
 
 public struct NativeLyricLine: Identifiable, Equatable, Decodable {
@@ -50,6 +58,11 @@ public struct NativeLyricLine: Identifiable, Equatable, Decodable {
   var endMs: Double = 0
   var translation: String = ""
   var words: [NativeLyricWord] = []
+  var romanization: String?
+  var isDuet: Bool?
+  var isBackground: Bool?
+  /// lyric-kit 按整首歌识别的行语言，用于分语言字体
+  var language: String?
 
   /// 解析 LRC 多时间戳，统一为按时间排序的毫秒行
   public static func parse(_ text: String) -> [NativeLyricLine] {
@@ -175,6 +188,52 @@ public actor NativeLibrary {
     }
   }
 
+  /// 下载文件移入曲库：封面按 300px 缩略图保存，歌词保存为 TTML 以保留翻译与音译
+  func addDownloaded(
+    file: URL, format: String, track: NativeTrack, cover: Data?, lyrics: String
+  ) throws -> NativeTrack {
+    try manager.createDirectory(at: root, withIntermediateDirectories: true)
+    let id = UUID()
+    let fileName = id.uuidString + "." + format
+    let destination = root.appendingPathComponent(fileName)
+    try manager.moveItem(at: file, to: destination)
+    var coverName: String?
+    if let cover, let source = CGImageSourceCreateWithData(cover as CFData, nil),
+      let image = CGImageSourceCreateThumbnailAtIndex(
+        source, 0,
+        [
+          kCGImageSourceCreateThumbnailFromImageAlways: true,
+          kCGImageSourceThumbnailMaxPixelSize: 300,
+          kCGImageSourceCreateThumbnailWithTransform: true,
+        ] as CFDictionary),
+      let output = CGImageDestinationCreateWithURL(
+        root.appendingPathComponent(id.uuidString + ".jpg") as CFURL,
+        UTType.jpeg.identifier as CFString, 1, nil)
+    {
+      CGImageDestinationAddImage(
+        output, image, [kCGImageDestinationLossyCompressionQuality: 0.85] as CFDictionary)
+      if CGImageDestinationFinalize(output) { coverName = "native-cover:" + id.uuidString + ".jpg" }
+    }
+    let added = NativeTrack(
+      id: id.uuidString, fileName: fileName, title: track.title, artist: track.artist,
+      durationMs: track.durationMs, cover: coverName, album: track.album)
+    do {
+      if !lyrics.isEmpty {
+        try lyrics.write(
+          to: root.appendingPathComponent(added.lyricFileName), atomically: true, encoding: .utf8)
+      }
+      var tracks = try load()
+      tracks.append(added)
+      try save(tracks)
+    } catch {
+      try? manager.removeItem(at: destination)
+      try? manager.removeItem(at: root.appendingPathComponent(id.uuidString + ".jpg"))
+      try? manager.removeItem(at: root.appendingPathComponent(added.lyricFileName))
+      throw error
+    }
+    return added
+  }
+
   /// 删除应用内记录和副本，保留用户原始文件
   public func remove(_ track: NativeTrack) throws {
     let tracks = try load().filter { $0.id != track.id }
@@ -217,6 +276,7 @@ public actor NativeLibrary {
 }
 
 struct NativePlaybackState: Codable {
+  var playbackContext: String?
   var queue: [NativeTrack] = []
   var currentID: String?
   var positionMs: Double = 0

@@ -8,8 +8,21 @@ build/
 Sources/SPlayerNativeUI/GeneratedSiriRuntime.swift
 Sources/SPlayerNativeUI/Resources/siri-background.js
 Sources/SPlayerNativeUI/Resources/siri-bootstrap.js
+Sources/SPlayerNativeUI/Resources/afp-runtime.js
 
 Sources/SPlayerNativeUI/Resources/native-plugin.js
 
 Sources/SPlayerNativeUI/Resources/QuickJS-LICENSE.txt
 Sources/SPlayerNativeUI/Resources/SPlayer-LICENSE.txt
+
+# 构建时从锁定依赖和共享 iOS 音频源码生成
+Sources/SPlayerNativeUI/GeneratedAudioAnalysis.swift
+Sources/SPlayerNativeUI/Resources/AMLLMesh.js
+Sources/SPlayerNativeUI/Resources/NextCoverColors.js
+Sources/SPlayerNativeUI/Resources/AMLL-LICENSE.txt
+Sources/SPlayerNativeUI/Resources/AudioStreaming-LICENSE.txt
+Sources/SPlayerNativeUI/Resources/MaterialColors-LICENSE.txt
+Sources/SPlayerNativeUI/Resources/GLMatrix-LICENSE.txt
+
+# 构建时写入提交信息
+Sources/SPlayerNativeUI/Resources/build-info.json

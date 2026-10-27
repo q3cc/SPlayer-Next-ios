@@ -1,0 +1,32 @@
+// AMLL 0.5.2 mesh.vert.glsl / mesh.frag.glsl 的 Metal 移植，AGPL-3.0-only
+#include <metal_stdlib>
+using namespace metal;
+struct Uniforms { float aspect; float angle; float volume; float alpha; float height; };
+struct Varying { float4 position [[position]]; float3 color; float2 uv; };
+vertex Varying meshVertex(uint id [[vertex_id]], const device float *data [[buffer(0)]], constant Uniforms &u [[buffer(1)]]) {
+ uint i=id*7; float2 p=float2(data[i],data[i+1]);
+ if(u.aspect>1) p.y*=u.aspect; else p.x/=u.aspect;
+ return {float4(p,0,1),float3(data[i+2],data[i+3],data[i+4]),float2(data[i+5],data[i+6])};
+}
+fragment float4 meshFragment(Varying v [[stage_in]], texture2d<float> tex [[texture(0)]], constant Uniforms &u [[buffer(1)]]) {
+ constexpr sampler s(filter::linear,address::mirrored_repeat);
+ float2 uv=v.uv-.2;
+ float2 rotated=float2(cos(u.angle)*uv.x-sin(u.angle)*uv.y,sin(u.angle)*uv.x+cos(u.angle)*uv.y);
+ float4 result=tex.sample(s,rotated*max(.001,1-u.volume*2)+.5);
+ float alpha=u.alpha*max(.5,1-u.volume*.5);
+ result.rgb*=v.color*alpha; result.a*=alpha;
+ float2 fragCoord=float2(v.position.x,u.height-v.position.y);
+ float dither=fract(52.9829189*fract(dot(fragCoord,float2(.06711056,.00583715))))/255-.5/255;
+ result.rgb+=dither;
+ float x=clamp((distance(v.uv,float2(.5))-.8)/(.3-.8),0.0,1.0);
+ result.rgb*=.6+(x*x*(3-2*x))*.4;
+ return result;
+}
+vertex Varying quadVertex(uint id [[vertex_id]]) {
+ const float2 p[6]={float2(-1,-1),float2(1,-1),float2(-1,1),float2(-1,1),float2(1,-1),float2(1,1)};
+ return {float4(p[id],0,1),float3(1),float2(p[id].x*.5+.5,.5-p[id].y*.5)};
+}
+fragment float4 quadFragment(Varying v [[stage_in]], texture2d<float> tex [[texture(0)]], constant Uniforms &u [[buffer(1)]]) {
+ constexpr sampler s(filter::linear,address::clamp_to_edge);
+ float4 color=tex.sample(s,v.uv); color.a*=u.alpha; return color;
+}

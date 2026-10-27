@@ -15,9 +15,22 @@ await copyFile(
   resolve(target, "Resources/siri-bootstrap.js"),
 );
 
+// 听歌识曲与广播扩展共用同一份经 CI 校验的 AFP 指纹运行时。
+await copyFile(
+  resolve(root, "src-tauri/ios-recognition/afp-runtime.js"),
+  resolve(target, "Resources/afp-runtime.js"),
+);
+
 // 运行时许可证随应用分发，源文件仍以 vendor/LICENSE 为准
 await copyFile(
   resolve(target, "../CQuickJS/vendor/LICENSE"),
   resolve(target, "Resources/QuickJS-LICENSE.txt"),
 );
 await copyFile(resolve(root, "LICENSE"), resolve(target, "Resources/SPlayer-LICENSE.txt"));
+
+// 原生播放器与旧 iOS 宿主共用响度分析算法。
+await writeFile(
+  resolve(target, "GeneratedAudioAnalysis.swift"),
+  "// 由 prepare-services.mjs 生成，请修改共享 AudioAnalysis.swift\n" +
+    (await readFile(resolve(source, "AudioAnalysis.swift"), "utf8")),
+);

@@ -123,3 +123,9 @@ extension NativeTrack {
     ]
   }
 }
+
+/// 私人 FM 推荐模式与场景，取值与 Next 的 PersonalFmOptions 一致
+struct NativeFMOption: Equatable {
+  var mode: String
+  var submode: String?
+}

@@ -5,6 +5,7 @@ let package = Package(
   name: "SPlayerNativeUI",
   platforms: [.iOS(.v16), .macOS(.v14)],
   products: [.library(name: "SPlayerNativeUI", targets: ["SPlayerNativeUI"])],
+  dependencies: [.package(path: "../vendor/AudioStreaming")],
   targets: [
     .target(
       name: "CQuickJS", path: "Sources/CQuickJS", exclude: ["vendor/LICENSE"],
@@ -14,7 +15,9 @@ let package = Package(
       ], publicHeadersPath: "include", cSettings: [.define("_GNU_SOURCE")],
       linkerSettings: [.linkedFramework("Security")]),
     .target(
-      name: "SPlayerNativeUI", dependencies: ["CQuickJS"], resources: [.process("Resources")]),
+      name: "SPlayerNativeUI",
+      dependencies: ["CQuickJS", .product(name: "AudioStreaming", package: "AudioStreaming")],
+      resources: [.process("Resources")]),
     .testTarget(name: "SPlayerNativeUITests", dependencies: ["SPlayerNativeUI"]),
   ]
 )

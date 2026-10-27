@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct NativeLogo: View {
+  var branded = false
   /// 按原版 SLogo 的 1024 坐标重建矢量标志，避免大封面放大低分辨率 PNG
   var body: some View {
     GeometryReader { geometry in
@@ -9,7 +10,10 @@ struct NativeLogo: View {
         Path { path in
           path.addEllipse(in: CGRect(x: 65.618, y: 131.708, width: 892.292, height: 892.292))
           path.addEllipse(in: CGRect(x: 439.935, y: 508.701, width: 143.659, height: 143.659))
-        }.fill(Color.primary.opacity(0.30), style: FillStyle(eoFill: true))
+        }.fill(
+          branded
+            ? Color(red: 245 / 255, green: 94 / 255, blue: 85 / 255) : Color.primary.opacity(0.30),
+          style: FillStyle(eoFill: true))
         Path { path in
           path.move(to: CGPoint(x: 802.205, y: 0.541))
           path.addLine(to: CGPoint(x: 634.008, y: 37.571))
@@ -28,11 +32,13 @@ struct NativeLogo: View {
             to: CGPoint(x: 802.205, y: 0.541), control1: CGPoint(x: 834.328, y: 9),
             control2: CGPoint(x: 820, y: -3))
           path.closeSubpath()
-        }.fill(Color.primary)
+        }.fill(branded ? Color(red: 249 / 255, green: 187 / 255, blue: 184 / 255) : Color.primary)
         Path { path in
           path.addEllipse(in: CGRect(x: 324.829, y: 386.457, width: 373.870, height: 373.870))
           path.addEllipse(in: CGRect(x: 440.381, y: 508.255, width: 142.767, height: 142.767))
-        }.fill(Color.primary, style: FillStyle(eoFill: true))
+        }.fill(
+          branded ? Color(red: 249 / 255, green: 187 / 255, blue: 184 / 255) : Color.primary,
+          style: FillStyle(eoFill: true))
       }.frame(width: 1024, height: 1024).scaleEffect(scale, anchor: .topLeading)
         .frame(width: geometry.size.width, height: geometry.size.height, alignment: .topLeading)
     }.accessibilityLabel("SPlayer 标志")

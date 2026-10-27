@@ -4,7 +4,7 @@ import SwiftUI
 struct NativeCollectionsView: View {
   @ObservedObject var player: NativePlayerStore
   let open: (NativeCover) -> Void
-  let select: (String) -> Void
+  let select: (NativePlaylist) -> Void
   @State private var creating = false
   @State private var name = ""
   @State private var deleting: String?
@@ -29,6 +29,7 @@ struct NativeCollectionsView: View {
             } label: {
               VStack(alignment: .leading, spacing: 10) {
                 NativeArtwork(cover: cover.cover).aspectRatio(1, contentMode: .fit)
+                  .nativeCoverAnchor("cover." + cover.id, radius: 8)
                 Text(cover.title).font(.system(size: 14)).lineLimit(2)
               }
             }.buttonStyle(.plain).contextMenu { Button("取消收藏") { player.toggleBookmark(cover) } }
@@ -37,10 +38,11 @@ struct NativeCollectionsView: View {
         Text("本地歌单").font(.headline)
         ForEach(player.playlists) { playlist in
           Button {
-            select(playlist.id)
+            select(playlist)
           } label: {
             HStack(spacing: 16) {
               NativeArtwork(cover: playlist.tracks.first?.cover).frame(width: 52, height: 52)
+                .nativeCoverAnchor("cover.local." + playlist.id, radius: 8)
               Text(playlist.name)
               Spacer()
               Text("\(playlist.tracks.count) 首").foregroundStyle(.secondary)
@@ -59,7 +61,9 @@ struct NativeCollectionsView: View {
       Button("创建") {
         player.createPlaylist(name)
         name = ""
-        if let id = player.selectedPlaylistID { select(id) }
+        if let playlist = player.playlists.first(where: { $0.id == player.selectedPlaylistID }) {
+          select(playlist)
+        }
       }
     }.confirmationDialog(
       "删除歌单？音乐文件不会被删除",

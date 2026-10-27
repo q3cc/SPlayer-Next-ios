@@ -17,6 +17,7 @@ enum NativePage: String, CaseIterable, Identifiable {
   case stats = "统计"
   case liked = "我喜欢的音乐"
   case history = "播放历史"
+  case downloads = "下载管理"
   case playlist = "歌单"
   case settings = "全局设置"
   var id: String { rawValue }
@@ -34,6 +35,7 @@ enum NativePage: String, CaseIterable, Identifiable {
     case .stats: return "chart.bar"
     case .liked: return "heart"
     case .history: return "clock.arrow.circlepath"
+    case .downloads: return "arrow.down.circle"
     case .playlist: return "music.note.list"
     case .settings: return "gearshape"
     }

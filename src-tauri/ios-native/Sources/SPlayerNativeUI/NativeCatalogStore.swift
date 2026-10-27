@@ -10,6 +10,8 @@ final class NativeCatalogStore: ObservableObject {
   @Published private(set) var recommendations: [NativeCover] = []
   @Published private(set) var playlist: [NativeTrack] = []
   @Published private(set) var playlistTitle = ""
+  /// 当前打开的歌单卡片，详情头部直接沿用卡片封面与简介
+  @Published private(set) var playlistCover: NativeCover?
   @Published private(set) var searching = false
   @Published private(set) var loadingHome = false
   @Published private(set) var loadingPlaylist = false
@@ -81,6 +83,7 @@ final class NativeCatalogStore: ObservableObject {
     playlistGeneration += 1
     let generation = playlistGeneration
     playlistTitle = cover.title
+    playlistCover = cover
     playlist = []
     loadingPlaylist = true
     error = nil

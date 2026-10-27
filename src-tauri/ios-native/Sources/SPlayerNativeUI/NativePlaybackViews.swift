@@ -6,6 +6,16 @@ struct NativePlaybackBar: View {
   let wide: Bool
   let showPlayer: () -> Void
   let showQueue: () -> Void
+  @AppStorage("native.player.lyricInBar") private var lyricInBar = true
+  @State private var fmModes = false
+  /// 加载中提示解析状态；播放时可按设置用当前歌词替换歌手名
+  private var subtitle: String {
+    if player.loadingTrack != nil { return "正在解析音源…" }
+    if lyricInBar, player.isPlaying, let line = player.currentLyric, !line.text.isEmpty {
+      return line.text
+    }
+    return player.artist
+  }
   var body: some View {
     VStack(spacing: 0) {
       GeometryReader { geometry in
@@ -19,9 +29,10 @@ struct NativePlaybackBar: View {
         Button(action: showPlayer) {
           HStack(spacing: 12) {
             NativeArtwork(cover: player.current?.cover).frame(width: 44, height: 44)
+              .nativeCoverAnchor("player.bar", radius: 8)
             VStack(alignment: .leading, spacing: 5) {
               Text(player.title).font(.system(size: 14, weight: .medium)).lineLimit(1)
-              Text(player.loadingTrack == nil ? player.artist : "正在解析音源…").font(.system(size: 12))
+              Text(subtitle).font(.system(size: 12))
                 .foregroundStyle(.secondary).lineLimit(1)
             }
             Spacer(minLength: 0)
@@ -29,12 +40,21 @@ struct NativePlaybackBar: View {
         }.buttonStyle(.plain).accessibilityIdentifier("native.wide.nowPlaying")
         Spacer(minLength: 0)
         HStack(spacing: 4) {
-          Button(action: showQueue) {
-            Image(systemName: "list.bullet").frame(width: 40, height: 44)
-          }.accessibilityLabel("播放队列")
+          if player.fmMode {
+            Button { fmModes = true } label: {
+              Image(systemName: "dot.radiowaves.left.and.right").frame(width: 40, height: 44)
+            }.accessibilityLabel("FM 模式与场景")
+            Button(action: player.dislikeFM) {
+              Image(systemName: "heart.slash").frame(width: 40, height: 44)
+            }.accessibilityLabel("不喜欢").accessibilityIdentifier("native.bar.fmTrash")
+          } else {
+            Button(action: showQueue) {
+              Image(systemName: "list.bullet").frame(width: 40, height: 44)
+            }.accessibilityLabel("播放队列")
+          }
           Button(action: player.previous) {
             Image(systemName: "backward.end").frame(width: 40, height: 44)
-          }.accessibilityLabel("上一首")
+          }.accessibilityLabel("上一首").disabled(player.fmMode).opacity(player.fmMode ? 0.4 : 1)
           Button(action: player.togglePlayback) {
             Group {
               if player.loadingTrack != nil {
@@ -54,9 +74,10 @@ struct NativePlaybackBar: View {
             Button {
               player.repeatOne.toggle()
             } label: {
-              Image(systemName: player.repeatOne ? "repeat.1" : "repeat").frame(
-                width: 40, height: 44)
-            }.accessibilityLabel("单曲循环")
+              Image(
+                systemName: player.fmMode ? "infinity" : player.repeatOne ? "repeat.1" : "repeat"
+              ).frame(width: 40, height: 44)
+            }.accessibilityLabel("单曲循环").disabled(player.fmMode)
           }
         }.buttonStyle(.plain).font(.system(size: 18))
         if wide {
@@ -77,6 +98,7 @@ struct NativePlaybackBar: View {
       .nativeGlass(in: RoundedRectangle(cornerRadius: 24), interactive: false)
       .padding(.horizontal, 12).padding(.vertical, 6)
       .accessibilityElement(children: .contain).accessibilityIdentifier("native.wide.playerbar")
+      .sheet(isPresented: $fmModes) { NativeFMModeView(player: player) }
   }
 }
 

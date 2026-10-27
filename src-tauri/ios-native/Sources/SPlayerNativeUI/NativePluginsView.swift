@@ -50,6 +50,7 @@ struct NativePluginsView: View {
             {
               NavigationLink("搜索 · " + source) {
                 NativePluginSearchView(plugins: plugins, pluginID: record.id, source: source)
+                  .nativeSettingsPage()
               }
             }
           }

@@ -1,6 +1,6 @@
 import { beforeEach, expect, it, vi } from "vitest";
 import type { Track } from "@shared/types/player";
-import { loadNativeLyrics } from "./lyrics";
+import { exportNativeLyrics, loadNativeLyrics, parseNativeLyrics } from "./lyrics";
 const mocks = vi.hoisted(() => ({ call: vi.fn() }));
 vi.mock("../providers", () => ({ mobileProviders: { call: mocks.call } }));
 beforeEach(() => vi.resetAllMocks());
@@ -47,4 +47,51 @@ it("超大歌词和失败响应不进入渲染", async () => {
   await expect(loadNativeLyrics(track)).rejects.toThrow("大小限制");
   mocks.call.mockResolvedValue({ ok: false, error: "失败" });
   await expect(loadNativeLyrics(track)).rejects.toThrow("失败");
+});
+
+it("原文与罗马音保留到原生显示和复制接口", async () => {
+  mocks.call.mockResolvedValue({
+    ok: true,
+    body: { lrc: { lyric: "[00:01.00]你好" }, romalrc: { lyric: "[00:01.00]ni hao" } },
+  });
+  const result = await loadNativeLyrics(track);
+  expect(result.raw).toBe("[00:01.00]你好");
+  expect(result.lines[0].romanization).toBe("ni hao");
+});
+
+it("导入 TTML 保留真实逐字时间", () => {
+  const result = parseNativeLyrics({
+    content:
+      '<tt xmlns="http://www.w3.org/ns/ttml"><body><div><p begin="1s" end="3s"><span begin="1s" end="2s">你</span><span begin="2s" end="3s">好</span></p></div></body></tt>',
+  });
+  expect(result.lines[0].words.map((word) => word.startMs)).toEqual([1000, 2000]);
+  expect(result.lines[0].endMs).toBe(3000);
+});
+
+it("按行标注语言，供原生分语言字体使用", () => {
+  const chinese = parseNativeLyrics({ content: "[00:01.00]你好世界\n[00:02.00]Hello world" });
+  expect(chinese.lines.map((line) => line.language)).toEqual(["zh-CN", "und-Latn"]);
+  // 含假名的歌曲中，纯汉字行按整首歌判定为日语
+  const japanese = parseNativeLyrics({
+    content: "[00:01.00]夜空\n[00:02.00]こんにちは\n[00:03.00]안녕하세요",
+  });
+  expect(japanese.lines.map((line) => line.language)).toEqual(["ja", "ja", "ko"]);
+});
+
+it("下载导出 TTML 与所选 LRC 格式", async () => {
+  mocks.call.mockResolvedValue({
+    ok: true,
+    body: {
+      yrc: { lyric: "[1000,1000](1000,400,0)你(1400,600,0)好" },
+      ytlrc: { lyric: "[00:01.00]Hello" },
+    },
+  });
+  const enhanced = await exportNativeLyrics(track, "enhanced-lrc");
+  expect(enhanced.ttml).toContain("<tt");
+  expect(enhanced.ttml).toContain("Hello");
+  expect(enhanced.lrc).toContain("<00:01.40>好");
+  const plain = await exportNativeLyrics(track, "lrc");
+  expect(plain.lrc).toContain("[00:01.00]你好");
+  mocks.call.mockResolvedValue({ ok: true, body: {} });
+  expect(await exportNativeLyrics(track, "lrc")).toEqual({ ttml: "", lrc: "" });
 });

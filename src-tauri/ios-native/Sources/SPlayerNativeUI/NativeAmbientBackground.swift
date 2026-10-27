@@ -2,54 +2,104 @@ import CoreImage
 import CoreImage.CIFilterBuiltins
 import SwiftUI
 
-/// 从 300px 封面采样色彩，仅在播放页可见且播放中以 30fps 更新渐变
+/// 模糊背景与 AMLL 原版流体算法共用缩略图，隐藏时停止渲染
 struct NativeAmbientBackground: View {
   let cover: String?
   let playing: Bool
+  var coverColors = NativeCoverColors()
+  var bassVolume: Double = 0.1
+  @AppStorage("native.player.background") private var mode = "blur"
+  @AppStorage("native.player.flowSpeed") private var flowSpeed = 4.0
+  @AppStorage("native.player.renderScale") private var renderScale = 0.5
+  @AppStorage("native.player.fps") private var fps = 30.0
+  @AppStorage("native.player.freezeOnPause") private var freezeOnPause = false
+  @State private var mesh: NativeFluidMesh?
+  @State private var meshID = ""
+  @State private var failure: String?
+  @State private var blurredImage: CGImage?
   @Environment(\.scenePhase) private var phase
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @NativeReduceMotion private var reduceMotion
   @State private var colors: [Color] = Self.defaultColors
   private static let defaultColors: [Color] = [
     .init(red: 0.26, green: 0.23, blue: 0.32), .init(red: 0.12, green: 0.14, blue: 0.22),
     .init(red: 0.30, green: 0.19, blue: 0.23), .init(red: 0.14, green: 0.20, blue: 0.26),
   ]
   var body: some View {
-    TimelineView(
-      .animation(minimumInterval: 1.0 / 30, paused: !playing || phase != .active || reduceMotion)
-    ) { timeline in
-      let time = timeline.date.timeIntervalSinceReferenceDate
-      let shift = Float(sin(time / 8) * 0.13)
-      #if compiler(>=6.0)
-        if #available(iOS 18.0, macOS 15.0, *) {
-          MeshGradient(
-            width: 3, height: 3,
-            points: [
-              .init(0, 0), .init(0.5, 0), .init(1, 0), .init(0, 0.5),
-              .init(0.5 + shift, 0.5 - shift), .init(1, 0.5), .init(0, 1), .init(0.5, 1),
-              .init(1, 1),
-            ],
-            colors: [
-              colors[0], colors[1], colors[2], colors[1], colors[2], colors[3], colors[2],
-              colors[3], colors[0],
-            ])
+    ZStack {
+      Color.black
+      if mode == "blur" {
+        GeometryReader { geometry in
+          if let blurredImage {
+            Image(decorative: blurredImage, scale: 1).resizable().scaledToFill()
+              .frame(width: geometry.size.width, height: geometry.size.height)
+              .scaleEffect(1.5).clipped()
+          } else {
+            LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing)
+          }
+        }.overlay(Color.black.opacity(0.5))
+      } else {
+        if mode == "solid" {
+          coverColors.base.overlay(Color.black.opacity(0.5))
         } else {
-          LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing)
+          #if os(iOS)
+            if let mesh {
+              NativeFluidBackground(
+                mesh: mesh, identity: meshID, active: phase == .active,
+                moving: !reduceMotion && (playing || !freezeOnPause), fps: Int(fps),
+                speed: flowSpeed, scale: renderScale, volume: bassVolume, failure: $failure)
+            }
+          #endif
+          if let failure { Text(failure).font(.caption).foregroundStyle(.white) }
         }
-      #else
-        LinearGradient(colors: colors, startPoint: .topLeading, endPoint: .bottomTrailing)
-      #endif
-    }.overlay(Color.black.opacity(0.65)).ignoresSafeArea().allowsHitTesting(false)
-      .task(id: cover) {
-        colors = Self.defaultColors
-        guard let cover, let image = await NativeArtworkCache.shared.image(cover, pixels: 300)
+      }
+    }.frame(maxWidth: .infinity, maxHeight: .infinity).ignoresSafeArea().allowsHitTesting(false)
+      .task(id: "\(cover ?? "")-\(mode)") {
+        guard
+          let image = await NativeArtworkCache.shared.image(
+            (cover?.isEmpty == false ? cover! : "native-default-cover"), pixels: 300)
         else { return }
-        let palette = await Task.detached(priority: .utility) { Self.sample(image) }.value
-        if !Task.isCancelled { colors = palette }
+        let result = await Task.detached(priority: .utility) {
+          (Self.sample(image), Self.blur(image))
+        }.value
+        if mode == "fluid" || mode == "animation" {
+          do {
+            let generated = try await Task.detached(priority: .utility) {
+              try NativeFluidMesh.make(image: image)
+            }.value
+            guard !Task.isCancelled else { return }
+            mesh = generated
+            meshID = UUID().uuidString
+            failure = nil
+          } catch { failure = "流体渲染失败：\(error.localizedDescription)" }
+        } else {
+          mesh = nil
+        }
+        let palette = result.0
+        if !Task.isCancelled {
+          withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.8)) {
+            colors = palette
+            blurredImage = result.1
+          }
+        }
       }
   }
 
+  /// 在 300px 缩略图上预计算模糊与饱和度，不创建全屏实时模糊层
+  nonisolated private static func blur(_ image: CGImage) -> CGImage? {
+    let input = CIImage(cgImage: image)
+    let color = CIFilter.colorControls()
+    color.inputImage = input.clampedToExtent()
+    color.saturation = 1.2
+    let filter = CIFilter.gaussianBlur()
+    filter.inputImage = color.outputImage
+    filter.radius = 8
+    guard let output = filter.outputImage else { return nil }
+    return CIContext(options: [.cacheIntermediates: false]).createCGImage(
+      output, from: input.extent)
+  }
+
   /// Core Image 将四个象限分别缩为单像素，不在内存保留全尺寸封面
-  private static func sample(_ image: CGImage) -> [Color] {
+  nonisolated private static func sample(_ image: CGImage) -> [Color] {
     let input = CIImage(cgImage: image)
     let context = CIContext(options: [.cacheIntermediates: false])
     let width = input.extent.width / 2
