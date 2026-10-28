@@ -38,6 +38,7 @@ public struct NativeRootView: View {
   @AppStorage("native.appearance") private var appearance = "system"
   @AppStorage(NativeMotion.routeKey) private var routeTransition = "fade"
   @AppStorage(NativeMotion.seamlessKey) private var seamless = false
+  @AppStorage(NativeLayout.sidebarCollapsedKey) private var sidebarCollapsed = false
   @NativeReduceMotion private var reduceMotion
   @StateObject private var flights = NativeCoverFlights()
   @State private var playerMotion = NativePlayerMotion.slide
@@ -54,36 +55,41 @@ public struct NativeRootView: View {
 
   public var body: some View {
     GeometryReader { geometry in
-      let wide = geometry.size.width >= 1000
+      let width = geometry.size.width
+      let wide = NativeLayout.isWide(width)
+      let narrow = NativeLayout.isNarrow(width)
+      let compact = NativeLayout.isCompact(width)
       VStack(spacing: 0) {
         HStack(spacing: 0) {
           if wide {
-            NativeSidebar(page: rootPage, player: player).frame(width: 240)
-            Divider()
+            NativeSidebar(
+              page: rootPage, player: player, account: player.account,
+              collapsed: sidebarCollapsed, openPlaylist: openCover
+            ).frame(width: NativeLayout.sidebarWidth(collapsed: sidebarCollapsed)).clipped()
+              .animation(reduceMotion ? nil : .easeInOut(duration: 0.3), value: sidebarCollapsed)
           }
           VStack(spacing: 0) {
             // 设置标签页是根页面：返回、搜索、识曲和打开设置的按钮都不适用
             if page != .settings {
               NativeTopbar(
-                catalog: player.catalog, wide: wide, canBack: previous != nil,
-                // 竖屏底部标签已有搜索和设置，顶栏不再重复；搜索页自带输入框
-                showSearch: wide && page != .search, showSettings: wide,
+                catalog: player.catalog, wide: wide, narrow: narrow, compact: compact,
+                canBack: previous != nil,
+                // 竖屏底部标签已有搜索和设置，顶栏不再重复；竖屏搜索页自带输入框
+                showSearch: wide, showSettings: wide,
                 back: goBack,
                 search: {
                   navigate(.search)
                   player.catalog.search()
                 },
                 recognize: { recognition = true }, settings: { settings = true },
-                account: { account = true })
+                accountStore: player.account, account: { account = true },
+                favorites: { navigate(.collections) })
             }
             ZStack {
               NativePageContent(
                 page: page, player: player, catalog: player.catalog,
                 appearance: $appearance, importMusic: startImport,
-                openPlaylist: { cover in
-                  player.catalog.open(cover)
-                  openDetail(.playlist, source: "cover." + cover.id, cover: cover.cover)
-                },
+                openPlaylist: openCover,
                 openLocalPlaylist: { playlist in
                   player.selectedPlaylistID = playlist.id
                   openDetail(
@@ -93,7 +99,9 @@ public struct NativeRootView: View {
                 navigate: navigate
               )
               // 不透明底色：移除中的旧页面不会透出到新页面下
-              .background(Color.nativeCanvas)
+              .background(Color.nativeSurface)
+              .environment(\.nativeWide, wide)
+              .environment(\.nativeViewport, width)
               .id(page)
               // 共享封面过渡期间页面直接切换，只让封面移动
               .transition(
@@ -104,7 +112,7 @@ public struct NativeRootView: View {
         }
         if player.current != nil || player.loadingTrack != nil {
           NativePlaybackBar(
-            player: player, wide: wide,
+            player: player, wide: wide, compact: compact,
             showPlayer: {
               coveredColorScheme = colorScheme
               playerCoversStatusBar = true
@@ -120,18 +128,20 @@ public struct NativeRootView: View {
               .padding()
           #endif
         }
-      }.background(Color.nativeCanvas)
+      }.background(Color.nativeSurface)
     }
     .environment(\.colorScheme, expanded ? coveredColorScheme ?? colorScheme : colorScheme)
     .overlay { if booting { NativeSplashView().transition(.opacity) } }
-    .tint(.primary)
+    .tint(.nativePrimary)
     .preferredColorScheme(presentationColorScheme)
     .task {
       async let entrance: Void = Task.sleep(nanoseconds: 1_100_000_000)
       await player.loadLibrary()
       _ = try? await entrance
       withAnimation(.easeOut(duration: 0.2)) { booting = false }
-      await player.catalog.loadHome()
+      // 登录态决定首页是专属歌单还是推荐歌单，先确认账号再拉取
+      await player.account.refresh()
+      await player.catalog.loadHome(loggedIn: player.account.account != nil)
     }
     .onChange(of: scenePhase) { player.setInterfaceActive($0 == .active) }
     .sheet(item: $presentation) { item in
@@ -150,7 +160,7 @@ public struct NativeRootView: View {
     }
     .sheet(isPresented: $account) {
       NavigationStack {
-        NativeAccountsView(service: player.service).toolbar {
+        NativeAccountsView(service: player.service, account: player.account).toolbar {
           ToolbarItem(placement: .cancellationAction) { Button("完成") { account = false } }
         }
       }
@@ -255,6 +265,13 @@ public struct NativeRootView: View {
 
   private var sharedMotion: Bool { seamless && !reduceMotion }
 
+  /// 打开歌单、专辑或歌手卡片
+  /// @param cover - 卡片
+  private func openCover(_ cover: NativeCover) {
+    player.catalog.open(cover)
+    openDetail(.playlist, source: "cover." + cover.id, cover: cover.cover)
+  }
+
   /// 从卡片打开详情；开启共享元素过渡时封面从卡片移动到详情头部
   /// @param target - 详情页面
   /// @param source - 卡片封面标识
@@ -341,54 +358,73 @@ struct NativeSidebar: View {
   @AppStorage("native.download.enabled") private var downloadEnabled = false
   @Binding var page: NativePage
   @ObservedObject var player: NativePlayerStore
+  @ObservedObject var account: NativeAccountStore
+  /// 开启“折叠侧边栏”时收为 64 图标栏：只留图标，隐藏分组标题
+  let collapsed: Bool
+  let openPlaylist: (NativeCover) -> Void
+  /// 与原版侧栏一致，“我的歌单”可在本地与在线之间切换
+  @AppStorage("native.sidebar.playlistSource") private var playlistSource = "local"
+  private var online: Bool { playlistSource == "online" && account.account != nil }
   var body: some View {
     VStack(spacing: 0) {
       HStack(spacing: 8) {
         NativeLogo().frame(width: 30, height: 30)
-        Text("SPlayer").font(.system(size: 22, weight: .semibold))
+        if !collapsed {
+          Text("SPlayer").font(.custom("Poppins-Medium", size: 22)).foregroundStyle(
+            Color.nativePrimary
+          ).fixedSize().transition(.opacity)
+        }
       }
-      .frame(height: 64).frame(maxWidth: .infinity)
+      .padding(.horizontal, 16).frame(maxWidth: .infinity).frame(height: 64)
       ScrollView {
-        VStack(spacing: 2) {
+        VStack(spacing: 4) {
           ForEach([NativePage.home, .library, .artists, .albums, .folders, .stats]) { item in
             row(item)
           }
-          Divider().padding(.vertical, 12)
+          divider
           ForEach(
-            [NativePage.liked, .collections, .cloud, .history]
-              + (downloadEnabled ? [.downloads] : [])
+            [NativePage.liked, .collections, .cloud] + (downloadEnabled ? [.downloads] : [])
+              + [.history]
           ) { item in row(item) }
-          Divider().padding(.vertical, 12)
-          HStack {
-            Text("我的歌单")
-            Image(systemName: "chevron.down")
-            Spacer()
-            Button {
-              name = ""
-              creating = true
-            } label: {
-              Image(systemName: "plus").frame(width: 32, height: 32)
-            }.accessibilityLabel("新建歌单")
-          }.font(.system(size: 12)).foregroundStyle(.secondary).padding(.horizontal, 12)
-          ForEach(player.playlists) { playlist in
-            Button {
-              player.selectedPlaylistID = playlist.id
-              page = .localPlaylist
-            } label: {
-              HStack {
-                Image(systemName: "music.note.list")
-                Text(playlist.name).lineLimit(1)
-                Spacer()
-              }.font(.system(size: 14)).padding(12).contentShape(Rectangle())
-            }.buttonStyle(.plain).contextMenu {
-              Button("删除歌单", role: .destructive) { deleting = playlist.id }
+          divider
+          if !collapsed {
+            playlistHeader
+          }
+          if online, let user = account.account {
+            ForEach(user.created) { cover in onlineRow(cover) }
+          } else {
+            ForEach(player.playlists) { playlist in
+              menuItem(
+                icon: "music.note.list", title: playlist.name,
+                selected: page == .localPlaylist && player.selectedPlaylistID == playlist.id
+              ) {
+                player.selectedPlaylistID = playlist.id
+                page = .localPlaylist
+              }.contextMenu {
+                Button("删除歌单", role: .destructive) { deleting = playlist.id }
+              }
             }
           }
-        }.padding(.horizontal, 12)
-      }
-    }.background(.regularMaterial).accessibilityElement(children: .contain).accessibilityIdentifier(
-      "native.wide.sidebar"
-    )
+          if let user = account.account, !user.subscribed.isEmpty {
+            divider
+            if !collapsed {
+              HStack {
+                Text("收藏的歌单")
+                Spacer()
+              }.font(.system(size: 14)).foregroundStyle(Color.nativeOnSurfaceVariant.opacity(0.7))
+                .padding(.horizontal, 12).frame(minHeight: 40)
+            }
+            ForEach(user.subscribed) { cover in onlineRow(cover) }
+          }
+        }.padding(.horizontal, collapsed ? 8 : 12).padding(.bottom, 12)
+      }.scrollIndicators(collapsed ? .hidden : .automatic)
+    }
+    // 原版侧栏是实色面板 + 右侧 primary/10 边线，不是毛玻璃
+    .background(Color.nativeSurfacePanel)
+    .overlay(alignment: .trailing) {
+      Rectangle().fill(Color.nativePrimary.opacity(0.1)).frame(width: 1)
+    }
+    .accessibilityElement(children: .contain).accessibilityIdentifier("native.wide.sidebar")
     .alert("新建本地歌单", isPresented: $creating) {
       TextField("歌单名称", text: $name)
       Button("取消", role: .cancel) {}
@@ -407,24 +443,78 @@ struct NativeSidebar: View {
       }
     }
   }
+
+  /// “我的歌单”分组标题：登录后可切换本地与在线，本地时带新建按钮
+  private var playlistHeader: some View {
+    HStack(spacing: 4) {
+      if account.account != nil {
+        Menu {
+          Picker("我的歌单", selection: $playlistSource) {
+            Text("本地歌单").tag("local")
+            Text("在线歌单").tag("online")
+          }
+        } label: {
+          HStack(spacing: 4) {
+            Text("我的歌单")
+            Image(systemName: "chevron.down").font(.system(size: 11, weight: .medium))
+          }
+        }.accessibilityIdentifier("native.sidebar.playlistSource")
+      } else {
+        Text("我的歌单")
+      }
+      Spacer()
+      if !online {
+        NativeSButton(icon: "plus", variant: .tertiary, size: .custom(26), shape: .circle) {
+          name = ""
+          creating = true
+        }.accessibilityLabel("新建歌单")
+      }
+    }.font(.system(size: 14)).foregroundStyle(Color.nativeOnSurfaceVariant.opacity(0.7))
+      .padding(.leading, 12).padding(.trailing, 4).frame(minHeight: 40)
+  }
+
+  private var divider: some View {
+    Rectangle().fill(Color.nativeOnSurface.opacity(0.1)).frame(height: 1)
+      .padding(.horizontal, 4).padding(.vertical, 8)
+  }
+
+  /// 账号中的在线歌单行
+  private func onlineRow(_ cover: NativeCover) -> some View {
+    menuItem(icon: "music.note.list", title: cover.title, selected: false) {
+      openPlaylist(cover)
+    }.accessibilityIdentifier("native.sidebar.online." + cover.id)
+  }
+
   /// 导航行使用完整可点击区域，支持 VoiceOver
   private func row(_ item: NativePage) -> some View {
-    Button {
-      page = item
-    } label: {
-      HStack(spacing: 12) {
-        Image(systemName: item.icon).frame(width: 20)
-        Text(item.rawValue).font(.system(size: 14))
-        Spacer()
+    menuItem(icon: item.icon, title: item.rawValue, selected: page == item) { page = item }
+      .accessibilityIdentifier("native.wide.nav." + item.rawValue)
+  }
+
+  /// SMenu medium 项：高 42，选中为 primary/10 底色、primary 文字和左侧 3px 指示条
+  private func menuItem(
+    icon: String, title: String, selected: Bool, action: @escaping () -> Void
+  ) -> some View {
+    Button(action: action) {
+      HStack(spacing: collapsed ? 0 : 12) {
+        // 图标栏只留 22 图标，标题交给 VoiceOver 与指针悬停提示
+        Image(systemName: icon).font(.system(size: collapsed ? 19 : 17))
+          .frame(width: collapsed ? 22 : 20)
+        if !collapsed { Text(title).font(.system(size: 14)).lineLimit(1) }
+        Spacer(minLength: 0)
       }
-      .padding(.horizontal, 12).frame(height: 44).contentShape(Rectangle())
+      .foregroundStyle(selected ? Color.nativePrimary : Color.nativeOnSurface.opacity(0.8))
+      .padding(.horizontal, 12).frame(height: 42).contentShape(Rectangle())
       .background(
-        page == item ? Color.primary.opacity(0.075) : .clear, in: RoundedRectangle(cornerRadius: 8)
+        selected ? Color.nativePrimary.opacity(0.1) : .clear, in: RoundedRectangle(cornerRadius: 8)
       )
       .overlay(alignment: .leading) {
-        if page == item { Capsule().frame(width: 3, height: 20).padding(.leading, 2) }
+        if selected {
+          Capsule().fill(Color.nativePrimary).frame(width: 3).padding(.vertical, 8)
+        }
       }
-    }.buttonStyle(.plain).accessibilityIdentifier("native.wide.nav." + item.rawValue)
+    }.buttonStyle(NativePressStyle()).accessibilityLabel(title)
+      .accessibilityAddTraits(selected ? .isSelected : []).help(collapsed ? title : "")
   }
 }
 
@@ -432,6 +522,10 @@ struct NativeSidebar: View {
 struct NativeTopbar: View {
   @ObservedObject var catalog: NativeCatalogStore
   let wide: Bool
+  /// 窗口 <1200：账号胶囊只留头像
+  let narrow: Bool
+  /// 窗口 <1024：搜索框收窄到 160
+  let compact: Bool
   let canBack: Bool
   let showSearch: Bool
   let showSettings: Bool
@@ -439,7 +533,9 @@ struct NativeTopbar: View {
   let search: () -> Void
   let recognize: () -> Void
   let settings: () -> Void
+  @ObservedObject var accountStore: NativeAccountStore
   let account: () -> Void
+  let favorites: () -> Void
   var body: some View {
     NativeGlassGroup {
       HStack(spacing: 12) {
@@ -449,17 +545,19 @@ struct NativeTopbar: View {
         }
         if showSearch {
           HStack(spacing: 8) {
-            Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-            TextField("搜索歌曲、歌手", text: $catalog.query).textFieldStyle(.plain)
-              .font(.system(size: 14)).onSubmit(search).accessibilityIdentifier(
+            Image(systemName: "magnifyingglass").font(.system(size: 15))
+              .foregroundStyle(Color.nativeOnSurfaceVariant.opacity(0.5))
+            TextField("搜索歌曲、歌手或专辑", text: $catalog.query).textFieldStyle(.plain)
+              .font(.system(size: 16)).onSubmit(search).accessibilityIdentifier(
                 "native.search.input")
-          }.padding(.horizontal, 14).frame(maxWidth: 280).frame(height: 40)
+          }.padding(.horizontal, 16).frame(width: compact ? 160 : 240, height: 40)
             .nativeGlass(in: Capsule())
         }
         NativeIconButton(icon: "waveform", title: "听歌识曲", action: recognize)
           .accessibilityIdentifier("native.recognition")
         Spacer(minLength: 8)
-        NativeIconButton(icon: "person.crop.circle", title: "平台账号", action: account)
+        NativeAccountButton(
+          account: accountStore, avatarOnly: narrow, manage: account, favorites: favorites)
         if showSettings {
           NativeIconButton(icon: "gearshape", title: "全局设置", action: settings)
             .accessibilityIdentifier("native.wide.settings")

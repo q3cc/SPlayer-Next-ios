@@ -43,26 +43,6 @@ enum NativePage: String, CaseIterable, Identifiable {
   static let tabs: [NativePage] = [.home, .search, .library, .liked, .settings]
 }
 
-extension Color {
-  static let splayerAccent = Color.primary
-  static let nativeCanvas = Color(light: 0xF6F6F6, dark: 0x101014)
-  static let nativePanel = Color(light: 0xFFFFFF, dark: 0x18181C)
-  /// 保存系统标签栏与 SwiftUI 页面之间的绑定
-  private init(light: UInt, dark: UInt) {
-    #if os(iOS)
-      self.init(
-        uiColor: UIColor { traits in
-          let value = traits.userInterfaceStyle == .dark ? dark : light
-          return UIColor(
-            red: Double(value >> 16 & 255) / 255, green: Double(value >> 8 & 255) / 255,
-            blue: Double(value & 255) / 255, alpha: 1)
-        })
-    #else
-      self.init(white: 0.96)
-    #endif
-  }
-}
-
 struct NativeIconButton: View {
   let icon: String
   let title: String
@@ -91,10 +71,8 @@ struct NativeTrackRow: View {
       }
       Spacer(minLength: 4)
       if let source = track.source {
-        Text(
-          source == "netease"
-            ? "网易云" : source == "qqmusic" ? "QQ" : source == "plugin" ? "自定义源" : "酷狗"
-        ).font(.system(size: 10)).foregroundStyle(.secondary)
+        Text(NativeSongCollection.sourceLabel(source)).font(.system(size: 10)).foregroundStyle(
+          .secondary)
       }
       Text(NativeNowPlayingView.time(track.durationMs)).font(.system(size: 12).monospacedDigit())
         .foregroundStyle(.secondary)
@@ -117,7 +95,7 @@ struct NativeTrackRow: View {
       appearance.configureWithDefaultBackground()
       bar.standardAppearance = appearance
       bar.scrollEdgeAppearance = appearance
-      bar.tintColor = .label
+      bar.tintColor = UIColor(Color.nativePrimary)
       bar.unselectedItemTintColor = .secondaryLabel
       bar.items = NativePage.tabs.enumerated().map { index, page in
         UITabBarItem(

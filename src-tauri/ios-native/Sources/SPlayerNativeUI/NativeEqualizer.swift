@@ -33,8 +33,8 @@ struct NativeEqualizerView: View {
   private static let labels = ["31", "62", "125", "250", "500", "1k", "2k", "4k", "8k", "16k"]
 
   var body: some View {
-    Form {
-      Section {
+    NativeSettingsList {
+      NativeSettingSection("均衡器") {
         Toggle(isOn: $player.equalizer.enabled) {
           NativeSettingLabel(title: "启用均衡器", detail: "十段增益直接作用于播放引擎")
         }
@@ -50,28 +50,25 @@ struct NativeEqualizerView: View {
           Text("自定义").tag(-1)
         }.disabled(!player.equalizer.enabled)
       }
-      Section {
+      NativeSettingSection("增益（dB）", footer: "频段 ±15 dB，前级 ±12 dB；拖动任一频段后预设变为“自定义”") {
         VStack(spacing: 16) {
           NativeEqualizerCurve(bands: player.equalizer.bands, preamp: player.equalizer.preamp)
             .frame(height: 72)
           HStack(alignment: .top, spacing: 0) {
             gain("前级", value: $player.equalizer.preamp, range: -12...12)
-            Divider().frame(height: 200).padding(.horizontal, 4)
+            Rectangle().fill(Color.nativeOnSurface.opacity(0.1)).frame(width: 1, height: 200)
+              .padding(.horizontal, 4)
             ForEach(Array(Self.labels.enumerated()), id: \.offset) { index, label in
               gain(label, value: $player.equalizer.bands[index], range: -15...15)
             }
           }
-        }.padding(.vertical, 12).disabled(!player.equalizer.enabled)
-          .opacity(player.equalizer.enabled ? 1 : 0.45)
-      } header: {
-        Text("增益（dB）")
-      } footer: {
-        Text("频段 ±15 dB，前级 ±12 dB；拖动任一频段后预设变为“自定义”")
-      }
-      Section {
-        Button("重置均衡器", role: .destructive) {
-          player.equalizer.bands = NativeEqualizer.presets[0]
-          player.equalizer.preamp = 0
+        }.disabled(!player.equalizer.enabled)
+          .opacity(player.equalizer.enabled ? 1 : 0.4)
+        NativeSettingControl(title: "重置均衡器") {
+          NativeSButton(title: "重置均衡器", variant: .secondary, tint: .error, size: .small) {
+            player.equalizer.bands = NativeEqualizer.presets[0]
+            player.equalizer.preamp = 0
+          }
         }.disabled(!player.equalizer.enabled)
       }
     }.navigationTitle("均衡器")
@@ -83,11 +80,13 @@ struct NativeEqualizerView: View {
   {
     VStack(spacing: 10) {
       Text(value.wrappedValue > 0 ? "+\(Int(value.wrappedValue))" : "\(Int(value.wrappedValue))")
-        .monospacedDigit().foregroundStyle(value.wrappedValue == 0 ? .secondary : .primary)
+        .monospacedDigit()
+        .foregroundStyle(
+          value.wrappedValue == 0 ? Color.nativeOnSurfaceVariant : Color.nativeOnSurface)
       Slider(value: value, in: range, step: 1).frame(width: 168).rotationEffect(.degrees(-90))
         .frame(width: 32, height: 168).accessibilityLabel(label + " 增益")
-      Text(label).foregroundStyle(.secondary)
-    }.font(.caption).frame(maxWidth: .infinity)
+      Text(label).foregroundStyle(Color.nativeOnSurfaceVariant)
+    }.font(.system(size: 12)).frame(maxWidth: .infinity)
   }
 }
 
@@ -107,13 +106,13 @@ struct NativeEqualizerCurve: View {
         Path { path in
           path.move(to: CGPoint(x: 0, y: size.height / 2))
           path.addLine(to: CGPoint(x: size.width, y: size.height / 2))
-        }.stroke(Color.secondary.opacity(0.3), style: StrokeStyle(lineWidth: 1, dash: [4, 4]))
+        }.stroke(Color.nativeOnSurfaceVariant.opacity(0.3), style: StrokeStyle(lineWidth: 1, dash: [4, 4]))
         curve(points, size: size, closed: true).fill(
           LinearGradient(
-            colors: [Color.accentColor.opacity(0.25), Color.accentColor.opacity(0.02)],
+            colors: [Color.nativePrimary.opacity(0.25), Color.nativePrimary.opacity(0.02)],
             startPoint: .top, endPoint: .bottom))
         curve(points, size: size, closed: false).stroke(
-          Color.accentColor, style: StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round))
+          Color.nativePrimary, style: StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round))
       }
     }.accessibilityHidden(true)
   }

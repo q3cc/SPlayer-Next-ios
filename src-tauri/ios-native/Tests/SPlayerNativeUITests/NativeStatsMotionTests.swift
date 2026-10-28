@@ -181,6 +181,22 @@ final class NativeStatsMotionTests: XCTestCase {
     XCTAssertEqual(player.queue.map(\.id), ["a", "b", "c"])
   }
 
+  func testInsertNextKeepsOrderAndSkipsCurrent() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let a = track("a")
+    let b = track("b")
+    let c = track("c")
+    let d = track("d")
+    let state = NativePlaybackState(queue: [a, b, c], currentID: a.id, positionMs: 0)
+    try await NativeLibrary(root: root).savePlayback(state)
+    let player = NativePlayerStore(root: root)
+    await player.loadLibrary()
+    // 当前曲目不移动；已在队列中的曲目按传入顺序插到当前曲目之后
+    XCTAssertEqual(player.insertNext([d, c, a]), 2)
+    XCTAssertEqual(player.queue.map(\.id), ["a", "d", "c", "b"])
+  }
+
   // MARK: - 关于与更新
 
   func testVersionPartsMatchMainRules() {

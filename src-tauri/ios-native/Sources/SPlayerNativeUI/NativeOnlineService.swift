@@ -13,6 +13,8 @@ struct NativeCover: Identifiable, Codable, Equatable {
   let title: String
   let cover: String
   let subtitle: String?
+  /// playlist / album / artist；旧收藏数据缺省为歌单
+  var kind: String? = nil
 }
 
 /// 仅应用内平台服务读取 Keychain；第三方插件没有此对象或存储的引用

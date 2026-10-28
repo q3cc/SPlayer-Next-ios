@@ -67,8 +67,10 @@ struct NativeLyricsView: View {
                     )
                     .animation(reduceMotion ? nil : .easeOut(duration: 0.45), value: selected)
                     .frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
-                  }.buttonStyle(.plain).id(line.id).accessibilityIdentifier(
-                    "native.lyric.\(line.id)")
+                  }.buttonStyle(.plain)
+                    // 滚动定位点放在行的垂直中心：与原版一致按行中心对齐，长短行切换时对齐位置不随行高变化
+                    .overlay { Color.clear.frame(width: 0, height: 0).id(line.id) }
+                    .accessibilityIdentifier("native.lyric.\(line.id)")
                 }
               }.padding(.horizontal, 12).padding(.top, geometry.size.height * alignPosition)
                 .padding(.bottom, geometry.size.height * (1 - alignPosition))
@@ -183,10 +185,12 @@ private struct NativeLyricText: View {
   @NativeReduceMotion private var reduceMotion
   var body: some View {
     VStack(alignment: align, spacing: 12) {
-      if active && line.words.count > 1 && (highlight || style == "am") {
+      // 逐字行无论是否为当前句都用同一套逐字排版，切换当前句时只改变扫亮，避免两种排版交叉淡入导致文字左右跳动
+      if line.words.count > 1 && (highlight || style == "am") {
         TimelineView(
           .animation(
-            minimumInterval: 1.0 / 30, paused: !player.isPlaying || phase != .active || reduceMotion
+            minimumInterval: 1.0 / 30,
+            paused: !active || !player.isPlaying || phase != .active || reduceMotion
           )
         ) { timeline in
           let elapsed =
@@ -196,23 +200,26 @@ private struct NativeLyricText: View {
           let time = min(player.durationMs, player.positionMs + elapsed) + player.lyricOffsetMs
           NativeWordFlow(alignment: align) {
             ForEach(Array(line.words.enumerated()), id: \.offset) { _, word in
-              let progress = min(
-                1, max(0, (time - word.startMs) / max(1, word.endMs - word.startMs)))
+              let progress =
+                active
+                ? min(1, max(0, (time - word.startMs) / max(1, word.endMs - word.startMs))) : 0
               VStack(spacing: 2) {
                 annotation(word)
-                Text(word.text).foregroundStyle(foreground.opacity(0.30))
+                Text(word.text).foregroundStyle(foreground.opacity(active ? 0.30 : 1))
                   .overlay(alignment: .leading) {
-                    Text(word.text).foregroundStyle(foreground)
-                      .shadow(
-                        color: foreground.opacity(
-                          reduceMotion || (style == "original" && !emphasize)
-                            ? 0 : sin(progress * .pi) * 0.6), radius: 6
-                      )
-                      .mask {
-                        GeometryReader { geometry in
-                          Rectangle().frame(width: geometry.size.width * progress)
+                    if active {
+                      Text(word.text).foregroundStyle(foreground)
+                        .shadow(
+                          color: foreground.opacity(
+                            reduceMotion || (style == "original" && !emphasize)
+                              ? 0 : sin(progress * .pi) * 0.6), radius: 6
+                        )
+                        .mask {
+                          GeometryReader { geometry in
+                            Rectangle().frame(width: geometry.size.width * progress)
+                          }
                         }
-                      }
+                    }
                   }
                   .offset(
                     y: reduceMotion || (style == "original" && !float)

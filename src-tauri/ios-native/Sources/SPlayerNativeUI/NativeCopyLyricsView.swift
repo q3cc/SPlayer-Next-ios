@@ -171,7 +171,7 @@ struct NativeLyricPosterPreview: View {
               .padding(24).accessibilityIdentifier("native.poster.image")
           }
         #endif
-      }.background(Color.nativeCanvas)
+      }.background(Color.nativeSurface)
         .navigationTitle("歌词海报")
         #if os(iOS)
           .navigationBarTitleDisplayMode(.inline)

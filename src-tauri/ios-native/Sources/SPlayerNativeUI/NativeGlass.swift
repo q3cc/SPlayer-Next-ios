@@ -10,7 +10,7 @@ private struct NativeGlassModifier<S: Shape>: ViewModifier {
   /// 根据系统版本与辅助功能设置应用原生控制材质
   @ViewBuilder func body(content: Content) -> some View {
     if reduceTransparency || reduceMotion {
-      content.background(Color.nativePanel.opacity(reduceTransparency ? 1 : 0.92), in: shape)
+      content.background(Color.nativeSurfacePanel.opacity(reduceTransparency ? 1 : 0.92), in: shape)
     } else {
       #if compiler(>=6.2)
         if #available(iOS 26.0, macOS 26.0, *) {

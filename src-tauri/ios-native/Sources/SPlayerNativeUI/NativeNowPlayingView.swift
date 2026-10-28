@@ -51,6 +51,8 @@ struct NativeNowPlayingView: View {
   @State private var selectedTool: NativePlaybackTool?
   @AppStorage("native.download.enabled") private var downloadEnabled = false
   @State private var fmModes = false
+  /// 播放页宽度，底栏中间控制区按原版 clamp(360, 35%, 480) 计算
+  @State private var playerWidth: CGFloat = 1000
 
   private var foreground: Color {
     style == "original" && followCoverColor ? coverColors.foreground : .white
@@ -65,6 +67,7 @@ struct NativeNowPlayingView: View {
   var body: some View {
     GeometryReader { geometry in
       let wide = geometry.size.width >= 900
+      let _ = updateWidth(geometry.size.width)
       let fullHeight =
         geometry.size.height + geometry.safeAreaInsets.top + geometry.safeAreaInsets.bottom
       ZStack {
@@ -215,6 +218,11 @@ struct NativeNowPlayingView: View {
       }
   }
 
+  /// 记录播放页宽度；仅在变化时写入，避免布局循环
+  private func updateWidth(_ width: CGFloat) {
+    if abs(playerWidth - width) > 0.5 { DispatchQueue.main.async { playerWidth = width } }
+  }
+
   /// 覆盖层由根页面收起，独立窗口仍使用系统关闭入口
   private func closePlayer() {
     if let close { close() } else { dismiss() }
@@ -258,7 +266,8 @@ struct NativeNowPlayingView: View {
         }
         lyricsToggle
         Spacer()
-        options
+        // 宽屏“更多”在底栏工具栏，与原版一致；竖屏保留在顶栏
+        if !wide { options }
       } else {
         Spacer()
         Capsule().fill(.white.opacity(0.44)).frame(width: 36, height: 5).frame(
@@ -348,8 +357,9 @@ struct NativeNowPlayingView: View {
       }
       originalControls(wide: wide).opacity(originalImmersive ? 0 : 1).allowsHitTesting(
         !originalImmersive
-      ).frame(height: wide ? 80 : 114)
+      ).frame(height: wide ? 80 : 124)
         .padding(.horizontal, wide ? 16 : 20).padding(.bottom, wide ? 0 : 12)
+        .padding(.top, wide ? 0 : 8)
     }
   }
 
@@ -362,10 +372,8 @@ struct NativeNowPlayingView: View {
         Text((player.current?.source ?? "local").uppercased()).padding(.horizontal, 6).padding(
           .vertical, 4
         ).overlay(RoundedRectangle(cornerRadius: 6).stroke(foreground.opacity(0.3)))
-        Text(
-          player.lyrics.isEmpty
-            ? "NO-LRC" : player.lyrics.contains(where: { !$0.words.isEmpty }) ? "逐字" : "LRC"
-        ).padding(.horizontal, 6).padding(.vertical, 4).overlay(
+        // 与原版 PlayerData 一致显示歌词真实格式，普通 LRC 不会标成逐字
+        Text(player.lyrics.isEmpty ? "NO-LRC" : (player.lyricFormat ?? "lrc").uppercased()).padding(.horizontal, 6).padding(.vertical, 4).overlay(
           RoundedRectangle(cornerRadius: 6).stroke(foreground.opacity(0.3)))
       }.font(.system(size: fontSize)).foregroundStyle(foreground.opacity(0.6))
       Label(player.artist, systemImage: "mic").font(.system(size: fontSize * 1.2)).foregroundStyle(
@@ -511,61 +519,115 @@ struct NativeNowPlayingView: View {
     }.buttonStyle(.plain).frame(height: 190)
   }
 
-  /// 原版竖屏进度在上、播放键在下；横屏工具区分列，不随歌词高度变化
+  /// 原版底栏：宽屏左侧收起/喜欢/添加到歌单/下载、中间控制与进度、右侧工具栏；竖屏进度在上、按钮在下
   private func originalControls(wide: Bool) -> some View {
-    ZStack {
+    let cover = NativeButtonTint.cover(foreground)
+    return Group {
       if wide {
-        HStack {
-          Button {
-            closePlayer()
-          } label: {
-            Image(systemName: "chevron.down").frame(width: 44, height: 44)
-          }.accessibilityLabel("收起播放器")
-          Button {
-            if let track = player.current { player.toggleFavorite(track) }
-          } label: {
-            Image(systemName: player.current.map(player.isFavorite) == true ? "heart.fill" : "heart")
-              .frame(width: 44, height: 44)
-          }.accessibilityLabel("喜欢")
-          Spacer()
-          volumeButton
-          route
-          queueButton
+        HStack(spacing: 16) {
+          HStack(spacing: 8) {
+            NativeSButton(
+              icon: "chevron.down", variant: .ghost, tint: cover, size: .large, shape: .circle,
+              action: closePlayer
+            ).accessibilityLabel("收起播放器")
+            if let track = player.current, track.source != "plugin" {
+              NativeSButton(
+                icon: player.isFavorite(track) ? "heart.fill" : "heart", variant: .ghost,
+                tint: cover, size: .large, shape: .circle
+              ) { player.toggleFavorite(track) }.accessibilityLabel("喜欢")
+            }
+            if let track = player.current, track.source == nil || track.source == "netease" {
+              Menu {
+                ForEach(player.playlists) { playlist in
+                  Button(playlist.name) { player.addToPlaylist(playlist.id, track: track) }
+                }
+              } label: {
+                Image(systemName: "text.badge.plus").font(.system(size: 20))
+                  .frame(width: 40, height: 40).contentShape(Circle())
+              }.disabled(player.playlists.isEmpty).accessibilityLabel("添加到歌单")
+            }
+            if downloadEnabled, let track = player.current, track.source != nil,
+              track.source != "plugin"
+            {
+              NativeSButton(
+                icon: "arrow.down.to.line", variant: .ghost, tint: cover, size: .large,
+                shape: .circle
+              ) { player.download(track) }.accessibilityLabel("下载歌曲")
+            }
+          }.frame(maxWidth: .infinity, alignment: .leading)
+          VStack(spacing: 4) {
+            transport(wide: true)
+            originalProgress(wide: true)
+          }.frame(width: min(480, max(360, playerWidth * 0.35)))
+          HStack(spacing: 4) {
+            volumeButton
+            route
+            queueButton
+            options
+          }.foregroundStyle(foreground.opacity(0.5)).frame(maxWidth: .infinity, alignment: .trailing)
+        }
+      } else {
+        VStack(spacing: 12) {
+          originalProgress(wide: false)
+          HStack(spacing: 12) {
+            volumeButton
+            transport(wide: false)
+            route
+          }
         }
       }
-      VStack(spacing: wide ? 0 : 12) {
-        if !wide { originalProgress }
-        HStack(spacing: 12) {
-          if wide { shuffleButton } else { volumeButton }
-          Button(action: player.previous) {
-            Image(systemName: "backward.end").frame(width: 44, height: 44)
-          }.accessibilityLabel("上一首").disabled(player.fmMode).opacity(player.fmMode ? 0.4 : 1)
-          playButton(apple: false)
-          Button(action: player.next) {
-            Image(systemName: "forward.end").frame(width: 44, height: 44)
-          }.accessibilityLabel("下一首")
-          if wide { repeatButton } else { route }
-        }
-        if wide { originalProgress }
-      }.frame(maxWidth: wide ? 420 : .infinity)
     }.font(.system(size: 20)).buttonStyle(.plain)
   }
 
-  private var originalProgress: some View {
+  /// 控制按钮：宽屏随机/上一首/下一首/循环 36、播放 40；竖屏上下一首 44、播放 48；播放键为 cover secondary
+  @ViewBuilder private func transport(wide: Bool) -> some View {
+    let cover = NativeButtonTint.cover(foreground)
+    let skip: NativeButtonSize = wide ? .medium : .custom(44)
+    HStack(spacing: 12) {
+      if wide { shuffleButton }
+      NativeSButton(
+        icon: "backward.end.fill", variant: .ghost, tint: cover, size: skip, shape: .circle,
+        action: player.previous
+      ).accessibilityLabel("上一首").disabled(player.fmMode)
+      Button(action: player.togglePlayback) {
+        Group {
+          if player.loadingTrack != nil {
+            ProgressView().tint(foreground)
+          } else {
+            Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
+              .font(.system(size: wide ? 20 : 24))
+          }
+        }
+      }.buttonStyle(
+        NativeButtonStyle(
+          variant: .secondary, tint: cover, size: wide ? .large : .custom(48), shape: .circle)
+      ).accessibilityLabel(player.isPlaying ? "暂停" : "播放")
+        .accessibilityIdentifier("native.player.playPause")
+      NativeSButton(
+        icon: "forward.end.fill", variant: .ghost, tint: cover, size: skip, shape: .circle,
+        action: player.next
+      ).accessibilityLabel("下一首")
+      if wide { repeatButton }
+    }
+  }
+
+  /// 进度行：时间 12 号 cover/50（竖屏宽 40、/60），点按切换时间格式
+  private func originalProgress(wide: Bool) -> some View {
     HStack(spacing: 8) {
       Text(
         timeFormat == 1
           ? "−" + Self.time(max(0, player.durationMs - player.positionMs))
           : Self.time(player.positionMs)
-      ).frame(width: 40).onTapGesture { timeFormat = (timeFormat + 1) % 3 }.accessibilityIdentifier(
-        "native.player.position")
+      ).frame(minWidth: wide ? 36 : 40).onTapGesture { timeFormat = (timeFormat + 1) % 3 }
+        .accessibilityIdentifier("native.player.position")
       NativePlayerSeekSlider(player: player).frame(height: 32)
       Text(
         timeFormat == 2
           ? "−" + Self.time(max(0, player.durationMs - player.positionMs))
           : Self.time(player.durationMs)
-      ).frame(width: 40).onTapGesture { timeFormat = (timeFormat + 1) % 3 }
-    }.font(.system(size: 12).monospacedDigit()).foregroundStyle(.white.opacity(0.6))
+      ).frame(minWidth: wide ? 36 : 40).onTapGesture { timeFormat = (timeFormat + 1) % 3 }
+    }.font(.system(size: 12).monospacedDigit()).foregroundStyle(
+      foreground.opacity(wide ? 0.5 : 0.6))
   }
 
   /// 系统控件保留播放、加载及暂停状态，不用装饰动画代替真实状态
@@ -619,7 +681,8 @@ struct NativeNowPlayingView: View {
         systemName: player.fmMode
           ? "heart.slash" : player.heartMode
             ? "heart.circle.fill" : player.shuffle ? "shuffle" : "arrow.right"
-      ).frame(width: 44, height: 44)
+      ).frame(width: style == "original" ? 36 : 44, height: style == "original" ? 36 : 44)
+        .contentShape(Circle())
     }.accessibilityLabel(player.fmMode ? "不喜欢" : player.heartMode ? "退出心动模式" : "随机播放")
       .accessibilityValue(player.shuffle ? "开启" : "关闭")
       .accessibilityIdentifier("native.player.shuffleSlot")
@@ -629,7 +692,8 @@ struct NativeNowPlayingView: View {
       player.repeatOne.toggle()
     } label: {
       Image(systemName: player.fmMode ? "infinity" : player.repeatOne ? "repeat.1" : "repeat")
-        .frame(width: 44, height: 44)
+        .frame(width: style == "original" ? 36 : 44, height: style == "original" ? 36 : 44)
+        .contentShape(Circle())
     }.accessibilityLabel("单曲循环").accessibilityValue(player.repeatOne ? "开启" : "关闭")
       .disabled(player.fmMode).opacity(player.fmMode ? 0.4 : 1)
   }

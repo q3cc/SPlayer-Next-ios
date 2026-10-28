@@ -22,43 +22,41 @@ struct NativeAppearanceSettings: View {
   @AppStorage("native.player.autoImmersive") private var autoImmersive = true
   @AppStorage("native.player.keepAwake") private var keepAwake = false
   @AppStorage(NativeSongListStyle.key) private var songListStyle = NativeSongListStyle.comfortable
+  @AppStorage(NativeLayout.sidebarCollapsedKey) private var sidebarCollapsed = false
   @AppStorage(NativeMotion.reduceKey) private var reduceMotion = false
   @AppStorage(NativeMotion.routeKey) private var routeTransition = "fade"
   @AppStorage(NativeMotion.seamlessKey) private var seamlessTransition = false
   @State private var confirmFluid = false
 
   var body: some View {
-    Form {
-      Section {
+    NativeSettingsList {
+      NativeSettingSection("主题与颜色", footer: "应用的颜色主题；播放器始终使用深色") {
         NativeChoiceCards(
           options: [("light", "浅色模式"), ("dark", "深色模式"), ("system", "跟随系统")],
           selection: $appearance, identifier: "native.settings.appearance", aspect: 1.25
         ) { NativeThemePreview(mode: $0) }
-      } header: {
-        Text("主题与颜色")
-      } footer: {
-        Text("应用的颜色主题；播放器始终使用深色")
       }
-      Section {
+      NativeSettingSection(
+        "播放器主题",
+        footer: playerStyle == "original"
+          ? "原版：封面与歌词左右排布，闲置五秒后自动沉浸；切换不会中断音乐"
+          : "Apple Music：渐隐大封面，竖屏歌词默认隐藏控制区；切换不会中断音乐"
+      ) {
         NativeChoiceCards(
           options: [("original", "Next 原版"), ("am", "Apple Music")],
           selection: $playerStyle, identifier: "native.settings.playerStyle", aspect: 1.2
         ) { NativePlayerStylePreview(style: $0, cover: cover) }
-      } header: {
-        Text("播放器主题")
-      } footer: {
-        Text(
-          playerStyle == "original"
-            ? "原版：封面与歌词左右排布，闲置五秒后自动沉浸；切换不会中断音乐"
-            : "Apple Music：渐隐大封面，竖屏歌词默认隐藏控制区；切换不会中断音乐")
       }
-      Section("布局") {
+      NativeSettingSection("布局") {
         NativeSettingPicker(title: "歌曲列表样式", detail: "配置歌曲列表的展示密度", selection: $songListStyle) {
           Text("舒适").tag(NativeSongListStyle.comfortable)
           Text("紧凑").tag(NativeSongListStyle.compact)
         }.accessibilityIdentifier("native.settings.songListStyle")
+        Toggle(isOn: $sidebarCollapsed) {
+          NativeSettingLabel(title: "折叠侧边栏", detail: "将侧边栏折叠为图标模式")
+        }.accessibilityIdentifier("native.settings.sidebarCollapsed")
       }
-      Section("过渡与动画") {
+      NativeSettingSection("过渡与动画") {
         Toggle(isOn: $reduceMotion) {
           NativeSettingLabel(title: "减弱动画", detail: "减少界面动态效果，降低性能消耗")
         }.accessibilityIdentifier("native.settings.reduceMotion")
@@ -72,7 +70,7 @@ struct NativeAppearanceSettings: View {
           NativeSettingLabel(title: "共享元素过渡", detail: "支持两个页面之间的元素无缝过渡")
         }.accessibilityIdentifier("native.settings.seamlessTransition")
       }
-      Section("播放栏") {
+      NativeSettingSection("播放栏") {
         Toggle(isOn: $lyricInBar) {
           NativeSettingLabel(title: "播放时显示歌词", detail: "底部播放栏播放时将歌手名替换为当前歌词")
         }
@@ -84,7 +82,7 @@ struct NativeAppearanceSettings: View {
           Text("播放时间 / 剩余时间").tag(2)
         }
       }
-      Section("播放页") {
+      NativeSettingSection("播放页") {
         NativeSettingPicker(
           title: "播放器背景", detail: "全屏播放器的背景类型",
           selection: Binding(

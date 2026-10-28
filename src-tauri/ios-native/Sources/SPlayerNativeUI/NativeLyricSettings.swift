@@ -28,9 +28,9 @@ struct NativeLyricSettings: View {
   @AppStorage("native.lyric.inactiveAlpha") private var inactiveAlpha = 0.2
 
   var body: some View {
-    Form {
-      NativeLyricFontSettings()
-      Section("内容样式") {
+    NativeSettingsList {
+      NativeLyricFontSection()
+      NativeSettingSection("内容样式") {
         Toggle(isOn: $adaptive) {
           NativeSettingLabel(title: "自适应字号", detail: "歌词字号根据窗口大小自动调整")
         }
@@ -65,7 +65,7 @@ struct NativeLyricSettings: View {
             title: "翻译/音译字号", value: $translationSize, range: 12...48, step: 1)
         }
       }
-      Section("显示效果") {
+      NativeSettingSection("显示效果") {
         NativeSettingPicker(
           title: "歌词水平对齐", detail: "自动按演唱声部分左右显示，也可统一靠左、居中或靠右", selection: $alignment
         ) {
@@ -95,7 +95,7 @@ struct NativeLyricSettings: View {
           }
         }
       }
-      Section("弹簧动画") {
+      NativeSettingSection("弹簧动画") {
         NativeSettingPicker(
           title: "弹簧预设", detail: "歌词滚动动画的弹簧物理参数预设", selection: $springPreset
         ) {
@@ -114,7 +114,7 @@ struct NativeLyricSettings: View {
             step: 5)
         }
       }
-      Section("布局与透明度") {
+      NativeSettingSection("布局与透明度") {
         NativeSettingSlider(
           title: "对齐位置", detail: "当前行在歌词区域中的垂直位置（0 = 顶部，1 = 底部）", value: $alignPosition,
           range: 0.1...0.9, step: 0.05, format: { String(format: "%.2f", $0) })
@@ -125,5 +125,13 @@ struct NativeLyricSettings: View {
         }
       }
     }.navigationTitle("歌词设置")
+  }
+}
+
+/// 歌词字体分区由 NativeLyricFonts 提供系统 Section，这里把它的行画成设置卡片
+private struct NativeLyricFontSection: View {
+  @Environment(\.nativeSettingsMargin) private var margin
+  var body: some View {
+    NativeLyricFontSettings().nativeSettingCard(margin: margin).listSectionSeparator(.hidden)
   }
 }

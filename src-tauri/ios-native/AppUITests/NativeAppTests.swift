@@ -15,6 +15,7 @@ final class NativeAppTests: XCTestCase {
     XCTAssertFalse(app.tabBars.firstMatch.exists)
     let sidebar = app.descendants(matching: .any)["native.wide.sidebar"].firstMatch
     XCTAssertTrue(sidebar.exists)
+    // 侧栏默认完整显示，只有开启“折叠侧边栏”才收为图标栏
     XCTAssertEqual(sidebar.frame.width, 240, accuracy: 2)
     capture(app, "native-wide-home")
     app.buttons["native.wide.nav.音乐库"].tap()
@@ -56,8 +57,10 @@ final class NativeAppTests: XCTestCase {
     reveal(keepAwake, in: app)
     XCTAssertFalse(coverLayout.exists)
     capture(app, "settings-appearance-am")
-    // 已在顶部时继续下滑会收起设置 sheet，回到可点即停
-    for _ in 0..<5 where !(original.exists && original.isHittable) { app.swipeDown() }
+    // 设置列表是惰性的，滚出屏幕的行无法判断可点；重新进入分类回到顶部
+    openSettings("general", in: app)
+    openSettings("appearance", in: app)
+    reveal(original, in: app)
     original.tap()
     reveal(coverLayout, in: app)
     capture(app, "settings-appearance-original")
@@ -134,19 +137,14 @@ final class NativeAppTests: XCTestCase {
     capture(app, "native-portrait-settings")
   }
 
-  /// 首页、曲库和设置的文件选择器均可取消并重新打开
+  /// 曲库和设置的文件选择器均可取消并重新打开
   func testMusicPickerCanOpenCancelAndReopen() {
     let app = launch()
-    let homeImport = app.buttons["native.import.home"]
-    for _ in 0..<4 {
-      if homeImport.isHittable { break }
-      app.scrollViews.firstMatch.swipeUp()
-    }
-    homeImport.tap()
-    cancelAudioPicker(in: app)
     app.tabBars.buttons["音乐库"].tap()
-    app.buttons["native.import.library"].tap()
-    cancelAudioPicker(in: app)
+    for _ in 0..<2 {
+      app.buttons["native.import.library"].tap()
+      cancelAudioPicker(in: app)
+    }
     app.tabBars.buttons["设置"].tap()
     openSettings("localCache", in: app)
     app.buttons["native.import.settings"].tap()

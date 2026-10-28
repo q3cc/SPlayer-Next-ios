@@ -6,6 +6,9 @@ import SwiftUI
 @MainActor
 struct NativeAccountsView: View {
   let service: NativeOnlineService
+  /// 网易云账号资料，登录后与原版一样展示头像、等级、VIP、签名与收藏计数
+  @ObservedObject var account: NativeAccountStore
+  @State private var confirmLogout = false
   @State private var source = "netease"
   @State private var image: CGImage?
   @State private var message = ""
@@ -21,7 +24,9 @@ struct NativeAccountsView: View {
         Text("酷狗").tag("kugou")
       }.pickerStyle(.segmented)
       Spacer()
-      if let nickname {
+      if source == "netease", let user = account.account {
+        profile(user)
+      } else if let nickname {
         Image(systemName: "person.crop.circle.fill").font(.system(size: 72)).foregroundStyle(
           .secondary)
         Text(nickname).font(.title2.bold())
@@ -91,6 +96,7 @@ struct NativeAccountsView: View {
           case "success":
             nickname = result?["nickname"] as? String ?? "已登录用户"
             image = nil
+            await account.refresh()
             return
           case "expired":
             image = nil
@@ -108,6 +114,47 @@ struct NativeAccountsView: View {
           image = nil
         }
       }
+    }
+  }
+
+  /// 网易云账号资料与退出登录
+  private func profile(_ user: NativeAccount) -> some View {
+    VStack(spacing: 14) {
+      NativeAvatar(url: user.avatarUrl, size: 88)
+      Text(user.nickname).font(.title2.bold())
+      HStack(spacing: 6) {
+        if let level = user.level { NativeLevelBadge(level: level) }
+        if user.isVip { NativeVipBadge(height: 18) }
+      }
+      if let signature = user.signature, !signature.isEmpty {
+        Text(signature).font(.subheadline).foregroundStyle(.secondary)
+          .multilineTextAlignment(.center).lineLimit(3)
+      }
+      HStack(spacing: 32) {
+        count(user.playlistCount, "歌单")
+        count(user.albumCount, "专辑")
+        count(user.artistCount, "歌手")
+      }.padding(.vertical, 8)
+      Button("退出登录", role: .destructive) { confirmLogout = true }.buttonStyle(.bordered)
+        .accessibilityIdentifier("native.accounts.logout")
+    }
+    .confirmationDialog("确认退出当前账号？", isPresented: $confirmLogout, titleVisibility: .visible) {
+      Button("退出登录", role: .destructive) {
+        Task {
+          do {
+            try await account.logout()
+            nickname = nil
+            message = "已退出登录"
+          } catch { message = error.localizedDescription }
+        }
+      }
+    }
+  }
+
+  private func count(_ value: Int, _ label: String) -> some View {
+    VStack(spacing: 4) {
+      Text("\(value)").font(.title3.bold().monospacedDigit())
+      Text(label).font(.caption).foregroundStyle(.secondary)
     }
   }
 

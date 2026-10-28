@@ -66,7 +66,7 @@ struct NativeFMModeView: View {
                   Text(mode.detail).font(.system(size: 12)).foregroundStyle(.secondary)
                 }.padding(14).frame(maxWidth: .infinity, alignment: .leading)
                   .background(
-                    selectedMode == mode.id ? Color.accentColor.opacity(0.14) : Color.nativePanel,
+                    selectedMode == mode.id ? Color.accentColor.opacity(0.14) : Color.nativeSurfacePanel,
                     in: RoundedRectangle(cornerRadius: 12)
                   )
                   .overlay(

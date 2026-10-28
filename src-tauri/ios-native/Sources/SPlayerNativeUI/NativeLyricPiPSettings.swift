@@ -13,15 +13,15 @@ struct NativeLyricPiPSettings: View {
   @AppStorage("native.pip.unplayedColor") private var unplayedColor = "#FFFFFFFF"
 
   var body: some View {
-    Form {
-      Section {
-        preview
-      } header: {
-        Text("效果预览")
-      } footer: {
-        Text("随当前歌曲更新。")
-      }
-      Section {
+    NativeSettingsList {
+      NativeSettingSection(
+        "桌面歌词", footer: NativeLyricPiP.supported ? nil : "此设备不支持画中画"
+      ) {
+        VStack(alignment: .leading, spacing: 8) {
+          preview
+          Text("效果预览，随当前歌曲更新。").font(.system(size: 12))
+            .foregroundStyle(Color.nativeOnSurfaceVariant.opacity(0.5))
+        }
         Toggle(
           isOn: Binding(get: { pip.active || pip.starting }, set: { _ in pip.toggle() })
         ) {
@@ -48,8 +48,6 @@ struct NativeLyricPiPSettings: View {
         ColorPicker(selection: color($unplayedColor), supportsOpacity: true) {
           NativeSettingLabel(title: "普通颜色", detail: "未唱部分和附加歌词。")
         }
-      } footer: {
-        if !NativeLyricPiP.supported { Text("此设备不支持画中画") }
       }
     }.navigationTitle("桌面歌词")
   }
@@ -60,15 +58,20 @@ struct NativeLyricPiPSettings: View {
       TimelineView(.periodic(from: .now, by: 1 / max(5, frameRate))) { _ in
         if let image = pip.preview() {
           Image(uiImage: image).resizable().aspectRatio(4, contentMode: .fit)
-            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .clipShape(RoundedRectangle(cornerRadius: 8))
             .accessibilityIdentifier("native.settings.pip.preview")
         } else {
-          Text("预览暂不可用").foregroundStyle(.secondary).frame(maxWidth: .infinity)
+          unavailable
         }
-      }.listRowInsets(EdgeInsets(top: 12, leading: 12, bottom: 12, trailing: 12))
+      }
     #else
-      Text("预览暂不可用").foregroundStyle(.secondary)
+      unavailable
     #endif
+  }
+
+  private var unavailable: some View {
+    Text("预览暂不可用").font(.system(size: 14))
+      .foregroundStyle(Color.nativeOnSurfaceVariant.opacity(0.7)).frame(maxWidth: .infinity)
   }
 
   /// 颜色以 #RRGGBBAA 保存，与小窗绘制共用解析

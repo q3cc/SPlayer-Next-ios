@@ -37,6 +37,7 @@ enum NativeBuildInfo {
 @MainActor
 struct NativeAboutSettings: View {
   @Environment(\.openURL) private var openURL
+  @Environment(\.horizontalSizeClass) private var sizeClass
   /// 即使 GitHub 限流，iOS 作者署名也保留
   private static let iosAuthor = NativeContributor(
     login: "q3cc", htmlUrl: "https://github.com/q3cc",
@@ -66,92 +67,112 @@ struct NativeAboutSettings: View {
   @State private var updateMessage: String?
 
   var body: some View {
-    Form {
-      Section("关于软件") {
-        HStack(spacing: 12) {
-          NativeLogo().frame(width: 34, height: 34)
-          Text("SPlayer-Next-ios").font(.custom("Poppins-Medium", size: 18))
-          Text("v" + NativeBuildInfo.version).font(.system(size: 12, weight: .medium))
-            .padding(.horizontal, 8).padding(.vertical, 3)
-            .background(.tint.opacity(0.14), in: Capsule())
-            .foregroundStyle(.tint)
-          Spacer(minLength: 8)
-          Button {
-            Task { await checkUpdate() }
-          } label: {
-            HStack(spacing: 6) {
-              if checking { ProgressView().controlSize(.small) } else {
-                Image(systemName: "arrow.clockwise")
-              }
-              Text(release != nil ? "发现新版本" : checking ? "检查中" : "检查更新")
+    ScrollView {
+      VStack(alignment: .leading, spacing: 32) {
+        section("关于软件") {
+          HStack(spacing: 16) {
+            NativeLogo().frame(width: 34, height: 34)
+            HStack(spacing: 8) {
+              Text("SPlayer-Next-ios").font(.custom("Poppins-Medium", size: 18))
+                .foregroundStyle(Color.nativeOnSurface).lineLimit(1)
+              NativeSettingTag(text: "v" + NativeBuildInfo.version, size: .small, round: true)
             }
-          }.buttonStyle(.bordered).disabled(checking)
-            .accessibilityIdentifier("native.about.checkUpdate")
-        }.padding(.vertical, 4)
-      }
-      Section("特别致谢") {
-        ForEach(Self.dependencies, id: \.0) { name, description, url in
-          linkRow(url) {
-            VStack(alignment: .leading, spacing: 2) {
-              Text(name).font(.system(size: 15, weight: .medium))
-              Text(description).font(.footnote).foregroundStyle(.secondary).lineLimit(1)
+            Spacer(minLength: 0)
+            Button {
+              Task { await checkUpdate() }
+            } label: {
+              HStack(spacing: 6) {
+                if checking {
+                  ProgressView().controlSize(.small)
+                } else {
+                  Image(systemName: "arrow.clockwise").font(.system(size: 18))
+                }
+                Text(release != nil ? "发现新版本" : checking ? "检查中" : "检查更新")
+              }
+            }.buttonStyle(NativeButtonStyle()).disabled(checking)
+              .accessibilityIdentifier("native.about.checkUpdate")
+          }.nativeAboutCard(radius: 12)
+        }
+        section("特别致谢") {
+          LazyVGrid(columns: columns(3), spacing: 10) {
+            ForEach(Self.dependencies, id: \.0) { name, description, url in
+              Button {
+                if let url = URL(string: url) { openURL(url) }
+              } label: {
+                VStack(alignment: .leading, spacing: 2) {
+                  HStack(spacing: 6) {
+                    Text(name).font(.system(size: 14, weight: .medium))
+                      .foregroundStyle(Color.nativeOnSurface).lineLimit(1)
+                    Image(systemName: "arrow.up.right").font(.system(size: 12))
+                      .foregroundStyle(Color.nativeOnSurfaceVariant.opacity(0.4))
+                  }
+                  Text(description).font(.system(size: 12)).lineLimit(1)
+                    .foregroundStyle(Color.nativeOnSurfaceVariant.opacity(0.7))
+                }.frame(maxWidth: .infinity, alignment: .leading).nativeAboutCard()
+              }.buttonStyle(NativePressStyle())
             }
           }
         }
-      }
-      Section("开发人员") {
-        developers(
-          "iOS 版本贡献者", iosDevelopers, expanded: $allIos, iosVersion: true,
-          identifier: "native.about.iosContributors")
-        if !originalDevelopers.isEmpty {
-          developers(
-            "原版项目贡献者", originalDevelopers, expanded: $allOriginal, iosVersion: false,
-            identifier: "native.about.originalContributors")
-        }
-      }
-      Section("社区与资讯") {
-        linkRow(NativeGitHub.repoURL.absoluteString) {
-          Label("SPlayer-Next-ios", systemImage: "chevron.left.forwardslash.chevron.right")
-        }
-        linkRow(NativeGitHub.repoURL.absoluteString) {
-          Label("官方网站", systemImage: "dot.radiowaves.up.forward")
-        }
-        NavigationLink {
-          NativeLicensesView().nativeSettingsPage()
-        } label: {
-          Label("开源许可", systemImage: "doc.text")
-        }
-      }
-      Section {
-        ForEach(environment, id: \.0) { label, value, url in
-          HStack(alignment: .firstTextBaseline, spacing: 12) {
-            Text(label).foregroundStyle(.secondary).frame(width: 44, alignment: .leading)
-            if let url {
-              Button {
-                openURL(url)
-              } label: {
-                HStack(spacing: 4) {
-                  Text(value)
-                  Image(systemName: "arrow.up.right").font(.caption2)
-                }
-              }.buttonStyle(.borderless)
-            } else {
-              Text(value).textSelection(.enabled)
+        section("开发人员") {
+          VStack(alignment: .leading, spacing: 16) {
+            developers(
+              "iOS 版本贡献者", iosDevelopers, expanded: $allIos, iosVersion: true,
+              identifier: "native.about.iosContributors")
+            if !originalDevelopers.isEmpty {
+              developers(
+                "原版项目贡献者", originalDevelopers, expanded: $allOriginal, iosVersion: false,
+                identifier: "native.about.originalContributors")
             }
-          }.font(.system(size: 14))
+          }
         }
-      } header: {
-        HStack {
-          Text("环境信息")
-          Spacer()
+        section("社区与资讯") {
+          LazyVGrid(columns: columns(3), spacing: 10) {
+            communityLink("SPlayer-Next-ios", icon: "chevron.left.forwardslash.chevron.right") {
+              openURL(NativeGitHub.repoURL)
+            }
+            communityLink("官方网站", icon: "dot.radiowaves.up.forward") {
+              openURL(NativeGitHub.repoURL)
+            }
+            NavigationLink {
+              NativeLicensesView().nativeSettingsPage()
+            } label: {
+              communityLabel("开源许可", icon: "doc.text")
+            }.buttonStyle(NativePressStyle())
+          }
+        }
+        section("环境信息") {
+          VStack(alignment: .leading, spacing: 6) {
+            ForEach(environment, id: \.0) { label, value, url in
+              HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(label + ":").foregroundStyle(Color.nativeOnSurface.opacity(0.6))
+                if let url {
+                  Button {
+                    openURL(url)
+                  } label: {
+                    HStack(spacing: 4) {
+                      Text(value)
+                      Image(systemName: "arrow.up.right").font(.system(size: 12))
+                    }.foregroundStyle(Color.nativeOnSurface)
+                  }.buttonStyle(.plain)
+                } else {
+                  Text(value).foregroundStyle(Color.nativeOnSurface).textSelection(.enabled)
+                }
+              }
+            }
+          }.font(.system(size: 14)).frame(maxWidth: .infinity, alignment: .leading)
+            .nativeAboutCard(radius: 12)
+        } trailing: {
           Button {
             copyEnvironment()
           } label: {
             Image(systemName: "doc.on.doc")
-          }.buttonStyle(.borderless).accessibilityLabel("复制环境信息")
+          }.buttonStyle(NativeButtonStyle(variant: .ghost, size: .small, shape: .circle))
+            .accessibilityLabel("复制环境信息")
         }
       }
+      .padding(.horizontal, sizeClass == .compact ? 16 : 32).padding(.vertical, 24)
     }
+    .background(Color.nativeSurface.ignoresSafeArea())
     .navigationTitle("关于软件")
     .task { await loadContributors() }
     .alert("发现新版本", isPresented: $showRelease) {
@@ -166,6 +187,44 @@ struct NativeAboutSettings: View {
     ) {
       Button("好", role: .cancel) {}
     }
+  }
+
+  /// 原版 AboutSettings 的分区：竖条标题、下边距 12
+  private func section<Content: View, Trailing: View>(
+    _ title: String, @ViewBuilder content: () -> Content,
+    @ViewBuilder trailing: @escaping () -> Trailing
+  ) -> some View {
+    VStack(alignment: .leading, spacing: 12) {
+      NativeSettingHeader(title: title, trailing: trailing).padding(.horizontal, 4)
+      content()
+    }
+  }
+
+  private func section<Content: View>(_ title: String, @ViewBuilder content: () -> Content)
+    -> some View
+  {
+    section(title, content: content) { EmptyView() }
+  }
+
+  /// 网格列：原版 grid-cols-3（开发人员窄宽 2 列）、gap-2.5
+  private func columns(_ count: Int) -> [GridItem] {
+    Array(repeating: GridItem(.flexible(), spacing: 10, alignment: .top), count: count)
+  }
+
+  private func communityLink(_ title: String, icon: String, action: @escaping () -> Void)
+    -> some View
+  {
+    Button(action: action) { communityLabel(title, icon: icon) }.buttonStyle(NativePressStyle())
+  }
+
+  private func communityLabel(_ title: String, icon: String) -> some View {
+    HStack(spacing: 10) {
+      Image(systemName: icon).font(.system(size: 17)).frame(width: 20, height: 20)
+        .foregroundStyle(Color.nativeOnSurfaceVariant)
+      Text(title).font(.system(size: 14, weight: .medium)).foregroundStyle(Color.nativeOnSurface)
+        .lineLimit(1)
+      Spacer(minLength: 0)
+    }.nativeAboutCard()
   }
 
   /// 原版环境信息：提交、日期、构建与系统
@@ -188,28 +247,15 @@ struct NativeAboutSettings: View {
     ]
   }
 
-  private func linkRow<Label: View>(_ url: String, @ViewBuilder label: () -> Label) -> some View {
-    Button {
-      if let url = URL(string: url) { openURL(url) }
-    } label: {
-      HStack {
-        label()
-        Spacer()
-        Image(systemName: "arrow.up.right").font(.footnote).foregroundStyle(.tertiary)
-      }.contentShape(Rectangle())
-    }.buttonStyle(.plain)
-  }
-
   /// 贡献者网格：默认展示前 6 位，其余折叠
   private func developers(
     _ title: String, _ items: [NativeContributor], expanded: Binding<Bool>, iosVersion: Bool,
     identifier: String
   ) -> some View {
     VStack(alignment: .leading, spacing: 10) {
-      Text(title).font(.system(size: 13, weight: .medium)).foregroundStyle(.secondary)
-      LazyVGrid(
-        columns: [GridItem(.adaptive(minimum: 150), spacing: 10)], alignment: .leading, spacing: 10
-      ) {
+      Text(title).font(.system(size: 14)).foregroundStyle(Color.nativeOnSurfaceVariant.opacity(0.6))
+        .padding(.horizontal, 4)
+      LazyVGrid(columns: columns(sizeClass == .compact ? 2 : 3), spacing: 10) {
         ForEach(expanded.wrappedValue ? items : Array(items.prefix(6))) { dev in
           Button {
             if let url = URL(string: dev.htmlUrl) { openURL(url) }
@@ -217,27 +263,24 @@ struct NativeAboutSettings: View {
             HStack(spacing: 10) {
               NativeArtwork(cover: dev.avatar.isEmpty ? nil : dev.avatar, radius: 18)
                 .frame(width: 36, height: 36)
-              VStack(alignment: .leading, spacing: 2) {
-                Text(dev.login).font(.system(size: 14, weight: .medium)).lineLimit(1)
-                Text(role(dev.login, iosVersion: iosVersion)).font(.caption)
-                  .foregroundStyle(.secondary)
+              VStack(alignment: .leading, spacing: 0) {
+                Text(dev.login).font(.system(size: 14, weight: .medium))
+                  .foregroundStyle(Color.nativeOnSurface).lineLimit(1)
+                Text(role(dev.login, iosVersion: iosVersion)).font(.system(size: 12))
+                  .foregroundStyle(Color.nativeOnSurfaceVariant.opacity(0.6)).lineLimit(1)
               }
               Spacer(minLength: 0)
-            }.padding(8).background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 12))
-              .contentShape(Rectangle())
-          }.buttonStyle(.plain)
+            }.nativeAboutCard(small: true)
+          }.buttonStyle(NativePressStyle())
         }
       }.accessibilityIdentifier(identifier)
       if items.count > 6 {
-        Button {
-          expanded.wrappedValue.toggle()
-        } label: {
-          Label(
-            expanded.wrappedValue ? "收起" : "更多贡献者",
-            systemImage: expanded.wrappedValue ? "chevron.up" : "chevron.down")
-        }.buttonStyle(.borderless).font(.footnote)
+        NativeSButton(
+          title: expanded.wrappedValue ? "收起" : "更多贡献者",
+          icon: expanded.wrappedValue ? "chevron.up" : "chevron.down", variant: .text, size: .small
+        ) { expanded.wrappedValue.toggle() }
       }
-    }.padding(.vertical, 4)
+    }
   }
 
   private func role(_ login: String, iosVersion: Bool) -> String {
@@ -303,14 +346,26 @@ struct NativeLicensesView: View {
             "MaterialColors-LICENSE", "GLMatrix-LICENSE",
           ], id: \.self
         ) { name in
-          Text(name).font(.headline)
+          Text(name).font(.system(size: 16, weight: .semibold))
           if let url = Bundle.module.url(forResource: name, withExtension: "txt"),
             let text = try? String(contentsOf: url, encoding: .utf8)
           {
-            Text(text).font(.system(.caption, design: .monospaced)).textSelection(.enabled)
+            Text(text).font(.system(size: 12, design: .monospaced))
+              .foregroundStyle(Color.nativeOnSurfaceVariant).textSelection(.enabled)
           }
         }
-      }.padding(24)
-    }.navigationTitle("开源许可")
+      }.foregroundStyle(Color.nativeOnSurface).padding(24)
+    }.background(Color.nativeSurface.ignoresSafeArea()).navigationTitle("开源许可")
+  }
+}
+
+extension View {
+  /// 原版 SCard settings 变体：surface-panel、无边框，medium 内边距 16×12，small 12×8
+  /// @param radius - 圆角，默认 lg 8
+  /// @param small - 是否为 small 尺寸
+  fileprivate func nativeAboutCard(radius: CGFloat = 8, small: Bool = false) -> some View {
+    padding(.horizontal, small ? 12 : 16).padding(.vertical, small ? 8 : 12)
+      .background(Color.nativeSurfacePanel, in: RoundedRectangle(cornerRadius: radius))
+      .contentShape(RoundedRectangle(cornerRadius: radius))
   }
 }

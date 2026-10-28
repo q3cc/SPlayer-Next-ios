@@ -23,6 +23,8 @@ public final class NativePlayerStore: ObservableObject {
   @Published public private(set) var importing = false
   @Published private(set) var rawLyrics: String?
   @Published public private(set) var lyrics: [NativeLyricLine] = []
+  /// 歌词格式（yrc / qrc / krc / ttml / lrc …），播放页标签与原版一样显示真实格式
+  @Published private(set) var lyricFormat: String?
   @Published public var error: String?
   /// 非错误的轻提示，例如“已加入下载”
   @Published var notice: String?
@@ -198,6 +200,7 @@ public final class NativePlayerStore: ObservableObject {
   let service = NativeOnlineService()
   lazy var plugins = NativePluginStore(root: root, player: self)
   lazy var catalog = NativeCatalogStore(service: service)
+  lazy var account = NativeAccountStore(service: service)
   lazy var downloads = NativeDownloadStore(
     root: root,
     exports: root.deletingLastPathComponent().appendingPathComponent(
@@ -424,6 +427,7 @@ public final class NativePlayerStore: ObservableObject {
           {
             lyrics = (try? JSONDecoder().decode([NativeLyricLine].self, from: data)) ?? []
             rawLyrics = response["raw"] as? String
+            lyricFormat = response["format"] as? String
           }
         } catch is CancellationError {} catch {
           if generation == token {
@@ -494,6 +498,7 @@ public final class NativePlayerStore: ObservableObject {
       history = Array(history.prefix(100))
       lyrics = []
       rawLyrics = nil
+      lyricFormat = nil
       positionMs = 0
       positionAnchor = Date()
       durationMs = track.durationMs
@@ -512,7 +517,8 @@ public final class NativePlayerStore: ObservableObject {
           do {
             let parsed = try await parseLyrics(raw)
             if current?.id == track.id {
-              lyrics = parsed
+              lyrics = parsed.lines
+              lyricFormat = parsed.format
               rawLyrics = raw
             }
           } catch {
@@ -596,20 +602,24 @@ public final class NativePlayerStore: ObservableObject {
       let text = try await library.importLyrics(url, for: track)
       let parsed = try await parseLyrics(text)
       if current?.id == track.id {
-        lyrics = parsed
+        lyrics = parsed.lines
+        lyricFormat = parsed.format
         rawLyrics = text
       }
     } catch { self.error = "无法导入歌词：" + error.localizedDescription }
   }
 
   /// 本地导入复用 lyric-kit，不将 TTML 或逐字格式降级成纯文本
-  private func parseLyrics(_ content: String) async throws -> [NativeLyricLine] {
+  private func parseLyrics(_ content: String) async throws -> (
+    lines: [NativeLyricLine], format: String?
+  ) {
     guard
       let response = try await service.call(["action": "parseLyrics", "content": content])
         as? [String: Any], let values = response["lines"]
     else { throw SiriFailure("歌词解析失败") }
-    return try JSONDecoder().decode(
+    let lines = try JSONDecoder().decode(
       [NativeLyricLine].self, from: JSONSerialization.data(withJSONObject: values))
+    return (lines, response["format"] as? String)
   }
 
   /// 收藏在线曲目时同时保存曲目元数据，重启后无需重新搜索；网易云曲目同步红心
@@ -741,6 +751,21 @@ public final class NativePlayerStore: ObservableObject {
 
   /// 退出心动模式只改变模式，当前队列继续播放
   func exitHeartMode() { heartMode = false }
+
+  /// 插入到当前曲目之后，对应原版“下一首播放 / 添加到队列”
+  /// @param tracks - 要插入的曲目，已在队列中的会先移出再插入
+  /// @returns 实际插入的数量
+  @discardableResult
+  func insertNext(_ tracks: [NativeTrack]) -> Int {
+    let ids = Set(tracks.map(\.id)).subtracting(current.map { [$0.id] } ?? [])
+    let inserting = tracks.filter { ids.contains($0.id) }
+    queue.removeAll { ids.contains($0.id) }
+    let index = current.flatMap { track in queue.firstIndex { $0.id == track.id } }
+      .map { $0 + 1 } ?? queue.count
+    queue.insert(contentsOf: inserting, at: index)
+    persistPlayback()
+    return inserting.count
+  }
 
   /// 追加待播曲目，不改变当前音频状态
   func enqueue(_ track: NativeTrack) {
@@ -898,6 +923,7 @@ public final class NativePlayerStore: ObservableObject {
     engine.stop()
     current = nil
     lyrics = []
+    lyricFormat = nil
     positionMs = 0
     durationMs = 0
     resumePosition = nil

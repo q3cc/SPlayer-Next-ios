@@ -27,12 +27,12 @@ struct NativeGeneralSettings: View {
   ]
 
   var body: some View {
-    Form {
-      Section("备份与重置") {
-        HStack {
-          NativeSettingLabel(title: "重置设置", detail: "将全部设置项还原为默认值，不影响歌单与本地音乐库")
-          Spacer()
-          Button("重置", role: .destructive) { confirmReset = true }
+    NativeSettingsList {
+      NativeSettingSection("备份与重置") {
+        NativeSettingControl(title: "重置设置", detail: "将全部设置项还原为默认值，不影响歌单与本地音乐库") {
+          NativeSButton(title: "重置设置", variant: .secondary, tint: .error, size: .small) {
+            confirmReset = true
+          }
         }
       }
     }.navigationTitle("常规设置")
@@ -62,8 +62,8 @@ struct NativeGeneralSettings: View {
 struct NativeServiceSettings: View {
   @ObservedObject var player: NativePlayerStore
   var body: some View {
-    Form {
-      Section("媒体控制") {
+    NativeSettingsList {
+      NativeSettingSection("媒体控制") {
         Toggle(isOn: $player.mediaControls) {
           NativeSettingLabel(title: "系统媒体控制", detail: "在系统媒体控制中显示当前播放信息")
         }
@@ -82,12 +82,16 @@ struct NativeLocalSettings: View {
   @ObservedObject var player: NativePlayerStore
   let importMusic: () -> Void
   var body: some View {
-    Form {
-      Section("本地音乐") {
-        LabeledContent("已导入歌曲", value: "\(player.tracks.count) 首")
-        Button("导入音乐", action: importMusic).disabled(player.importing).accessibilityIdentifier(
-          "native.import.settings")
-        Text("删除歌曲只删除应用内副本，不影响原文件").font(.footnote).foregroundStyle(.secondary)
+    NativeSettingsList {
+      NativeSettingSection("本地音乐") {
+        NativeSettingControl(title: "已导入歌曲") {
+          Text("\(player.tracks.count) 首").font(.system(size: 14))
+            .foregroundStyle(Color.nativeOnSurfaceVariant)
+        }
+        NativeSettingControl(title: "导入音乐", detail: "删除歌曲只删除应用内副本，不影响原文件") {
+          NativeSButton(title: "导入音乐", variant: .secondary, tint: .primary, size: .small, action: importMusic)
+            .disabled(player.importing).accessibilityIdentifier("native.import.settings")
+        }
       }
     }.navigationTitle("本地与缓存")
   }
@@ -99,15 +103,19 @@ struct NativeOtherSettings: View {
   @ObservedObject var player: NativePlayerStore
   @State private var clearSession = false
   var body: some View {
-    Form {
-      Section {
+    NativeSettingsList {
+      NativeSettingSection(
+        "平台登录", tag: "Beta", footer: "搜索与音源解析复用更新后的平台接口；不提供试听片段替代完整歌曲"
+      ) {
         NavigationLink("平台账号") {
-          NativeAccountsView(service: player.service).nativeSettingsPage()
+          NativeAccountsView(service: player.service, account: player.account)
+            .nativeSettingsPage()
         }
-        Text("搜索与音源解析复用更新后的平台接口；不提供试听片段替代完整歌曲").font(.footnote).foregroundStyle(.secondary)
-        Button("清除平台会话", role: .destructive) { clearSession = true }
-      } header: {
-        NativeSettingHeader(title: "平台登录", tag: "Beta")
+        NativeSettingControl(title: "清除平台会话") {
+          NativeSButton(title: "清除平台会话", variant: .secondary, tint: .error, size: .small) {
+            clearSession = true
+          }
+        }
       }
     }.navigationTitle("其他设置")
       .confirmationDialog("清除平台登录状态？", isPresented: $clearSession) {
@@ -115,6 +123,7 @@ struct NativeOtherSettings: View {
           do { try player.service.clearSession() } catch {
             player.error = error.localizedDescription
           }
+          Task { await player.account.refresh() }
         }
       }
   }

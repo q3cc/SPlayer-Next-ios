@@ -20,9 +20,9 @@ struct NativeThemePreview: View {
     }
   }
 
+  /// 用主题令牌绘制，并强制对应外观，使预览与真实界面配色一致
   private func page(dark: Bool) -> some View {
-    let canvas = dark ? Color(white: 0.08) : Color(white: 0.965)
-    let ink = dark ? Color.white : Color.black
+    let ink = Color.nativeOnSurface
     return GeometryReader { geometry in
       let unit = geometry.size.width / 24
       HStack(spacing: 0) {
@@ -33,7 +33,7 @@ struct NativeThemePreview: View {
           }
           Spacer()
         }.padding(unit).frame(width: unit * 7, alignment: .leading)
-          .background(ink.opacity(0.04))
+          .background(Color.nativeSurfacePanel)
         VStack(alignment: .leading, spacing: unit * 0.8) {
           Capsule().fill(ink.opacity(0.7)).frame(width: unit * 6, height: unit * 0.9)
           HStack(spacing: unit * 0.7) {
@@ -50,10 +50,11 @@ struct NativeThemePreview: View {
             }
           }
           Spacer(minLength: 0)
-          RoundedRectangle(cornerRadius: unit).fill(ink.opacity(0.08)).frame(height: unit * 2.6)
+          RoundedRectangle(cornerRadius: unit).fill(Color.nativeSurfacePanel)
+            .frame(height: unit * 2.6)
         }.padding(unit)
-      }.background(canvas)
-    }
+      }.background(Color.nativeSurface)
+    }.environment(\.colorScheme, dark ? .dark : .light)
   }
 }
 

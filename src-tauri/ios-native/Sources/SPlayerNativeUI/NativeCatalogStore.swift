@@ -8,6 +8,10 @@ final class NativeCatalogStore: ObservableObject {
   @Published var source = "netease"
   @Published private(set) var results: [NativeTrack] = []
   @Published private(set) var recommendations: [NativeCover] = []
+  /// 雷达歌单，仅登录后提供
+  @Published private(set) var radar: [NativeCover] = []
+  /// 当前推荐对应的登录态；登录态变化后需要重新拉取
+  private var homeLoggedIn: Bool?
   @Published private(set) var playlist: [NativeTrack] = []
   @Published private(set) var playlistTitle = ""
   /// 当前打开的歌单卡片，详情头部直接沿用卡片封面与简介
@@ -26,15 +30,25 @@ final class NativeCatalogStore: ObservableObject {
   /// 注入共用平台服务，保持搜索与播放状态分离
   init(service: NativeOnlineService) { self.service = service }
 
-  /// 拉取与新版 Web 首页相同的真实推荐歌单
-  func loadHome(refresh: Bool = false) async {
-    guard recommendations.isEmpty || refresh, !loadingHome else { return }
+  /// 拉取与原版首页一致的推荐：未登录为推荐歌单，登录后为专属歌单并附带雷达歌单
+  /// @param loggedIn - 是否已登录网易云
+  /// @param refresh - 是否忽略已有结果重新拉取
+  func loadHome(loggedIn: Bool = false, refresh: Bool = false) async {
+    guard recommendations.isEmpty || refresh || homeLoggedIn != loggedIn, !loadingHome else {
+      return
+    }
     loadingHome = true
     defer { loadingHome = false }
     do {
-      let raw = try await service.call(["action": "home"])
-      recommendations = try JSONDecoder().decode(
-        [NativeCover].self, from: JSONSerialization.data(withJSONObject: raw))
+      let raw =
+        try await service.call(["action": "home", "loggedIn": loggedIn]) as? [String: Any] ?? [:]
+      let decode = { (key: String) throws -> [NativeCover] in
+        try JSONDecoder().decode(
+          [NativeCover].self, from: JSONSerialization.data(withJSONObject: raw[key] ?? []))
+      }
+      recommendations = try decode("recommend")
+      radar = try decode("radar")
+      homeLoggedIn = loggedIn
     } catch is CancellationError {} catch { self.error = error.localizedDescription }
   }
 
@@ -77,7 +91,7 @@ final class NativeCatalogStore: ObservableObject {
     }
   }
 
-  /// 载入完整歌单，切换歌单后丢弃旧请求结果
+  /// 载入歌单、专辑或歌手的曲目，切换后丢弃旧请求结果
   func open(_ cover: NativeCover) {
     playlistTask?.cancel()
     playlistGeneration += 1
@@ -91,7 +105,8 @@ final class NativeCatalogStore: ObservableObject {
       defer { if generation == playlistGeneration { loadingPlaylist = false } }
       do {
         let raw =
-          try await service.call(["action": "playlist", "id": cover.id]) as? [String: Any] ?? [:]
+          try await service.call(["action": cover.kind ?? "playlist", "id": cover.id])
+          as? [String: Any] ?? [:]
         guard generation == playlistGeneration, !Task.isCancelled else { return }
         playlist = (raw["tracks"] as? [[String: Any]] ?? []).compactMap(NativeTrack.online)
       } catch is CancellationError {} catch {

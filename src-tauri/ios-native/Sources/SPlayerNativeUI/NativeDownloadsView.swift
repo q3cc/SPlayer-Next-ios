@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// 下载管理页：待下载 / 下载出错 / 已完成三栏，对应 Next 的 pages/Download.vue
+/// 下载管理页：待下载 / 下载出错 / 已完成三栏，对应原版 pages/Download.vue 与 list/DownloadList.vue
 @MainActor
 struct NativeDownloadsView: View {
   @ObservedObject var player: NativePlayerStore
@@ -8,6 +8,11 @@ struct NativeDownloadsView: View {
   @State private var tab = "active"
   @State private var confirmClear = false
   @State private var deleting: NativeDownloadTask?
+
+  /// 原版 sm 断点：窄于 640 时隐藏封面、大小、时长列，状态列收窄到 64
+  private static let narrowWidth: CGFloat = 640
+  /// 无损级别标签与标签写入警告的 amber-500
+  private static let amber = Color(light: 0xF59E0B, dark: 0xF59E0B)
 
   private var current: [NativeDownloadTask] {
     switch tab {
@@ -19,53 +24,45 @@ struct NativeDownloadsView: View {
   private var playable: [NativeTrack] { current.compactMap(downloads.localTrack) }
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 16) {
-      HStack(alignment: .firstTextBaseline, spacing: 16) {
-        Text("下载管理").font(.system(size: 30, weight: .bold))
-        Label("共 \(current.count) 首歌曲", systemImage: "music.note").font(.system(size: 13))
-          .foregroundStyle(.secondary)
-        Spacer()
-      }
-      HStack(spacing: 12) {
-        Picker("下载状态", selection: $tab) {
-          Text("待下载").tag("active")
-          Text("下载出错").tag("error")
-          Text("已完成").tag("done")
-        }.pickerStyle(.segmented).frame(maxWidth: 360).accessibilityIdentifier("native.downloads.tabs")
-        Spacer()
-        if tab == "done" {
-          Button {
-            if let first = playable.first { player.play(first, in: playable, context: "下载管理") }
-          } label: {
-            Label("播放全部", systemImage: "play.fill")
-          }.buttonStyle(.borderedProminent).buttonBorderShape(.capsule).disabled(playable.isEmpty)
-        }
-        Button {
-          confirmClear = true
-        } label: {
-          Label("清空已完成", systemImage: "trash")
-        }.buttonStyle(.bordered).buttonBorderShape(.capsule)
-          .disabled(downloads.historyTasks.isEmpty)
-      }
-      if current.isEmpty {
-        VStack(spacing: 12) {
-          Image(systemName: "arrow.down.circle").font(.system(size: 46)).foregroundStyle(.tertiary)
-          Text(tab == "done" ? "还没有下载完成的歌曲" : "暂无下载任务").font(.callout)
-            .foregroundStyle(.secondary)
-        }.frame(maxWidth: .infinity, maxHeight: .infinity)
-      } else {
-        ScrollView {
-          LazyVStack(spacing: 0) {
-            ForEach(Array(current.enumerated()), id: \.element.id) { index, task in
-              row(task).padding(.horizontal, 8)
-                .background(
-                  index.isMultiple(of: 2) ? Color.primary.opacity(0.025) : .clear,
-                  in: RoundedRectangle(cornerRadius: 8))
+    GeometryReader { geometry in
+      let narrow = geometry.size.width < Self.narrowWidth
+      VStack(alignment: .leading, spacing: 0) {
+        NativePageHeader(title: "下载管理", meta: [(icon: "music.note", text: "共 \(current.count) 首")]) {
+          ViewThatFits(in: .horizontal) {
+            HStack(spacing: 16) {
+              tabs
+              Spacer(minLength: 0)
+              headerActions
             }
+            VStack(alignment: .leading, spacing: 16) {
+              tabs
+              headerActions
+            }
+          }
+        }.padding(.horizontal, 20).padding(.bottom, 8)
+        #if os(iOS)
+          Text("文件 → 我的 iPhone / iPad → SPlayer Native → \(NativeDownloadStore.exportFolder)")
+            .font(.system(size: 12)).foregroundStyle(Color.nativeOnSurfaceVariant)
+            .padding(.horizontal, 20).padding(.bottom, 8)
+        #endif
+        if current.isEmpty {
+          NativeEmptyState(
+            icon: "arrow.down.to.line", text: tab == "done" ? "还没有下载完成的歌曲" : "暂无下载任务"
+          ).frame(maxHeight: .infinity)
+        } else {
+          ScrollView {
+            VStack(spacing: 0) {
+              columnHeader(narrow: narrow)
+              LazyVStack(spacing: 12) {
+                ForEach(Array(current.enumerated()), id: \.element.id) { index, task in
+                  row(task, index: index, narrow: narrow)
+                }
+              }.padding(.horizontal, 12)
+            }.padding(.bottom, 80)
           }
         }
       }
-    }.padding(24).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
       .accessibilityIdentifier("native.downloads.page")
       .confirmationDialog(
         "清空已完成任务", isPresented: $confirmClear, titleVisibility: .visible
@@ -88,89 +85,234 @@ struct NativeDownloadsView: View {
       }
   }
 
-  private func row(_ task: NativeDownloadTask) -> some View {
+  /// STabs bar large
+  private var tabs: some View {
+    NativeTabs(
+      selection: $tab,
+      items: [(value: "active", title: "待下载"), (value: "error", title: "下载出错"), (value: "done", title: "已完成")],
+      style: .bar, large: true
+    ).accessibilityElement(children: .contain).accessibilityIdentifier("native.downloads.tabs")
+  }
+
+  /// 已完成页的播放全部（primary secondary round）与清空已完成（secondary round）
+  private var headerActions: some View {
     HStack(spacing: 12) {
+      if tab == "done" {
+        NativeSButton(
+          title: "播放全部", icon: "play.fill", variant: .secondary, tint: .primary, shape: .round
+        ) {
+          if let first = playable.first { player.play(first, in: playable, context: "下载管理") }
+        }.disabled(playable.isEmpty)
+      }
+      NativeSButton(title: "清空已完成", icon: "trash", variant: .secondary, shape: .round) {
+        confirmClear = true
+      }.disabled(downloads.historyTasks.isEmpty)
+    }.fixedSize()
+  }
+
+  /// 列表表头：# · 标题 · 状态 · 大小 · 时长 · 操作
+  private func columnHeader(narrow: Bool) -> some View {
+    HStack(spacing: narrow ? 8 : 12) {
+      Text("#").frame(width: 32)
+      Text("标题").padding(.horizontal, 6).frame(maxWidth: .infinity, alignment: .leading)
+      Text("状态").frame(width: narrow ? 64 : 128, alignment: .leading)
+      if !narrow {
+        Text("大小").frame(width: 80)
+        Text("时长").frame(width: 64)
+        Text("操作").frame(width: 80)
+      }
+    }.font(.system(size: 14)).foregroundStyle(Color.nativeOnSurfaceVariant.opacity(0.6))
+      .lineLimit(1).padding(.leading, narrow ? 8 : 12).padding(.trailing, narrow ? 8 : 24)
+      .frame(height: 40).padding(.horizontal, 12 + 2)
+      .accessibilityHidden(true)
+  }
+
+  /// 原版下载行：同舒适歌曲行 76 高、圆角 12、2px 边框；只有已完成且文件仍在的行可点击播放
+  @ViewBuilder private func row(_ task: NativeDownloadTask, index: Int, narrow: Bool) -> some View {
+    let local = downloads.localTrack(task)
+    let playing = local != nil && player.current?.id == local?.id
+    let content = rowContent(task, local: local, index: index, playing: playing, narrow: narrow)
+      .padding(.leading, narrow ? 8 : 12).padding(.trailing, narrow ? 8 : 24)
+      .frame(height: 76).contentShape(Rectangle())
+    Group {
+      if let local {
+        Button {
+          player.play(local, in: playable, context: "下载管理")
+        } label: {
+          content
+        }.buttonStyle(NativeSongRowStyle(playing: playing, compact: false))
+      } else {
+        let shape = RoundedRectangle(cornerRadius: 12)
+        content.background(Color.nativeSurfacePanel, in: shape)
+          .overlay(shape.strokeBorder(Color.nativePrimary.opacity(0.12), lineWidth: 2))
+          .accessibilityElement(children: .contain)
+      }
+    }.accessibilityIdentifier("native.download." + task.track.id)
+      .contextMenu { menu(task) }
+  }
+
+  private func rowContent(
+    _ task: NativeDownloadTask, local: NativeTrack?, index: Int, playing: Bool, narrow: Bool
+  ) -> some View {
+    HStack(spacing: narrow ? 8 : 12) {
+      indexCell(task, local: local, index: index, playing: playing)
+      HStack(spacing: 12) {
+        if !narrow {
+          NativeArtwork(cover: task.track.cover, radius: 8).frame(width: 48, height: 48)
+        }
+        VStack(alignment: .leading, spacing: 4) {
+          HStack(spacing: 6) {
+            Text(task.track.title).font(.system(size: 16, weight: .medium))
+              .foregroundStyle(playing ? Color.nativePrimary : Color.nativeOnSurface).lineLimit(1)
+            if task.tagWarning == true {
+              Image(systemName: "exclamationmark.triangle").font(.system(size: 14))
+                .foregroundStyle(Self.amber).help("标签写入失败，文件已保存")
+                .accessibilityLabel("标签写入失败，文件已保存")
+            }
+          }
+          HStack(spacing: 4) {
+            qualityTag(task.quality)
+            Text(task.track.artist.replacingOccurrences(of: "/", with: " / ")).lineLimit(1)
+          }.font(.system(size: 14)).foregroundStyle(
+            playing ? Color.nativePrimary.opacity(0.7) : Color.nativeOnSurfaceVariant)
+        }
+      }.frame(maxWidth: .infinity, alignment: .leading)
+      status(task, local: local).frame(width: narrow ? 64 : 128, alignment: .leading)
+      if !narrow {
+        Text(sizeText(task)).font(.system(size: 14).monospacedDigit())
+          .foregroundStyle(Color.nativeOnSurfaceVariant).lineLimit(1).frame(width: 80)
+        Text(task.track.durationMs > 0 ? NativeNowPlayingView.time(task.track.durationMs) : "—")
+          .font(.system(size: 14).monospacedDigit())
+          .foregroundStyle(playing ? Color.nativePrimary.opacity(0.6) : Color.nativeOnSurfaceVariant)
+          .frame(width: 64)
+      }
+      actions(task, local: local).frame(width: 80)
+    }
+  }
+
+  /// 序号列：已完成显示序号（播放中为音符），点击切换播放；未完成显示下载中转圈或下载图标
+  @ViewBuilder private func indexCell(
+    _ task: NativeDownloadTask, local: NativeTrack?, index: Int, playing: Bool
+  ) -> some View {
+    if let local {
       Button {
-        if let local = downloads.localTrack(task) {
+        if playing {
+          player.togglePlayback()
+        } else {
           player.play(local, in: playable, context: "下载管理")
         }
       } label: {
-        HStack(spacing: 12) {
-          NativeArtwork(cover: task.track.cover).frame(width: 44, height: 44)
-          VStack(alignment: .leading, spacing: 5) {
-            Text(task.track.title).font(.system(size: 14)).lineLimit(1)
-            Text(task.track.artist).font(.system(size: 12)).foregroundStyle(.secondary)
-              .lineLimit(1)
+        Group {
+          if playing {
+            Image(systemName: player.isPlaying ? "music.note" : "play.fill")
+              .font(.system(size: 17, weight: .medium))
+          } else {
+            Text(String(index + 1)).font(.system(size: 14, weight: .bold).monospacedDigit())
           }
-          Spacer(minLength: 8)
-          status(task).frame(width: 190, alignment: .trailing)
-        }.padding(.vertical, 8).contentShape(Rectangle())
-      }.buttonStyle(.plain).disabled(downloads.localTrack(task) == nil)
-        .accessibilityIdentifier("native.download." + task.track.id)
-      Text(task.quality == "hi-res" ? "Hi-Res" : task.quality.uppercased())
-        .font(.system(size: 10, weight: .medium)).foregroundStyle(.secondary)
-        .padding(.horizontal, 6).padding(.vertical, 2)
-        .overlay(Capsule().stroke(.secondary.opacity(0.4)))
-      actions(task)
-    }
-  }
-
-  @ViewBuilder private func status(_ task: NativeDownloadTask) -> some View {
-    switch task.status {
-    case .downloading:
-      VStack(alignment: .trailing, spacing: 4) {
-        if task.total > 0 {
-          ProgressView(value: Double(task.received), total: Double(task.total))
-        } else {
-          ProgressView(value: 0).opacity(0.4)
-        }
-        Text(size(task.received) + (task.total > 0 ? " / " + size(task.total) : ""))
-          .font(.system(size: 11).monospacedDigit()).foregroundStyle(.secondary)
-      }
-    case .done:
-      VStack(alignment: .trailing, spacing: 3) {
-        Text(task.total > 0 ? size(task.total) : "已完成").font(.system(size: 12).monospacedDigit())
-          .foregroundStyle(.secondary)
-        if task.tagWarning == true {
-          Text("标签写入失败，文件已保存").font(.system(size: 11)).foregroundStyle(.orange)
-        } else if downloads.localTrack(task) == nil {
-          Text("曲库中的文件已删除").font(.system(size: 11)).foregroundStyle(.secondary)
-        }
-      }
-    default:
-      VStack(alignment: .trailing, spacing: 3) {
-        Text(task.status.label).font(.system(size: 12))
-          .foregroundStyle(task.status == .failed ? .red : .secondary)
-        if let error = task.error {
-          Text(error).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
-        }
-      }
-    }
-  }
-
-  @ViewBuilder private func actions(_ task: NativeDownloadTask) -> some View {
-    if task.status.isActive {
-      Button {
-        downloads.cancel(task.id)
-      } label: {
-        Image(systemName: "xmark.circle").frame(width: 36, height: 44)
-      }.buttonStyle(.plain).accessibilityLabel("取消")
+        }.foregroundStyle(playing ? Color.nativePrimary : Color.nativeOnSurfaceVariant)
+          .frame(width: 32, height: 52).contentShape(Rectangle())
+      }.buttonStyle(.plain)
+        .accessibilityLabel(playing && player.isPlaying ? "暂停" : "播放 " + task.track.title)
     } else {
-      Menu {
-        if task.status.isError { Button("重试") { downloads.retry(task.id) } }
+      Group {
+        if task.status == .downloading {
+          ProgressView().controlSize(.small).tint(Color.nativeOnSurfaceVariant)
+            .scaleEffect(0.8)
+        } else {
+          Image(systemName: "arrow.down.to.line").font(.system(size: 14))
+        }
+      }.foregroundStyle(Color.nativeOnSurfaceVariant).frame(width: 32)
+    }
+  }
+
+  /// STag tiny outline：无损级别为 amber，其余为 on-surface-variant
+  private func qualityTag(_ quality: String) -> some View {
+    let lossless = quality == "hi-res" || quality == "lossless"
+    let color = lossless ? Self.amber : Color.nativeOnSurfaceVariant
+    let label = ["hi-res": "Hi-Res", "lossless": "Lossless"][quality] ?? quality.uppercased()
+    return Text(label).font(.system(size: 10, weight: .bold)).foregroundStyle(color)
+      .padding(.horizontal, 4).frame(height: 18)
+      .overlay(RoundedRectangle(cornerRadius: 4).strokeBorder(color.opacity(0.4), lineWidth: 1))
+      .fixedSize()
+  }
+
+  /// 状态列：下载中为 6 高进度条加百分比（总大小未知时显示已接收大小），其余为状态文字
+  @ViewBuilder private func status(_ task: NativeDownloadTask, local: NativeTrack?) -> some View {
+    if task.status == .downloading {
+      VStack(alignment: .leading, spacing: 6) {
+        Capsule().fill(Color.nativeOnSurface.opacity(0.1)).frame(height: 6).overlay(alignment: .leading) {
+          GeometryReader { geometry in
+            Capsule().fill(Color.nativePrimary)
+              .frame(width: geometry.size.width * CGFloat(percent(task)) / 100)
+              .animation(.easeOut(duration: 0.2), value: percent(task))
+          }
+        }.clipShape(Capsule())
+        Text(task.total > 0 ? "\(percent(task))%" : size(task.received))
+          .font(.system(size: 12).monospacedDigit())
+          .foregroundStyle(Color.nativeOnSurfaceVariant.opacity(0.6)).lineLimit(1)
+      }
+    } else {
+      Text(task.status == .done && local == nil ? "曲库中的文件已删除" : task.status.label)
+        .font(.system(size: 14)).foregroundStyle(Color.nativeOnSurfaceVariant.opacity(0.6))
+        .lineLimit(2).help(task.error ?? "")
+        .accessibilityHint(task.error ?? "")
+    }
+  }
+
+  /// 操作列：ghost 圆形 small 按钮，按状态显示取消 / 重试与移除 / 在「文件」中查看与删除文件
+  @ViewBuilder private func actions(_ task: NativeDownloadTask, local: NativeTrack?) -> some View {
+    HStack(spacing: 4) {
+      if task.status.isActive {
+        actionButton("xmark", label: "取消") { downloads.cancel(task.id) }
+      } else if task.status.isError {
+        actionButton("arrow.counterclockwise", label: "重试") { downloads.retry(task.id) }
+        actionButton("trash", label: "移除") { downloads.remove(task.id) }
+      } else if task.status == .done {
         #if os(iOS)
           if let path = task.exportPath {
-            Button("在「文件」中查看") { openInFiles(path) }
+            actionButton("folder", label: "在「文件」中查看") { openInFiles(path) }
           }
         #endif
-        Button("移除") { downloads.remove(task.id) }
-        if task.status == .done {
-          Button("删除文件", role: .destructive) { deleting = task }
-        }
-      } label: {
-        Image(systemName: "ellipsis").frame(width: 36, height: 44)
+        actionButton("trash", label: "删除文件") { deleting = task }
       }
     }
+  }
+
+  private func actionButton(_ icon: String, label: String, action: @escaping () -> Void)
+    -> some View
+  {
+    NativeSButton(icon: icon, variant: .ghost, size: .small, shape: .circle, action: action)
+      .accessibilityLabel(label)
+  }
+
+  /// 长按菜单保留全部任务操作，包括已完成任务的“仅移除记录”
+  @ViewBuilder private func menu(_ task: NativeDownloadTask) -> some View {
+    if task.status.isActive {
+      Button("取消", systemImage: "xmark") { downloads.cancel(task.id) }
+    } else {
+      if task.status.isError {
+        Button("重试", systemImage: "arrow.counterclockwise") { downloads.retry(task.id) }
+      }
+      #if os(iOS)
+        if let path = task.exportPath {
+          Button("在「文件」中查看", systemImage: "folder") { openInFiles(path) }
+        }
+      #endif
+      Button("移除", systemImage: "minus.circle") { downloads.remove(task.id) }
+      if task.status == .done {
+        Button("删除文件", systemImage: "trash", role: .destructive) { deleting = task }
+      }
+    }
+  }
+
+  private func percent(_ task: NativeDownloadTask) -> Int {
+    task.total > 0 ? min(100, Int((Double(task.received) / Double(task.total) * 100).rounded())) : 0
+  }
+
+  /// 文件大小：已知字节才显示
+  private func sizeText(_ task: NativeDownloadTask) -> String {
+    let bytes = task.total > 0 ? task.total : task.received
+    return bytes > 0 ? size(bytes) : "—"
   }
 
   private func size(_ bytes: Int64) -> String {
@@ -218,7 +360,7 @@ struct NativeDownloadSettings: View {
         }
         LabeledContent("下载目录") {
           Text("文件 › SPlayer Native › \(NativeDownloadStore.exportFolder)")
-            .foregroundStyle(.secondary)
+            .foregroundStyle(Color.nativeOnSurfaceVariant)
         }
       }
       Section("常规") {
@@ -281,8 +423,9 @@ struct NativeDownloadBadge: View {
   var body: some View {
     // 与原版歌曲行的“已下载”圆形对勾标签一致
     if track.source != nil, downloads.isDownloaded(track) {
-      Image(systemName: "checkmark").font(.system(size: 8, weight: .bold))
-        .frame(width: 14, height: 14).background(Color.primary.opacity(0.12), in: Circle())
+      Image(systemName: "checkmark").font(.system(size: 9, weight: .bold))
+        .foregroundStyle(Color.nativePrimary)
+        .frame(width: 16, height: 16).background(Color.nativePrimary.opacity(0.15), in: Circle())
         .accessibilityLabel("已下载")
     }
   }

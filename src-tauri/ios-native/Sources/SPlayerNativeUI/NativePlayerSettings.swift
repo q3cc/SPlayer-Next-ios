@@ -14,8 +14,8 @@ struct NativePlayerSettings: View {
   @AppStorage(NativePlayBehavior.songListKey) private var songListPlay = NativePlayBehavior.current
 
   var body: some View {
-    Form {
-      Section("播放控制") {
+    NativeSettingsList {
+      NativeSettingSection("播放控制") {
         Toggle(isOn: $autoPlay) {
           NativeSettingLabel(title: "自动播放", detail: "启动恢复上次歌曲后自动开始播放")
         }
@@ -34,7 +34,7 @@ struct NativePlayerSettings: View {
           NativeSettingLabel(title: "音量均衡", detail: "自动调节不同歌曲之间的音量差异", tag: "Beta")
         }
       }
-      Section("播放行为") {
+      NativeSettingSection("播放行为") {
         NativeSettingPicker(title: "搜索页播放", detail: "配置搜索页面点击歌曲时的行为", selection: $searchPlay) {
           Text("仅播放当前").tag(NativePlayBehavior.current)
           Text("播放全部").tag(NativePlayBehavior.all)
@@ -46,7 +46,7 @@ struct NativePlayerSettings: View {
           Text("播放全部").tag(NativePlayBehavior.all)
         }.accessibilityIdentifier("native.settings.songListPlay")
       }
-      Section("播放音源") {
+      NativeSettingSection("播放音源") {
         NativeSettingPicker(
           title: "在线歌曲音质", detail: "在线歌曲的音质偏好，取决于账号实际可用级别", selection: $quality
         ) {
@@ -57,7 +57,7 @@ struct NativePlayerSettings: View {
           Text("高解析度无损 (Hi-Res)").tag("hi-res")
         }
       }
-      Section {
+      NativeSettingSection("音乐频谱", tag: "Beta") {
         Toggle(isOn: $spectrum) {
           NativeSettingLabel(title: "启用音乐频谱", detail: "实时频谱分析会持续占用一定的 CPU，性能敏感设备建议关闭")
         }
@@ -68,23 +68,18 @@ struct NativePlayerSettings: View {
             NativeSettingLabel(title: "频谱反向", detail: "启用后频率从中间向两侧递减，否则递增")
           }
         }
-      } header: {
-        NativeSettingHeader(title: "音乐频谱", tag: "Beta")
       }
       #if os(iOS)
-        Section("输出设备") {
-          HStack {
-            NativeSettingLabel(title: "音频输出", detail: "选择 AirPlay、蓝牙或本机扬声器")
-            Spacer()
+        NativeSettingSection("输出设备") {
+          NativeSettingControl(title: "音频输出", detail: "选择 AirPlay、蓝牙或本机扬声器") {
             NativeRoutePicker().frame(width: 40, height: 36)
           }
-          VStack(alignment: .leading, spacing: 8) {
-            Text("系统音量")
+          NativeSettingControl(title: "系统音量", fill: true) {
             NativeVolumeSlider().frame(height: 40)
           }
         }
       #endif
-      Section("音效与工具") {
+      NativeSettingSection("音效与工具") {
         NavigationLink("均衡器") { NativeEqualizerView(player: player).nativeSettingsPage() }
         NavigationLink("播放控制") { NativePlaybackTools(player: player).nativeSettingsPage() }
       }
