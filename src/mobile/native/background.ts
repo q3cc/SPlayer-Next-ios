@@ -1,10 +1,15 @@
 import "./textEncoding";
 import { exportNativeLyrics, loadNativeLyrics, parseNativeLyrics } from "./lyrics";
+import {
+  loadNativeAccount,
+  loadNativeCollection,
+  loadNativeHome,
+  logoutNativeAccount,
+} from "./account";
 import { mobileProviders } from "../providers";
 import { fetchUserCloud } from "@/apis/cloud/netease";
 import { searchSongs } from "@/apis/search";
 import {
-  fetchRecommendPlaylists,
   fetchDailySongs,
   fetchPersonalFm,
   fetchHeartModeList,
@@ -58,6 +63,10 @@ interface NativeRequest {
     | "pluginHost"
     | "search"
     | "home"
+    | "account"
+    | "logout"
+    | "album"
+    | "artist"
     | "playlist"
     | "resolve"
     | "lyrics"
@@ -88,6 +97,7 @@ interface NativeRequest {
   like?: boolean;
   time?: number;
   format?: string;
+  loggedIn?: boolean;
 }
 
 /** 原生界面复用已更新的平台接口；所有显示和交互由 SwiftUI/UIKit 完成
@@ -125,7 +135,15 @@ export const run = async (request: NativeRequest): Promise<unknown> => {
     case "pluginHost":
       return dispatchNativePluginRequest(request.method ?? "", request.args ?? []);
     case "home":
-      return fetchRecommendPlaylists(false);
+      return loadNativeHome(request.loggedIn === true);
+    case "account":
+      return loadNativeAccount();
+    case "logout":
+      await logoutNativeAccount();
+      return true;
+    case "album":
+    case "artist":
+      return loadNativeCollection(request.action, String(request.id ?? ""));
     case "search": {
       const query = request.query?.trim();
       if (!query || query.length > 200) throw new Error("请输入 1–200 字的搜索内容");
