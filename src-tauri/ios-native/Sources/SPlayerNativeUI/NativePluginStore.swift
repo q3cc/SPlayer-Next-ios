@@ -252,7 +252,7 @@ final class NativePluginStore: ObservableObject {
       guard let record = records.first(where: { $0.id == id }) else { return }
       machine.send([
         "kind": "loadPlugin", "pluginId": id, "apiLevel": 5, "locale": "zh-CN",
-        "appVersion": "2.1.0", "userSettings": [:], "source": record.source,
+        "appVersion": "2.2.0", "userSettings": [:], "source": record.source,
         "scriptInfo": [
           "name": record.name, "version": record.version, "description": record.description ?? "",
           "author": "", "homepage": "",

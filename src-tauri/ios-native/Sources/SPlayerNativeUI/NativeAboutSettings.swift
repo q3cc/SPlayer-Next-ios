@@ -10,7 +10,7 @@ import SwiftUI
 /// 构建信息：版本取自应用包，提交由 prepare.sh 写入 build-info.json
 enum NativeBuildInfo {
   static let version =
-    Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "2.1.0"
+    Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "2.2.0"
   static let build = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? ""
   private static let info: [String: String] = {
     guard let url = Bundle.module.url(forResource: "build-info", withExtension: "json"),
