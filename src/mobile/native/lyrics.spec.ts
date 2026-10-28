@@ -14,6 +14,7 @@ it("YRC 保留逐字毫秒和对应翻译", async () => {
     },
   });
   const result = await loadNativeLyrics(track);
+  expect(result.format).toBe("yrc");
   expect(result.lines[0]).toMatchObject({
     timeMs: 1000,
     endMs: 2000,
@@ -30,6 +31,8 @@ it("普通 LRC 不伪造逐字时间", async () => {
   const result = await loadNativeLyrics(track);
   expect(result.lines[0]).toMatchObject({ timeMs: 2500, text: "测试歌词" });
   expect(result.lines[0].words).toHaveLength(1);
+  // 原版标签显示真实格式，普通 LRC 不能标成逐字
+  expect(result.format).toBe("lrc");
 });
 it("QQ 使用数字 ID，酷狗只在接口边界把毫秒转换为秒", async () => {
   mocks.call.mockResolvedValue({ ok: true, body: { lrc: "[00:01]歌词" } });
@@ -66,6 +69,36 @@ it("导入 TTML 保留真实逐字时间", () => {
   });
   expect(result.lines[0].words.map((word) => word.startMs)).toEqual([1000, 2000]);
   expect(result.lines[0].endMs).toBe(3000);
+  expect(result.format).toBe("ttml");
+});
+
+it("没有 DOMParser 的原生运行时解析 TTML 与浏览器结果一致", () => {
+  const content = [
+    '<tt xmlns="http://www.w3.org/ns/ttml" xmlns:ttm="http://www.w3.org/ns/ttml#metadata"',
+    ' xmlns:itunes="http://music.apple.com/lyric-ttml-internal" itunes:timing="Word">',
+    '<head><metadata><ttm:agent type="person" xml:id="v1"/><ttm:agent type="person" xml:id="v2"/>',
+    "</metadata></head>",
+    '<body dur="00:10.000"><div begin="00:01.000" end="00:09.000">',
+    '<p begin="00:01.000" end="00:03.000" ttm:agent="v1" itunes:key="L1">',
+    '<span begin="00:01.000" end="00:01.500">Hello</span> <span begin="00:01.600" end="00:03.000">world &amp; you</span>',
+    '<span ttm:role="x-translation" xml:lang="zh-CN">你好 世界</span>',
+    '<span ttm:role="x-bg"><span begin="00:02.000" end="00:02.500">(oh)</span></span></p>',
+    '<p begin="00:04.000" end="00:06.000" ttm:agent="v2">',
+    '<span begin="00:04.000" end="00:05.000">晚</span><span begin="00:05.000" end="00:06.000">安</span>',
+    '<span ttm:role="x-roman">wan an</span></p>',
+    "</div></body></tt>",
+  ].join("");
+  const browser = parseNativeLyrics({ content });
+  vi.stubGlobal("DOMParser", undefined);
+  try {
+    const native = parseNativeLyrics({ content });
+    expect(native).toEqual(browser);
+    expect(native.lines.length).toBeGreaterThan(1);
+    expect(native.lines[0].words.length).toBeGreaterThan(1);
+    expect(() => parseNativeLyrics({ content: "<tt><body><p>" })).toThrow();
+  } finally {
+    vi.unstubAllGlobals();
+  }
 });
 
 it("按行标注语言，供原生分语言字体使用", () => {

@@ -1,5 +1,7 @@
 import {
+  type DOMParserConstructor,
   applyLyricLanguages,
+  detectFormat,
   parseLyric,
   toEnhancedLRC,
   toLRC,
@@ -8,6 +10,14 @@ import {
 } from "lyric-kit";
 import type { Track } from "@shared/types/player";
 import { mobileProviders } from "../providers";
+import { NativeDOMParser } from "./xmlDom";
+
+/** JavaScriptCore 没有 DOMParser，TTML（下载歌词、导入歌词）需要提供兼容实现 */
+const parseOptions = () =>
+  typeof DOMParser === "undefined"
+    ? // 只实现 lyric-kit 用到的 DOM 子集，类型上无法满足完整的 Document
+      { domParser: NativeDOMParser as unknown as DOMParserConstructor }
+    : undefined;
 
 /**
  * 使用共享平台接口读取歌词，只向 Swift 返回当前歌曲的时间轴，不写入登录存储
@@ -16,7 +26,7 @@ import { mobileProviders } from "../providers";
  */
 export async function loadNativeLyrics(track?: Track) {
   const input = await loadLyricInput(track);
-  return input ? parseNativeLyrics(input) : { raw: "", lines: [] };
+  return input ? parseNativeLyrics(input) : { raw: "", format: null, lines: [] };
 }
 
 /**
@@ -80,7 +90,7 @@ async function loadLyricInput(track?: Track): Promise<LyricInput | undefined> {
 export async function exportNativeLyrics(track: Track, format: "lrc" | "enhanced-lrc") {
   const input = await loadLyricInput(track);
   if (!input?.content.trim()) return { ttml: "", lrc: "" };
-  const lines = parseLyric(input).lines;
+  const lines = parseLyric(input, parseOptions()).lines;
   if (!lines.length) return { ttml: "", lrc: "" };
   return { ttml: toTTML(lines), lrc: format === "lrc" ? toLRC(lines) : toEnhancedLRC(lines) };
 }
@@ -88,11 +98,13 @@ export async function exportNativeLyrics(track: Track, format: "lrc" | "enhanced
 /** 原生导入与在线歌词共用同一解析器和数据字段。 */
 export function parseNativeLyrics(input: LyricInput) {
   if (input.content.length > 2_000_000) throw new Error("歌词超过大小限制");
-  const parsed = parseLyric(input);
+  const parsed = parseLyric(input, parseOptions());
   // 与原版一致按行识别语言，原生端据此选择分语言歌词字体
   applyLyricLanguages(parsed.lines);
   return {
     raw: input.content,
+    // 与原版播放页的歌词格式标签一致：平台主格式，导入文本按内容识别
+    format: input.format ?? detectFormat(input.content),
     lines: parsed.lines.map((line, id) => ({
       id,
       timeMs: line.startTime,
