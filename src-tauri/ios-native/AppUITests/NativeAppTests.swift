@@ -78,6 +78,11 @@ final class NativeAppTests: XCTestCase {
     XCTAssertTrue(start.waitForExistence(timeout: 5))
     capture(app, "recognition-idle")
     start.tap()
+    // 全新安装首次收听时由系统询问麦克风权限
+    let allow = XCUIApplication(bundleIdentifier: "com.apple.springboard").buttons.matching(
+      NSPredicate(format: "label IN %@", ["允许", "Allow", "好", "OK"])
+    ).firstMatch
+    if allow.waitForExistence(timeout: 3) { allow.tap() }
     let message = app.staticTexts["native.recognition.message"]
     if message.waitForExistence(timeout: 3), message.label == "未找到可用的音频设备" {
       capture(app, "recognition-no-input")
@@ -166,17 +171,13 @@ final class NativeAppTests: XCTestCase {
   }
 
   /// 每项播放器测试都通过真实文件选择器建立自己的测试歌曲
-  private func importedPlayer() -> XCUIApplication {
-    let app = launch(importFixture: true)
+  private func importedPlayer(style: String? = nil) -> XCUIApplication {
+    let app = launch(importFixture: true, style: style)
     app.tabBars.buttons["音乐库"].tap()
     app.buttons["native.import.library"].tap()
     let picker = app.descendants(matching: .any)["native.audioPicker"].firstMatch
     XCTAssertTrue(picker.waitForExistence(timeout: 10))
-    let audio = picker.descendants(matching: .any).matching(
-      NSPredicate(format: "label CONTAINS 'SPlayerImportTest'")
-    ).firstMatch
-    XCTAssertTrue(audio.waitForExistence(timeout: 15), app.debugDescription)
-    audio.tap()
+    pickFile("SPlayerImportTest", in: picker, app: app)
     let open = app.buttons.matching(NSPredicate(format: "label == 'Open' OR label == '打开'"))
       .firstMatch
     if open.waitForExistence(timeout: 2) { open.tap() }
@@ -196,7 +197,13 @@ final class NativeAppTests: XCTestCase {
     XCTAssertEqual(XCTWaiter.wait(for: [playback], timeout: 10), .completed, app.debugDescription)
     app.buttons["native.wide.playPause"].tap()
     app.buttons["native.wide.nowPlaying"].tap()
-    XCTAssertTrue(app.staticTexts["native.player.title"].waitForExistence(timeout: 10))
+    // 原版样式在已有歌词时直接显示歌词页，此时没有标题区
+    let opened = XCTNSPredicateExpectation(
+      predicate: NSPredicate(format: "exists == true"),
+      object: app.descendants(matching: .any).matching(
+        NSPredicate(format: "identifier IN %@", ["native.player.title", "native.lyrics.stage"])
+      ).firstMatch)
+    XCTAssertEqual(XCTWaiter.wait(for: [opened], timeout: 10), .completed, app.debugDescription)
     XCTAssertFalse(
       app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH '流体渲染失败'")).firstMatch.exists)
     capture(app, "native-local-player")
@@ -205,21 +212,17 @@ final class NativeAppTests: XCTestCase {
 
   /// 经系统文件选择器导入后，歌曲行空白区可播放且原生播放器进度真实前进
   func testSelectAudioFileImportsAndCanPlay() {
-    let app = importedPlayer()
-    app.buttons["播放器选项"].tap()
-    app.buttons["导入歌词"].tap()
-    let lyricFile = app.descendants(matching: .any).matching(
-      NSPredicate(format: "label CONTAINS 'SPlayerLyricsTest'")
-    ).firstMatch
-    XCTAssertTrue(lyricFile.waitForExistence(timeout: 10))
-    lyricFile.tap()
-    let lyricOpen = app.buttons.matching(NSPredicate(format: "label == 'Open' OR label == '打开'"))
-      .firstMatch
-    if lyricOpen.waitForExistence(timeout: 2) { lyricOpen.tap() }
-    app.sliders["播放进度"].adjust(toNormalizedSliderPosition: 0)
-    for style in ["Apple Music", "Next 原版"] {
+    // 播放器样式在“设置 → 外观”中切换，测试按样式分别启动
+    for (id, style) in [("am", "Apple Music"), ("original", "Next 原版")] {
+      let app = importedPlayer(style: id)
       app.buttons["播放器选项"].tap()
-      app.buttons[style].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+      app.buttons["导入歌词"].tap()
+      pickFile("SPlayerLyricsTest", in: app, app: app)
+      let lyricOpen = app.buttons.matching(
+        NSPredicate(format: "label == 'Open' OR label == '打开'")
+      ).firstMatch
+      if lyricOpen.waitForExistence(timeout: 2) { lyricOpen.tap() }
+      app.sliders["播放进度"].adjust(toNormalizedSliderPosition: 0)
       let toggle = app.buttons["native.player.lyricsToggle"]
       let transport = app.buttons["native.player.playPause"]
       if style == "Next 原版"
@@ -338,12 +341,35 @@ final class NativeAppTests: XCTestCase {
     XCTAssertTrue(element.exists && element.isHittable, app.debugDescription)
   }
   /// 每个用例明确方向，保留现有应用数据
-  private func launch(landscape: Bool = false, importFixture: Bool = false) -> XCUIApplication {
+  /// 启动应用；指定播放器样式时经参数域覆盖设置，不改动持久化的选择
+  private func launch(landscape: Bool = false, importFixture: Bool = false, style: String? = nil)
+    -> XCUIApplication
+  {
     XCUIDevice.shared.orientation = landscape ? .landscapeLeft : .portrait
     let app = XCUIApplication()
-    app.launchArguments = ["--uitest-light"] + (importFixture ? ["--uitest-import"] : [])
+    app.launchArguments =
+      ["--uitest-light"] + (importFixture ? ["--uitest-import"] : [])
+      + (style.map { ["-native.player.style", $0] } ?? [])
     app.launch()
     return app
+  }
+  /// 在系统文件选择器中选中夹具文件
+  /// @param name - 文件名片段
+  /// @param scope - 选择器所在的元素
+  /// @param app - 被测应用
+  private func pickFile(_ name: String, in scope: XCUIElement, app: XCUIApplication) {
+    let file = scope.descendants(matching: .any).matching(
+      NSPredicate(format: "label CONTAINS %@", name)
+    ).firstMatch
+    if !file.waitForExistence(timeout: 5) {
+      // 全新安装时选择器停在“我的 iPad”根目录，夹具在以应用名命名的文件夹中
+      let folder = scope.descendants(matching: .any).matching(
+        NSPredicate(format: "identifier == %@ OR label == %@", app.label + ", Container", app.label)
+      ).firstMatch
+      if folder.waitForExistence(timeout: 5) { folder.tap() }
+    }
+    XCTAssertTrue(file.waitForExistence(timeout: 15), app.debugDescription)
+    file.tap()
   }
   /// 弹层完全退出后才操作底层页面
   private func cancelAudioPicker(in app: XCUIApplication) {
