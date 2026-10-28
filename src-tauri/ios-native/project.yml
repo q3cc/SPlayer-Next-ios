@@ -19,14 +19,18 @@ targets:
       - package: SPlayerNativeUI
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: top.imsyy.splayer-next.native
+        # 默认与原 iOS 版同包名同名称，安装即替换原版；共存版构建时覆盖为
+        # APP_BUNDLE_ID=top.imsyy.splayer-next.native APP_DISPLAY_NAME="SPlayer Native"
+        APP_BUNDLE_ID: top.imsyy.splayer-next.ios
+        APP_DISPLAY_NAME: SPlayer Next
+        PRODUCT_BUNDLE_IDENTIFIER: $(APP_BUNDLE_ID)
         MARKETING_VERSION: "2.2.0"
         CURRENT_PROJECT_VERSION: "2026102801"
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
     info:
       path: Generated/Info.plist
       properties:
-        CFBundleDisplayName: SPlayer Native
+        CFBundleDisplayName: $(APP_DISPLAY_NAME)
         CFBundleShortVersionString: "$(MARKETING_VERSION)"
         CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         CFBundleDevelopmentRegion: zh-Hans
